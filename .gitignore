@@ -1,7 +1,8 @@
-# Generated narration audio and raw/final recordings
+# Generated narration audio, raw/final recordings and verification frames
 demos/**/*.wav
 demos/**/raw.mp4
 demos/**/final.mp4
+demos/**/frames/
 
 # Python / uv
 __pycache__/

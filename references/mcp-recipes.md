@@ -69,6 +69,14 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
 
 1. `list_pages({})` → note the selected `pageId`.
 2. `resize_page({ pageId, width: <viewport.width>, height: <viewport.height> })` (default 1920×1080).
+   Then check what you got:
+   `evaluate_script({ pageId, function: "() => [innerWidth, innerHeight]" })`.
+   The window can't be taller than the screen, so on a laptop a 1920×1080 request can
+   come back as 1920×906. The screencast records the real window, so keep the aspect ratio
+   instead: `resize_page` again to `round(innerHeight × width / height)` × `innerHeight`
+   (1611×906 for 16:9). `compose.py` scales the recording to `viewport`, and on a
+   Retina screen the recording is at 2× pixel density, so the output stays sharp. Don't use `emulate`'s
+   `viewport` for this: the screencast crops the emulated page to the real window.
 3. `navigate_page({ pageId, type: "url", url: "<first scene url>" })`.
 4. Inject the overlay (see above).
 5. `screencast_start({ pageId, filePath: "<abs path>/demos/<slug>/raw.mp4" })`. The output is
@@ -77,11 +85,24 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
    `filePath`. The result names the temp file
    (`Screencast recording started. The recording will be saved to /…/screencast.mp4`).
    After stopping, move that file to `demos/<slug>/raw.mp4`.
-6. Immediately run the mark CLI for the `rec_start` event (see `python3 scripts/mark.py --help`).
+6. Immediately mark the recording start. This truncates the timeline, so every recording
+   starts a fresh one:
+   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start`
 
-Then, for each scene: mark the scene start → run its actions with the recipes below → wait
-until the time on screen roughly covers the scene's narration length (from
-`audio/durations.json`) → mark the scene end.
+Then, for each scene in spec order:
+
+1. If the browser isn't on the scene's `url` yet, `navigate_page` there and re-inject the
+   overlay. Do this **before** the start marker, so the page load falls in the gap between
+   scenes, which compose drops.
+2. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
+3. Run the scene's actions with the recipes below.
+4. Wait until the time since the start marker roughly covers the scene's narration length
+   (from `audio/durations.json`). Compose drops frozen frames and holds the last frame when
+   a scene comes up short, so this is a soft target, not a deadline.
+5. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`
+
+Each mark call prints the JSON line it wrote, such as
+`{"scene": "home", "event": "start", "t_ms": 1760900000000}`.
 
 At the end: `screencast_stop({ pageId })`. It returns
 `The screencast recording has been stopped and saved to <path>`.
@@ -97,6 +118,18 @@ At the end: `screencast_stop({ pageId })`. It returns
 2. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
 3. `click({ pageId, uid: "<uid>" })`. The overlay draws the ripple.
 4. If the result says `Page navigated to ...`, re-inject the overlay.
+
+**A link that loads a new page** (a plain `<a href>`, not a single-page-app route) swaps
+the document out within a frame or two of the click, so the ripple never reaches the
+recording. Hold the navigation for 700 ms so the ripple plays first. Between steps 2 and 3:
+
+```
+evaluate_script({ pageId, args: ["<uid>"], function: "(el) => { const a = el.closest('a[href]'); a.addEventListener('click', (e) => { e.preventDefault(); setTimeout(() => { location.href = a.href; }, 700); }, { once: true }); }" })
+```
+
+The `click` result then won't say `Page navigated to ...`, because the navigation starts
+after it returns. Instead, `wait_for({ pageId, text: ["<text on the new page>"] })` (its
+result includes a fresh snapshot of the new page), then re-inject the overlay.
 
 ### dblclick
 1. `take_snapshot({ pageId })` → choose the uid.
