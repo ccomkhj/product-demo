@@ -1,11 +1,15 @@
-# Generated narration audio, raw/final recordings and verification frames
-demos/**/*.wav
-demos/**/raw.mp4
-demos/**/final.mp4
-demos/**/frames/
+# Local issue tracker: specs, tickets and their conventions stay on this machine
+.scratch/
+docs/agents/issue-tracker.md
+docs/agents/triage-labels.md
+
+# Demos are made per machine (recordings, narration audio, frames); the README's
+# sample lives in docs/sample/
+demos/
 
 # Python / uv
 __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.benchmarks/
