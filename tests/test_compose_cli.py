@@ -116,6 +116,7 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path):
     assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert float(kinds["audio"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
+    assert "burned in" in result.stdout
     assert (tmp_path / "final.srt").read_text() == EXPECTED_SRT
     transcript = (tmp_path / "transcript.md").read_text()
     assert transcript.startswith("# Smoke\n")
@@ -146,8 +147,8 @@ def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
     audio = write_demo(tmp_path)
     make_media(tmp_path, audio)
 
-    plain = run_compose(tmp_path / "demo.json")
-    burned = run_compose(tmp_path / "demo.json", "--burn-subs", "--out", tmp_path / "burned.mp4")
+    plain = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+    burned = run_compose(tmp_path / "demo.json", "--out", tmp_path / "burned.mp4")
 
     assert plain.returncode == 0, plain.stderr
     assert burned.returncode == 0, burned.stderr
@@ -158,6 +159,110 @@ def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
     # the burned-in subtitle changes the bottom of the frame, not the top
     bottom, top = bottom_and_top_difference(tmp_path / "final.mp4", tmp_path / "burned.mp4")
     assert bottom > 5 * max(top, 1.0)
+
+
+def gray_frame(path, at):
+    return subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(path), "-frames:v", "1",
+         "-vf", "scale=80:60", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, check=True,
+    ).stdout
+
+
+def frame_difference(path, a, b):
+    first, second = gray_frame(path, a), gray_frame(path, b)
+    return sum(abs(x - y) for x, y in zip(first, second)) / len(first)
+
+
+@needs_ffmpeg
+def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phrase(tmp_path):
+    audio = write_demo(tmp_path)
+    make_media(tmp_path, audio)
+    # One scene over the whole raw video: 2.5 s of motion, frozen, then motion from
+    # 7 s. The beat at 7 s starts the click; "Second" is reached at 16/32 of 8 s = 4 s.
+    spec = json.loads((tmp_path / "demo.json").read_text())
+    spec["scenes"] = [{"id": "frozen", "url": "https://example.com",
+                       "narration": "First part, then. Second part now.",
+                       "actions": [{"type": "point", "target": "a"},
+                                   {"type": "click", "target": "b", "at": "Second"}]}]
+    (tmp_path / "demo.json").write_text(json.dumps(spec))
+    (tmp_path / "timeline.jsonl").write_text("".join(json.dumps(e) + "\n" for e in [
+        {"event": "rec_start", "t_ms": 0},
+        {"scene": "frozen", "event": "start", "t_ms": 500},
+        {"scene": "frozen", "event": "beat", "t_ms": 7_000},
+        {"scene": "frozen", "event": "end", "t_ms": 9_000},
+    ]))
+    (audio / "durations.json").write_text(json.dumps({"frozen": 8.0}))
+    ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=8",
+           "-ac", "1", "-c:a", "pcm_s16le", audio / "frozen.wav")
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    final = tmp_path / "final.mp4"
+    assert float(probe(final)["format"]["duration"]) == pytest.approx(8.0, abs=0.1)
+    # held from the end of the first motion (~2.5 s) until the phrase at 4 s, then moving
+    assert frame_difference(final, 2.9, 3.8) < 1.0
+    assert frame_difference(final, 4.1, 4.6) > 5.0
+
+
+def test_first_flash_is_the_first_frame_that_is_magenta_throughout():
+    from compose import first_flash_s
+
+    def frame(n, pts, umin, vmin):
+        return (f"frame:{n}    pts:{n}       pts_time:{pts}\n"
+                f"lavfi.signalstats.UMIN={umin}\nlavfi.signalstats.VMIN={vmin}\n")
+
+    stats = frame(0, 0, 128, 128) + frame(1, 0.5, 202, 100) + frame(2, 1.25, 201, 221) + \
+        frame(3, 1.5, 202, 222)
+
+    assert first_flash_s(stats) == 1.25
+    assert first_flash_s(frame(0, 0, 128, 128)) is None
+
+
+@needs_ffmpeg
+def test_compose_lines_the_timeline_up_on_the_sync_flash(tmp_path):
+    audio = write_demo(tmp_path, rec_start_ms=1_700_000_000_000)
+    make_media(tmp_path, audio)
+    # Splice a 0.4 s magenta flash in front of the raw video: the scenes now sit 0.4 s
+    # later in it. The flash was painted at wall time 1_699_999_999_000, so raw time 0
+    # is that, and rec_start's own (later) t_ms no longer matters.
+    raw, spliced = tmp_path / "raw.mp4", tmp_path / "spliced.mp4"
+    ffmpeg("-f", "lavfi", "-i", "color=c=0xff00ff:s=320x240:r=30:d=0.4", "-i", raw,
+           "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", spliced)
+    spliced.replace(raw)
+    timeline = tmp_path / "timeline.jsonl"
+    events = [json.loads(line) for line in timeline.read_text().splitlines()]
+    events[0]["sync_ms"] = 1_699_999_999_000
+    for event in events[1:]:
+        event["t_ms"] += -1_000 + 400  # 1 s earlier origin, 0.4 s later in the raw video
+    events[0]["t_ms"] += 5_000
+    timeline.write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    assert "sync\tflash at 0.000s" in result.stdout
+    assert float(probe(tmp_path / "final.mp4")["format"]["duration"]) == pytest.approx(
+        EXPECTED_TOTAL, abs=0.15)
+    assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
+
+
+@needs_ffmpeg
+def test_compose_fails_when_the_sync_flash_is_missing(tmp_path):
+    audio = write_demo(tmp_path)
+    make_media(tmp_path, audio)
+    timeline = tmp_path / "timeline.jsonl"
+    events = [json.loads(line) for line in timeline.read_text().splitlines()]
+    events[0]["sync_ms"] = events[0]["t_ms"]
+    timeline.write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "no sync flash found" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_compose_reports_timeline_errors_without_a_traceback(tmp_path):

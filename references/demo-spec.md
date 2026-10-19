@@ -33,6 +33,12 @@ Every action has a `type`. Targets are natural-language descriptions of an eleme
 selectors or uids: resolve them against a fresh `take_snapshot` at record time. How to
 perform each one is in `mcp-recipes.md`.
 
+Any action may also have `at`: a phrase copied from the scene's narration (any case). The
+action then starts when the voice reaches that phrase, and the screen holds still until
+it does; without `at`, an action follows the previous one straight away. Give an `at` to
+every action the narration talks about, so the cursor arrives as the words do. Phrases
+must appear in the narration in the same order as their actions.
+
 | `type` | Fields | Effect on screen |
 |--------|--------|------------------|
 | `point` | `target` | Cursor glides to the element. |
@@ -47,7 +53,8 @@ perform each one is in `mcp-recipes.md`.
 ## Worked example
 
 Three scenes on public pages: a pointer on example.com, a link click and Back, then a Space
-press on a page long enough to scroll.
+press on a page long enough to scroll. The `at` phrases start the later actions as the
+voice mentions them.
 
 ```json
 {
@@ -72,8 +79,8 @@ press on a page long enough to scroll.
       "url": "https://example.com",
       "actions": [
         { "type": "click", "target": "the Learn more link" },
-        { "type": "point", "target": "the Example Domains page heading" },
-        { "type": "back" }
+        { "type": "point", "target": "the Example Domains page heading", "at": "who reserves" },
+        { "type": "back", "at": "head back" }
       ],
       "narration": "The Learn more link explains who reserves these names. Then we head back to where we started."
     },
@@ -83,7 +90,7 @@ press on a page long enough to scroll.
       "url": "https://www.iana.org/domains/reserved",
       "actions": [
         { "type": "point", "target": "the IANA-managed Reserved Domains heading" },
-        { "type": "key", "key": "Space" },
+        { "type": "key", "key": "Space", "at": "Pressing space" },
         { "type": "wait", "ms": 1000 }
       ],
       "narration": "IANA keeps the full list of reserved names. Pressing space scrolls down to the rest of it."

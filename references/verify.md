@@ -8,14 +8,17 @@ Recipes for step 7 of SKILL.md. Run them from the directory holding `demos/`.
 
 ```
 <id>  <hold|speedup|pad>  <speed>x  video <s>s  audio <s>s  scene <s>s
+sync  flash at <s>s in the raw video
 total  <s>s  <final.mp4 path>
-subtitles  <n> cues  <final.srt path>
+subtitles  <n> cues  <final.srt path>  <burned in (subtitles|overlay)|not burned in>
 transcript  <transcript.md path>
 ```
 
-- `video`: the scene's length after frozen frames are dropped.
+- `video`: the scene's length after frozen frames are dropped and the holds before its
+  `at` phrases are added.
 - `scene`: its length in the final video, a whole number of frames at 30 fps. A padded
   scene is longer than its `audio`.
+- `sync`: present when `rec_start` has a `sync_ms`; where compose found the flash.
 - A scene's `offset` (where it starts in `final.mp4`) is the sum of the earlier scenes'
   `scene` values.
 
@@ -30,26 +33,44 @@ narration lengths, because padded scenes run longer than their narration.
 
 ## Frames: contact sheet per scene
 
-Sample the part of the scene where its actions play: from `offset`, for
-`active` = its `video` value ÷ its speed. ffmpeg won't create `frames/`, so make it first.
+`at` phrases spread a scene's actions across its narration, so sample the whole scene:
+from `offset`, for its `scene` value. ffmpeg won't create `frames/`, so make it first.
 
 ```
 mkdir -p demos/<slug>/frames
-ffmpeg -v error -y -ss <offset> -t <active> -i demos/<slug>/final.mp4 \
-  -vf "fps=6/<active>,scale=960:-1,tile=2x3" -frames:v 1 demos/<slug>/frames/<scene-id>.png
+ffmpeg -v error -y -ss <offset> -t <scene> -i demos/<slug>/final.mp4 \
+  -vf "fps=8/<scene>,scale=960:-1,tile=2x4:padding=12:color=red" -frames:v 1 \
+  demos/<slug>/frames/<scene-id>.png
 ```
 
 Look at each sheet with Read. Confirm the page is the scene's page, the cursor sits on each
-pointed target, clicks show a ripple, keys show their keycap and Back shows its badge.
+pointed target, clicks show a ripple, keys show their keycap, Back shows its badge and the
+subtitle is legible at the bottom. Keep the red padding: consecutive frames of a scroll
+line up across a bare tile seam and look like one torn frame.
+
+## Sync
+
+For each action with an `at`, find the cue holding its phrase in `final.srt` and grab a
+frame half a second after the cue starts:
+
+```
+ffmpeg -v error -y -ss <cue start + 0.5> -i demos/<slug>/final.mp4 -frames:v 1 \
+  -vf scale=960:-1 demos/<slug>/frames/<scene-id>-sync-<n>.png
+```
+
+The action must be under way there: the cursor gliding to or resting on its target, the
+scroll moving, the ripple playing. If it already played before the cue, its beat was
+marked after the action had started.
 
 ## Frames: dense tile around one moment
 
-A ripple lasts about 0.65 s, so six samples often miss it. Before calling one missing, tile
+A ripple lasts about 0.65 s, so eight samples often miss it. Before calling one missing, tile
 every frame of that second, cropped around the target (`x`, `y` in output-video pixels):
 
 ```
 ffmpeg -v error -y -ss <time> -t 1 -i demos/<slug>/final.mp4 \
-  -vf "crop=480:270:<x-240>:<y-135>,tile=6x5" -frames:v 1 demos/<slug>/frames/<scene-id>-dense.png
+  -vf "crop=480:270:<x-240>:<y-135>,tile=6x5:padding=4:color=red" -frames:v 1 \
+  demos/<slug>/frames/<scene-id>-dense.png
 ```
 
 A link click with no ripple at all means the hold-the-navigation step of the click recipe

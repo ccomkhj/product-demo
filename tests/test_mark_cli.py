@@ -21,14 +21,16 @@ def test_mark_appends_wall_clock_events_for_a_recording(tmp_path):
     timeline = tmp_path / "timeline.jsonl"
     before = int(time.time() * 1000)
 
-    for args in (["rec_start"], ["start", "home"], ["end", "home"], ["start", "more"]):
+    for args in (["rec_start"], ["start", "home"], ["beat", "home"], ["end", "home"],
+                 ["start", "more"]):
         result = run_mark(timeline, *args)
         assert result.returncode == 0, result.stderr
 
     after = int(time.time() * 1000)
     events = read_events(timeline)
     assert [(e.get("scene"), e["event"]) for e in events] == [
-        (None, "rec_start"), ("home", "start"), ("home", "end"), ("more", "start"),
+        (None, "rec_start"), ("home", "start"), ("home", "beat"), ("home", "end"),
+        ("more", "start"),
     ]
     stamps = [e["t_ms"] for e in events]
     assert all(isinstance(t, int) for t in stamps)
@@ -53,4 +55,22 @@ def test_scene_event_needs_a_scene_id(tmp_path):
     assert result.returncode != 0
     assert "scene id" in result.stderr
     assert "Traceback" not in result.stderr
+    assert not (tmp_path / "timeline.jsonl").exists()
+
+
+def test_rec_start_records_the_sync_flash_time(tmp_path):
+    timeline = tmp_path / "timeline.jsonl"
+
+    result = run_mark(timeline, "rec_start", "--sync-ms", "1760900000123")
+
+    assert result.returncode == 0, result.stderr
+    (event,) = read_events(timeline)
+    assert (event["event"], event["sync_ms"]) == ("rec_start", 1760900000123)
+
+
+def test_sync_ms_is_only_for_rec_start(tmp_path):
+    result = run_mark(tmp_path / "timeline.jsonl", "start", "home", "--sync-ms", "5")
+
+    assert result.returncode != 0
+    assert "--sync-ms goes with rec_start only" in result.stderr
     assert not (tmp_path / "timeline.jsonl").exists()

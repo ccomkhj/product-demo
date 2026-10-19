@@ -2,19 +2,22 @@
 
 Usage:
     python3 scripts/compose.py demos/<slug>/demo.json [--raw RAW] [--timeline TIMELINE]
-        [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--burn-subs]
+        [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--no-burn-subs]
 
 Defaults are relative to the demo spec's folder: raw.mp4, timeline.jsonl,
 audio/ (with <scene-id>.wav), audio/durations.json and final.mp4.
 
 Next to FINAL it also writes FINAL's name with .srt (one cue per narration
-sentence) and transcript.md (scene titles + narration). --burn-subs also draws
-the subtitles into the video: with libass when ffmpeg has the `subtitles`
-filter, otherwise as cue images rendered by rsvg-convert and overlaid.
+sentence) and transcript.md (scene titles + narration). The subtitles are also
+drawn into the video, with libass when ffmpeg has the `subtitles` filter,
+otherwise as cue images rendered by rsvg-convert and overlaid; --no-burn-subs
+leaves them out, and --burn-subs fails instead of warning when neither is there.
 
-Each scene is cut from the raw recording, its frozen frames are dropped with
-mpdecimate, and it is fitted to its narration (see edit_plan.fit). The scenes
-are joined in spec order and muxed with the narration as 30 fps H.264 + AAC.
+Each scene is cut from the raw recording into segments at its beat markers,
+their frozen frames are dropped with mpdecimate, each segment is held back until
+the narration reaches its action's `at` phrase, and the scene is fitted to its
+narration (see edit_plan). The scenes are joined in spec order and muxed with
+the narration as 30 fps H.264 + AAC.
 Every ffmpeg command is built as an argument list by a ``*_cmd`` function and
 run separately by ``run``.
 """
@@ -30,7 +33,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import proc
 from demo_spec import SpecError, load_spec, read_json_object
-from edit_plan import FPS, PlanError, build_plan, load_timeline
+from edit_plan import FPS, PlanError, build_plan, load_timeline, sync_ms
 from tts import SAMPLE_RATE
 
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
@@ -57,9 +60,31 @@ def decimate_cmd(raw, trim_start, trim_end, out):
             "-r", str(FPS), *X264, str(out)]
 
 
+def flash_stats_cmd(raw):
+    """Per-frame luma/chroma stats of a tiny copy of every raw frame, printed with pts_time."""
+    return ["ffmpeg", "-v", "error", "-i", str(raw), "-fps_mode", "passthrough",
+            "-vf", "scale=64:36,signalstats,metadata=print:file=-", "-an", "-f", "null", "-"]
+
+
 def count_frames_cmd(path):
     return ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets",
             "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", str(path)]
+
+
+def sync_cmd(parts, out):
+    """Join a scene's decimated segments, each led by ``lead_frames`` copies of its first frame.
+
+    ``parts`` is [(path, lead_frames)], in order.
+    """
+    args = ["ffmpeg", "-v", "error", "-y"]
+    for path, _ in parts:
+        args += ["-i", str(path)]
+    chain = [f"[{index}:v]tpad=start_mode=clone:start={lead}[s{index}]"
+             for index, (_, lead) in enumerate(parts)]
+    joined = "".join(f"[s{index}]" for index in range(len(parts)))
+    chain.append(f"{joined}concat=n={len(parts)}:v=1:a=0[out]")
+    return args + ["-filter_complex", ";".join(chain), "-map", "[out]", "-an",
+                   "-r", str(FPS), *X264, str(out)]
 
 
 def fit_cmd(src, scene_fit, frames, viewport, out):
@@ -135,6 +160,30 @@ def mux_cmd(video, audio, out):
             "-movflags", "+faststart", str(out)]
 
 
+# --- sync flash (pure) ----------------------------------------------------------------
+
+# __demo.sync() fills the viewport with #ff00ff: Y 106, U 202, V 222. Every pixel of a
+# flash frame is close to that; no ordinary page frame has chroma this high throughout.
+FLASH_MIN_U, FLASH_MIN_V = 170, 190
+
+
+def first_flash_s(stats):
+    """The pts_time of the first all-magenta frame in ``flash_stats_cmd`` output, or None."""
+    pts, values = None, {}
+    for line in [*stats.splitlines(), "frame:end"]:
+        if line.startswith("frame:"):
+            if (pts is not None and values.get("UMIN", 0) >= FLASH_MIN_U
+                    and values.get("VMIN", 0) >= FLASH_MIN_V):
+                return pts
+            fields = dict(part.split(":", 1) for part in line.split() if ":" in part)
+            pts = float(fields["pts_time"]) if "pts_time" in fields else None
+            values = {}
+        elif line.startswith("lavfi.signalstats."):
+            key, _, value = line[len("lavfi.signalstats."):].partition("=")
+            values[key] = float(value)
+    return None
+
+
 # --- text outputs (pure) -------------------------------------------------------------
 
 def srt_text(cues):
@@ -167,11 +216,14 @@ def cue_svg(text, width, height):
         f"{xml_escape(line)}</tspan>"
         for i, line in enumerate(lines)
     )
+    # The outline is its own text layer under the fill: rsvg-convert ignores paint-order,
+    # and a stroke drawn over the fill eats into the letters.
+    text_attrs = (f'font-family="Helvetica, Arial, sans-serif" font-size="{font}" '
+                  f'font-weight="600" text-anchor="middle"')
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{strip_h}">'
-           f'<text font-family="Helvetica, Arial, sans-serif" font-size="{font}" '
-           f'font-weight="600" text-anchor="middle" fill="white" stroke="black" '
-           f'stroke-width="{max(2, font // 6)}" stroke-linejoin="round" paint-order="stroke">'
-           f"{tspans}</text></svg>")
+           f'<text {text_attrs} fill="black" stroke="black" stroke-width="{max(2, font // 6)}" '
+           f'stroke-linejoin="round">{tspans}</text>'
+           f'<text {text_attrs} fill="white">{tspans}</text></svg>')
     return svg, strip_h
 
 
@@ -225,17 +277,12 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir):
     run(overlay_burn_cmd(video, overlays, out))
 
 
-def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
+def compose(spec, plan, raw, audio_dir, out, work_dir, method=None):
     """Run the ffmpeg pipeline for ``plan``; return the plan re-fitted to measured lengths.
 
-    With ``burn_subs`` the plan's subtitle cues are drawn into the video.
+    With a BurnMethod ``method`` the plan's subtitle cues are drawn into the video.
     """
     raw, audio_dir, work_dir = Path(raw), Path(audio_dir), Path(work_dir)
-    method = burn_method() if burn_subs else None
-    if burn_subs and method is None:
-        raise ComposeError("--burn-subs needs an ffmpeg with libass (the `subtitles` filter) "
-                           "or rsvg-convert (`brew install librsvg`); drop the flag to get "
-                           "the subtitles only as a separate .srt")
     if not raw.is_file():
         raise ComposeError(f"raw recording not found: {raw}")
     wavs = {scene.id: audio_dir / f"{scene.id}.wav" for scene in plan.scenes}
@@ -245,22 +292,35 @@ def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
 
     decimated, lengths = {}, {}
     for index, scene in enumerate(plan.scenes):
-        path = work_dir / f"{index:03d}-decimated.mp4"
-        run(decimate_cmd(raw, scene.trim_start, scene.trim_end, path))
-        frames = int(run(count_frames_cmd(path)).strip() or 0)
-        if frames == 0:
+        paths, frame_counts = [], []
+        for part, segment in enumerate(scene.segments):
+            path = work_dir / f"{index:03d}-{part:02d}-decimated.mp4"
+            frames = 0
+            if segment.frames:  # a segment shorter than a frame has nothing to cut
+                run(decimate_cmd(raw, segment.trim_start, segment.trim_end, path))
+                frames = int(run(count_frames_cmd(path)).strip() or 0)
+            paths.append(path)
+            frame_counts.append(frames)
+        if not any(frame_counts):
             raise ComposeError(
                 f"scene '{scene.id}' has no video frames in its trim window "
                 f"{scene.trim_start:.3f}-{scene.trim_end:.3f}s; is it past the end of {raw}?"
             )
-        decimated[scene.id] = path
-        lengths[scene.id] = frames / FPS
+        decimated[scene.id] = paths
+        lengths[scene.id] = [frames / FPS for frames in frame_counts]
     plan = plan.with_video_lengths(lengths)
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
+        parts = [(path, segment.lead_frames)
+                 for path, segment in zip(decimated[scene.id], scene.segments) if segment.frames]
+        if len(parts) == 1 and parts[0][1] == 0:
+            synced = parts[0][0]
+        else:
+            synced = work_dir / f"{index:03d}-synced.mp4"
+            run(sync_cmd(parts, synced))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        run(fit_cmd(decimated[scene.id], scene.fit, scene.frames, spec["viewport"], fitted))
+        run(fit_cmd(synced, scene.fit, scene.frames, spec["viewport"], fitted))
         list_lines.append(f"file '{fitted.as_posix()}'")
         audio_parts.append((wavs[scene.id], scene.scene_s))
     list_file = work_dir / "scenes.txt"
@@ -269,7 +329,7 @@ def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
     video, audio = work_dir / "video.mp4", work_dir / "audio.wav"
     run(concat_video_cmd(list_file, video))
     run(concat_audio_cmd(audio_parts, audio))
-    if burn_subs:
+    if method is not None:
         burned = work_dir / "burned.mp4"
         burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir)
         video = burned
@@ -286,8 +346,9 @@ def main(argv=None):
     parser.add_argument("--audio-dir", type=Path, help="default: <demo>/audio")
     parser.add_argument("--durations", type=Path, help="default: <audio-dir>/durations.json")
     parser.add_argument("--out", type=Path, help="default: <demo>/final.mp4")
-    parser.add_argument("--burn-subs", action="store_true",
-                        help="also burn the subtitles into the video (the .srt is always written)")
+    parser.add_argument("--burn-subs", action=argparse.BooleanOptionalAction, default=None,
+                        help="draw the subtitles into the video (default: when a burn method "
+                             "is available; the .srt is always written)")
     args = parser.parse_args(argv)
 
     demo_dir = args.spec.parent
@@ -300,10 +361,27 @@ def main(argv=None):
         durations = read_json_object(args.durations or audio_dir / "durations.json",
                                      "durations", ComposeError, hint="; run tts.py first",
                                      shape="a JSON object of scene id -> seconds")
-        plan = build_plan(spec, timeline, durations)
+        raw = args.raw or demo_dir / "raw.mp4"
+        flash_s = None
+        if sync_ms(timeline) is not None:
+            if not raw.is_file():
+                raise ComposeError(f"raw recording not found: {raw}")
+            flash_s = first_flash_s(run(flash_stats_cmd(raw)))
+            if flash_s is None:
+                raise ComposeError(f"no sync flash found in {raw}; run __demo.sync() right after "
+                                   f"screencast_start, then mark rec_start with --sync-ms")
+        plan = build_plan(spec, timeline, durations, flash_s=flash_s)
+        method = burn_method() if args.burn_subs is not False else None
+        if method is None and args.burn_subs:
+            raise ComposeError("--burn-subs needs an ffmpeg with libass (the `subtitles` filter) "
+                               "or rsvg-convert (`brew install librsvg`); drop the flag to get "
+                               "the subtitles only as a separate .srt")
+        if method is None and args.burn_subs is None:
+            print("compose: warning: neither libass nor rsvg-convert is available, so the "
+                  "subtitles are only in the .srt (`brew install librsvg` to burn them in)",
+                  file=sys.stderr)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
-            plan = compose(spec, plan, args.raw or demo_dir / "raw.mp4", audio_dir, out, work_dir,
-                           burn_subs=args.burn_subs)
+            plan = compose(spec, plan, raw, audio_dir, out, work_dir, method=method)
         srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
         transcript_path.write_text(transcript_text(spec.get("title") or demo_dir.name, plan),
                                    encoding="utf-8")
@@ -314,8 +392,11 @@ def main(argv=None):
     for scene in plan.scenes:
         print(f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
               f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s")
+    if flash_s is not None:
+        print(f"sync\tflash at {flash_s:.3f}s in the raw video")
     print(f"total\t{plan.total_s:.3f}s\t{out}")
-    print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}")
+    print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}\t"
+          f"{f'burned in ({method})' if method else 'not burned in'}")
     print(f"transcript\t{transcript_path}")
     return 0
 

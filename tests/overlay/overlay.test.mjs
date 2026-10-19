@@ -96,6 +96,21 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.equal(await page.eval(count('[data-demo="caption"]')), 0);
   });
 
+  test("sync flashes the whole viewport magenta and resolves to when it was painted", async () => {
+    await page.inject();
+    const before = await page.eval(`Date.now()`);
+    const pending = page.eval(`__demo.sync().then((t) => ({ t, gone: !document.querySelector("[data-demo-overlay]").shadowRoot.querySelector('[data-demo="sync"]') }))`);
+    const during = await page.eval(`(() => {
+      const f = document.querySelector("[data-demo-overlay]").shadowRoot.querySelector('[data-demo="sync"]');
+      const r = f.getBoundingClientRect();
+      return { color: getComputedStyle(f).backgroundColor, full: r.width === innerWidth && r.height === innerHeight };
+    })()`);
+    const result = await pending;
+    assert.deepEqual(during, { color: "rgb(255, 0, 255)", full: true });
+    assert.ok(result.t >= before && result.t < before + 1000, `painted at ${result.t}, asked at ${before}`);
+    assert.equal(result.gone, true);
+  });
+
   test("overlay never intercepts the pointer: a real link click still navigates", async () => {
     await page.inject();
     await page.eval(`__demo.caption("covering caption")`);

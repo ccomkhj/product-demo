@@ -71,7 +71,37 @@ def validate_spec(spec):
                     f"{where}, action {position}: unknown action type {action_type!r} "
                     f"(allowed: {', '.join(ACTION_TYPES)})"
                 )
+        at_positions(narration, scene.get("actions", []), where)
     return result
+
+
+def at_positions(narration, actions, where="scene"):
+    """Where each action's ``at`` phrase starts in the narration, or None if it has none.
+
+    Positions index the narration with its whitespace collapsed (as subtitle cues
+    see it). Phrases match case-insensitively, each one at or after the previous
+    one, so the actions keep the narration's order; a phrase that isn't found
+    that way is a SpecError naming the action.
+    """
+    text = " ".join(narration.split()).lower()
+    positions, cursor = [], 0
+    for number, action in enumerate(actions, start=1):
+        if "at" not in action:
+            positions.append(None)
+            continue
+        phrase = action["at"]
+        if not isinstance(phrase, str) or not phrase.strip():
+            raise SpecError(f"{where}, action {number}: 'at' must be a phrase from the "
+                            f"narration, got {phrase!r}")
+        needle = " ".join(phrase.split()).lower()
+        found = text.find(needle, cursor)
+        if found < 0:
+            place = " after the previous 'at' phrase" if needle in text else ""
+            raise SpecError(f"{where}, action {number}: 'at' phrase {phrase!r} is not in "
+                            f"the narration{place}")
+        positions.append(found)
+        cursor = found
+    return positions
 
 
 def choose_backend(flag, spec, env):

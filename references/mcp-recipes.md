@@ -23,6 +23,8 @@ Every tool takes `pageId`. Get it once with `list_pages` (the selected page is m
   descriptions. Take a fresh `take_snapshot` on each page and pick the uid that matches the
   description. Never reuse uids from an earlier run or an earlier snapshot of a page that
   has since changed: uids are not stable.
+- **Mark a beat before every `at` action.** Compose cuts the scene there and holds the
+  screen until the narration reaches the phrase, so a missing or extra beat fails compose.
 - **Use real input.** Clicks, double-clicks and key presses must go through `click`,
   `press_key` and `type_text`. They send real CDP input events, which the overlay draws on
   its own (ripple, double ring, keycap). Don't use `fill` or `fill_form` on screen: they
@@ -85,9 +87,18 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
    `filePath`. The result names the temp file
    (`Screencast recording started. The recording will be saved to /…/screencast.mp4`).
    After stopping, move that file to `demos/<slug>/raw.mp4`.
-6. Immediately mark the recording start. It appends to the timeline; compose uses only the
-   events after the last `rec_start`, so a re-recording needs no cleanup:
-   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start`
+6. Flash the sync frame: `evaluate_script({ pageId, function: "() => __demo.sync()" })`.
+   It fills the page with magenta for 0.4 s and returns the wall-clock milliseconds at
+   which the flash was painted, such as `1760900000123`.
+7. Mark the recording start with that number. It appends to the timeline; compose uses
+   only the events after the last `rec_start`, so a re-recording needs no cleanup:
+   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start --sync-ms <ms>`
+
+   Chrome starts the recording on its own clock and never says when, and the agent takes
+   seconds between tool calls, so the time of this mark says nothing about where the video
+   begins. Compose finds the flash in `raw.mp4` and lines the timeline up on it. Without the
+   flash, every cut lands seconds early, and each action plays at the phrase of the one
+   after it.
 
 Then, for each scene in spec order:
 
@@ -95,10 +106,14 @@ Then, for each scene in spec order:
    overlay. Do this **before** the start marker, so the page load falls in the gap between
    scenes, which compose drops.
 2. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
-3. Run the scene's actions with the recipes below.
-4. Wait until the time since the start marker roughly covers the scene's narration length
-   (from `audio/durations.json`). Compose drops frozen frames and holds the last frame when
-   a scene comes up short, so this is a soft target, not a deadline.
+3. Run the scene's actions with the recipes below. Right before each action that has an
+   `at`, mark a beat, after any snapshot that action needs but before its first visible
+   step (the `point` of a click):
+   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl beat <scene-id>`
+4. Don't wait to fill out the narration. Compose drops every frame where nothing moves, so a
+   pause on a still page never reaches the video: a scene lasts only as long as its motion
+   (glides, scrolls, ripples, page changes). Compose holds the screen until each `at`
+   phrase, and holds the last frame for the rest of the narration.
 5. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`
 
 Each mark call prints the JSON line it wrote, such as
@@ -163,10 +178,9 @@ There is no scroll tool. Use a smooth scroll and wait for it to finish:
 3. Re-inject the overlay.
 
 ### wait
-- For time on screen (filling out a scene's narration, or letting an animation finish):
+- To let an animation or transition finish before the next action:
   `evaluate_script({ pageId, function: "() => new Promise((r) => setTimeout(r, <ms>))" })`.
-  Prefer this to doing nothing between calls: the frames are recorded either way, but this
-  keeps the elapsed time predictable.
+  A wait on a still page adds nothing to the video, because compose drops frozen frames.
 - For content to appear: `wait_for({ pageId, text: ["<visible text>"], timeout: 10000 })`.
 
 ## Checking a frame

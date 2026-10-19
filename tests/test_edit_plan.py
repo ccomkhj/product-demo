@@ -1,6 +1,6 @@
 import pytest
 
-from edit_plan import PlanError, build_plan, load_timeline
+from edit_plan import PlanError, build_plan, load_timeline, sync_ms
 
 SPEC = {
     "title": "Demo",
@@ -220,3 +220,109 @@ def test_unusable_scene_duration_is_an_error_naming_the_scene(seconds):
 
     assert "'details'" in message
     assert "duration" in message
+
+
+# --- beats: segments synced to the actions' `at` phrases -------------------------------
+
+# 20 + 20 characters share 8 s of audio, so "Then" (character 20) is reached at 4 s.
+SYNCED_NARRATION = "First, we look here. Then we click there."
+
+
+def synced_spec(actions):
+    return {"scenes": [{"id": "home", "url": "u", "narration": SYNCED_NARRATION,
+                        "actions": actions}]}
+
+
+def synced_timeline(*beats_s):
+    events = [{"event": "rec_start", "t_ms": 0},
+              {"scene": "home", "event": "start", "t_ms": 1_000}]
+    events += [{"scene": "home", "event": "beat", "t_ms": int(b * 1000)} for b in beats_s]
+    return events + [{"scene": "home", "event": "end", "t_ms": 9_000}]
+
+
+ACTIONS = [{"type": "point", "target": "a"}, {"type": "click", "target": "b", "at": "Then"}]
+
+
+def test_beats_cut_a_scene_into_segments_anchored_to_their_phrases():
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+
+    first, second = plan.scenes[0].segments
+    assert (first.trim_start, first.trim_end, first.anchor_s) == (1.0, 6.0, 0.0)
+    assert (second.trim_start, second.trim_end) == (6.0, 9.0)
+    assert second.anchor_s == pytest.approx(4.0)
+
+
+def test_a_segment_is_held_back_until_the_narration_reaches_its_phrase():
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+
+    scene = plan.with_video_lengths({"home": [1.0, 2.0]}).scenes[0]
+
+    assert [s.lead_frames for s in scene.segments] == [0, 90]  # 1 s played, held to 4 s
+    assert scene.video_s == pytest.approx(6.0)
+    assert (scene.fit.strategy, scene.fit.hold_s) == ("hold", pytest.approx(2.0))
+
+
+def test_a_segment_that_runs_past_the_next_anchor_pushes_it_back_and_the_scene_fits_as_a_whole():
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+
+    scene = plan.with_video_lengths({"home": [5.0, 5.0]}).scenes[0]
+
+    assert [s.lead_frames for s in scene.segments] == [0, 0]
+    assert scene.video_s == pytest.approx(10.0)
+    assert scene.fit.strategy == "speedup"
+
+
+def test_an_empty_first_segment_leaves_the_next_one_to_hold_its_first_frame():
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(1.0), {"home": 8.0})
+
+    scene = plan.with_video_lengths({"home": [0.0, 2.0]}).scenes[0]
+
+    assert [s.lead_frames for s in scene.segments] == [0, 120]
+    assert scene.video_s == pytest.approx(6.0)
+
+
+def test_scene_without_beats_is_one_segment_from_start_to_end():
+    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+
+    assert [len(s.segments) for s in plan.scenes] == [1, 1, 1]
+    assert plan.scenes[1].segments[0].trim_start == 4.0
+
+
+def test_beat_count_must_match_the_actions_with_an_at_phrase():
+    with pytest.raises(PlanError, match="'home' has 0 beat markers but 1 actions with an 'at'"):
+        build_plan(synced_spec(ACTIONS), synced_timeline(), {"home": 8.0})
+
+
+def test_beat_outside_its_scene_is_an_error():
+    with pytest.raises(PlanError, match="'home' has a beat marker outside its start and end"):
+        build_plan(synced_spec(ACTIONS), synced_timeline(9.5), {"home": 8.0})
+
+
+def test_anchor_matches_the_start_of_the_subtitle_cue_holding_the_phrase():
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+
+    assert plan.cues[1].text.startswith("Then")
+    assert plan.scenes[0].segments[1].anchor_s == pytest.approx(plan.cues[1].start_s)
+
+
+# --- sync flash: raw-video time 0 from the flash, not from when rec_start was marked ---
+
+def test_a_sync_flash_sets_raw_time_zero_however_late_rec_start_was_marked():
+    # The flash was painted at wall 9.5 s and shows 2.0 s into the raw video, so the
+    # recording began at 7.5 s; rec_start itself was only marked at 10 s.
+    synced = [{**TIMELINE[0], "sync_ms": 9_500}, *TIMELINE[1:]]
+
+    plan = build_plan(SPEC, synced, DURATIONS, flash_s=2.0)
+
+    assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
+        (3.5, 5.5), (6.5, 12.5), (13.5, 23.5),
+    ]
+    assert sync_ms(synced) == 9_500
+    assert sync_ms(TIMELINE) is None
+
+
+def test_a_sync_ms_without_the_flash_time_is_an_error():
+    synced = [{**TIMELINE[0], "sync_ms": 9_500}, *TIMELINE[1:]]
+
+    with pytest.raises(PlanError, match="sync flash's time in the raw video was not given"):
+        build_plan(SPEC, synced, DURATIONS)

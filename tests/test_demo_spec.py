@@ -136,3 +136,38 @@ def test_action_that_is_not_an_object_is_rejected_naming_the_scene(action):
     assert "'home'" in message
     assert "action 2" in message
     assert "object" in message
+
+
+def spec_with_actions(actions, narration="Point at the heading, then click Save to keep it."):
+    return make_spec(scenes=[{"id": "home", "url": "https://example.com",
+                              "actions": actions, "narration": narration}])
+
+
+def test_at_phrases_from_the_narration_are_accepted_in_order_and_any_case():
+    validate_spec(spec_with_actions([
+        {"type": "point", "target": "the heading", "at": "the heading"},
+        {"type": "wait", "ms": 200},
+        {"type": "click", "target": "Save", "at": "click   SAVE"},
+    ]))
+
+
+def test_at_phrase_missing_from_the_narration_is_rejected_naming_the_action():
+    with pytest.raises(SpecError, match=r"scene 1 'home', action 2: 'at' phrase 'Delete' is not in"):
+        validate_spec(spec_with_actions([
+            {"type": "point", "target": "the heading"},
+            {"type": "click", "target": "Delete", "at": "Delete"},
+        ]))
+
+
+def test_at_phrases_out_of_narration_order_are_rejected():
+    with pytest.raises(SpecError, match="action 2: .* after the previous 'at' phrase"):
+        validate_spec(spec_with_actions([
+            {"type": "click", "target": "Save", "at": "click Save"},
+            {"type": "point", "target": "the heading", "at": "the heading"},
+        ]))
+
+
+@pytest.mark.parametrize("phrase", ["", "  ", 3, None])
+def test_at_that_is_not_a_phrase_is_rejected(phrase):
+    with pytest.raises(SpecError, match="action 1: 'at' must be a phrase"):
+        validate_spec(spec_with_actions([{"type": "point", "target": "x", "at": phrase}]))

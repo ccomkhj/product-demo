@@ -12,6 +12,8 @@
  *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done
  *   __demo.badge(text)           transient badge, e.g. "◀ Back"; resolves once it has been on screen a moment
  *   __demo.caption(text)         lower-third caption; caption("") or caption(null) hides it
+ *   __demo.sync()                full-screen magenta flash (~400 ms) that compose finds in the
+ *                                recording; resolves to the wall-clock ms at which it was painted
  * Clicks, double-clicks and key presses (real CDP input from MCP) are drawn
  * automatically by capture-phase listeners: ripple, double ring, keycap.
  *
@@ -19,7 +21,7 @@
  * max-z-index host; listeners are passive and never cancel or stop events.
  */
 (() => {
-  const VERSION = 1;
+  const VERSION = 2;
   const existing = window.__demo;
   if (existing && existing.version === VERSION) {
     existing._ensureHost();
@@ -63,6 +65,8 @@
     @keyframes timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
     @keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .fade { transition: opacity 250ms ease; opacity: 0 !important; }
+    /* Pure magenta: a colour web pages rarely fill the viewport with, so compose can find it. */
+    .sync { position: absolute; inset: 0; background: #ff00ff; }
     .caption { position: absolute; left: 48px; bottom: 48px; max-width: 70%; padding: 14px 22px;
       color: #fff; background: rgba(20, 20, 24, .85); border-left: 6px solid #4da3ff; border-radius: 6px;
       font-size: 28px; line-height: 1.25; white-space: pre-wrap; animation: slide 300ms ease-out; }
@@ -206,6 +210,19 @@
     captionEl.textContent = String(text);
   }
 
+  function sync(life = 400) {
+    const layerEl = ensureHost();
+    const flash = el("div", "sync", layerEl);
+    return new Promise((resolve) => {
+      // The first callback runs before the frame that paints the flash, the second
+      // once it has been painted: that is the moment the recording shows it.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const paintedAt = Date.now();
+        setTimeout(() => { flash.remove(); resolve(paintedAt); }, life);
+      }));
+    });
+  }
+
   // ---- automatic visuals for real input events ----
 
   const NAMED = {
@@ -283,7 +300,7 @@
   window.addEventListener("dblclick", onDblclick, opts);
   window.addEventListener("keydown", onKeydown, opts);
 
-  const api = { version: VERSION, point, badge, caption, _ensureHost: ensureHost };
+  const api = { version: VERSION, point, badge, caption, sync, _ensureHost: ensureHost };
   Object.defineProperty(window, "__demo", { value: Object.freeze(api), configurable: true, writable: false, enumerable: false });
 
   if (document.documentElement) ensureHost();
