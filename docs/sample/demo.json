@@ -1,0 +1,111 @@
+{
+  "title": "From Wikipedia to Wikidata (sample)",
+  "product": "Wikidata",
+  "audience": "general audience curious how Wikipedia's structured data works",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "voice": {
+    "backend": "say",
+    "voice": "Samantha"
+  },
+  "scenes": [
+    {
+      "id": "wikipedia",
+      "title": "Wikipedia: the free encyclopedia",
+      "url": "https://www.wikipedia.org",
+      "actions": [
+        {
+          "type": "point",
+          "target": "the Wikipedia globe logo"
+        },
+        {
+          "type": "point",
+          "target": "the English language link",
+          "at": "hundreds of languages"
+        },
+        {
+          "type": "scroll",
+          "target": "the sister-project links in the footer",
+          "at": "At the bottom of the portal"
+        },
+        {
+          "type": "click",
+          "target": "the Wikidata link in the footer",
+          "at": "the Wikidata link"
+        }
+      ],
+      "narration": "This is wikipedia dot org, the doorway to the free encyclopedia in hundreds of languages. Behind those articles sits a shared store of facts. At the bottom of the portal, the Wikidata link takes us there."
+    },
+    {
+      "id": "wikidata-main",
+      "title": "Wikidata: the free knowledge base",
+      "url": "https://www.wikidata.org/wiki/Wikidata:Main_Page",
+      "actions": [
+        {
+          "type": "point",
+          "target": "the Welcome to Wikidata heading"
+        },
+        {
+          "type": "point",
+          "target": "the data entity count link",
+          "at": "more than a hundred"
+        },
+        {
+          "type": "scroll",
+          "target": "the Related to current events section",
+          "at": "Under Related to current events"
+        },
+        {
+          "type": "click",
+          "target": "the Hexed (Q136027913) link",
+          "at": "open one item"
+        }
+      ],
+      "narration": "Wikidata is the free knowledge base that anyone can edit, with more than a hundred and twenty million data entities. Both people and machines can read it, and it feeds structured data to Wikipedia and its sister projects. Under Related to current events, let's open one item."
+    },
+    {
+      "id": "hexed",
+      "title": "An item: Hexed",
+      "url": "https://www.wikidata.org/wiki/Q136027913",
+      "actions": [
+        {
+          "type": "point",
+          "target": "the Hexed label and its description"
+        },
+        {
+          "type": "scroll",
+          "target": "the instance of statement",
+          "at": "Its facts are written"
+        },
+        {
+          "type": "point",
+          "target": "the instance of statement",
+          "at": "it is an animated film"
+        },
+        {
+          "type": "point",
+          "target": "the publication date statement",
+          "at": "released on"
+        },
+        {
+          "type": "point",
+          "target": "the director statement",
+          "at": "directed by"
+        },
+        {
+          "type": "scroll",
+          "target": "the IMDb ID identifier",
+          "at": "Further down"
+        },
+        {
+          "type": "point",
+          "target": "the IMDb ID identifier",
+          "at": "IMDb"
+        }
+      ],
+      "narration": "Every item has its own Q number. This one is Hexed, an upcoming Disney animated film. Its facts are written as statements: it is an animated film, released on the twenty-fifth of November, 2026, and directed by Fawn Veerasunthorn and Jason Hand. Further down, identifiers link it to IMDb, Rotten Tomatoes and dozens of other databases."
+    }
+  ]
+}
