@@ -1,39 +1,39 @@
 1
-00:00:00,000 --> 00:00:05,150
+00:00:00,000 --> 00:00:05,790
 This is wikipedia dot org, the doorway to the free encyclopedia in hundreds of languages.
 
 2
-00:00:05,150 --> 00:00:08,101
+00:00:05,790 --> 00:00:09,108
 Behind those articles sits a shared store of facts.
 
 3
-00:00:08,101 --> 00:00:11,689
+00:00:09,108 --> 00:00:13,133
 At the bottom of the portal, the Wikidata link takes us there.
 
 4
-00:00:11,700 --> 00:00:18,193
+00:00:13,133 --> 00:00:20,249
 Wikidata is the free knowledge base that anyone can edit, with more than a hundred and twenty million data entities.
 
 5
-00:00:18,193 --> 00:00:24,014
+00:00:20,249 --> 00:00:26,629
 Both people and machines can read it, and it feeds structured data to Wikipedia and its sister projects.
 
 6
-00:00:24,014 --> 00:00:26,967
+00:00:26,629 --> 00:00:29,867
 Under Related to current events, let's open one item.
 
 7
-00:00:26,967 --> 00:00:29,062
+00:00:29,867 --> 00:00:32,116
 Every item has its own Q number.
 
 8
-00:00:29,062 --> 00:00:32,468
+00:00:32,116 --> 00:00:35,772
 This one is Hexed, an upcoming Disney animated film.
 
 9
-00:00:32,468 --> 00:00:42,880
+00:00:35,772 --> 00:00:46,949
 Its facts are written as statements: it is an animated film, released on the twenty-fifth of November, 2026, and directed by Fawn Veerasunthorn and Jason Hand.
 
 10
-00:00:42,880 --> 00:00:48,700
+00:00:46,949 --> 00:00:53,200
 Further down, identifiers link it to IMDb, Rotten Tomatoes and dozens of other databases.

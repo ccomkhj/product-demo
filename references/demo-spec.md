@@ -13,7 +13,7 @@ malformed spec fails before any audio or recording is made.
 | `product` | no | Product name, for writing the narration. |
 | `audience` | no | Who the video is for, for pitching the narration. |
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
-| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `openai` or `elevenlabs`; leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `say`). `voice` is a `say -v` name, an OpenAI voice name, or an ElevenLabs voice **ID**. |
+| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai` or `elevenlabs`; leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
 
 ## Scene
@@ -62,7 +62,7 @@ voice mentions them.
   "product": "example.com",
   "audience": "developers new to reserved domains",
   "viewport": { "width": 1920, "height": 1080 },
-  "voice": { "backend": "say", "voice": "Samantha" },
+  "voice": { "backend": "kokoro", "voice": "af_heart" },
   "scenes": [
     {
       "id": "home",

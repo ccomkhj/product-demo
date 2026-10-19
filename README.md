@@ -10,7 +10,7 @@ the voice talks about it.
 
 [![Sample video: from Wikipedia to Wikidata](docs/sample/poster.jpg)](docs/sample/wikidata-tour.mp4)
 
-*Click the image to play `docs/sample/wikidata-tour.mp4` (48 s, subtitles burned in).*
+*Click the image to play `docs/sample/wikidata-tour.mp4` (53 s, subtitles burned in).*
 
 The whole request was one line:
 
@@ -22,10 +22,12 @@ The agent proposed the scenes and the narration, waited for approval, then recor
 edited the video. The spec it wrote is in [`docs/sample/demo.json`](docs/sample/demo.json),
 and the subtitles are in [`docs/sample/wikidata-tour.srt`](docs/sample/wikidata-tour.srt).
 
-> **The voice can sound much better.** The sample uses macOS `say`, which is free and
-> offline but robotic. Set `OPENAI_API_KEY` or `ELEVENLABS_API_KEY` and set
-> `"voice": { "backend": "openai" }` or `"elevenlabs"` in the spec (or pass `--backend` to
-> `tts.py`), and the same demo gets natural narration. Nothing else changes.
+> **The voice is free and runs locally.** If [`uv`](https://docs.astral.sh/uv/) is installed,
+> narration uses [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an open-weight
+> model that runs offline on your machine. It voiced the sample above. The first run downloads
+> the model once (~340 MB). Pick a voice with `"voice": { "backend": "kokoro", "voice": "am_michael" }`.
+> The default is `af_heart`. Without `uv`, narration falls back to macOS `say`. OpenAI and
+> ElevenLabs voices are available if you set their API keys.
 
 ## Why
 
@@ -74,8 +76,9 @@ Design decisions are recorded in [`docs/adr/`](docs/adr/).
 - `python3` (3.11+) and `ffmpeg`
 - Optional: `rsvg-convert` (`brew install librsvg`), needed to burn in subtitles only when
   your ffmpeg lacks libass
-- Optional: `OPENAI_API_KEY` or `ELEVENLABS_API_KEY` for better voices (macOS `say` is the
-  default)
+- Recommended: [`uv`](https://docs.astral.sh/uv/), for the free local Kokoro voice
+  (without it, narration falls back to macOS `say`)
+- Optional: `OPENAI_API_KEY` or `ELEVENLABS_API_KEY` for the paid OpenAI or ElevenLabs voices
 
 ## Install
 
@@ -99,7 +102,8 @@ Each demo is written to `demos/<slug>/` under the current directory.
 |------|------------|
 | `SKILL.md` | The skill's instructions: interview, approval, narration, recording, compose and verify |
 | `references/` | Demo spec format, browser recording recipes and verification recipes |
-| `scripts/tts.py` | Narration audio (`say`, OpenAI or ElevenLabs) |
+| `scripts/tts.py` | Narration audio (`say`, Kokoro, OpenAI or ElevenLabs) |
+| `scripts/kokoro_tts.py` | Local Kokoro synthesis, run by `tts.py` through `uv run` |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
 | `assets/overlay.js` | The visible cursor, click ripples, keycaps, badges and sync flash |

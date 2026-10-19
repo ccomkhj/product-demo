@@ -9,6 +9,17 @@ import pytest
 
 TTS = Path(__file__).resolve().parent.parent / "scripts" / "tts.py"
 
+KOKORO_MODELS = Path.home() / ".cache" / "product-demo" / "kokoro"
+# Skipped until the ~340 MB model is cached (any kokoro run caches it), so the suite
+# never starts a large download by itself.
+needs_kokoro = pytest.mark.skipif(
+    not (shutil.which("uv") and shutil.which("ffmpeg")
+         and (KOKORO_MODELS / "kokoro-v1.0.onnx").exists()
+         and (KOKORO_MODELS / "voices-v1.0.bin").exists()),
+    reason="needs uv, ffmpeg and the cached Kokoro model",
+)
+HOME = {"HOME": str(Path.home())}
+
 needs_say_and_ffmpeg = pytest.mark.skipif(
     not (shutil.which("say") and shutil.which("ffmpeg") and shutil.which("ffprobe")),
     reason="needs macOS say plus ffmpeg/ffprobe",
@@ -43,7 +54,7 @@ def run_tts(*args, env_extra=None):
 
 @needs_say_and_ffmpeg
 def test_say_backend_writes_48k_mono_wav_per_scene_and_durations(tmp_path):
-    spec_path = write_spec(tmp_path)
+    spec_path = write_spec(tmp_path, voice={"backend": "say"})
 
     result = run_tts(spec_path)
 
@@ -107,3 +118,39 @@ def test_known_say_voice_is_used(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "audio" / "intro.wav").exists()
+
+
+@needs_kokoro
+def test_kokoro_backend_writes_48k_mono_wav_per_scene(tmp_path):
+    spec_path = write_spec(tmp_path, voice={"backend": "kokoro"})
+
+    result = run_tts(spec_path, env_extra=HOME)
+
+    assert result.returncode == 0, result.stderr
+    assert "(backend: kokoro)" in result.stdout
+    for scene_id in ("intro", "outro"):
+        with wave.open(str(tmp_path / "audio" / f"{scene_id}.wav")) as wav:
+            assert wav.getframerate() == 48000
+            assert wav.getnchannels() == 1
+            assert wav.getnframes() > 48000 // 2
+
+
+@needs_kokoro
+def test_unknown_kokoro_voice_is_rejected(tmp_path):
+    spec_path = write_spec(tmp_path, voice={"backend": "kokoro", "voice": "af_nosuchvoice"})
+
+    result = run_tts(spec_path, env_extra=HOME)
+
+    assert result.returncode != 0
+    assert "unknown voice 'af_nosuchvoice'" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+@needs_kokoro
+def test_unsupported_kokoro_language_is_rejected(tmp_path):
+    spec_path = write_spec(tmp_path, voice={"backend": "kokoro", "voice": "jf_alpha"})
+
+    result = run_tts(spec_path, env_extra=HOME)
+
+    assert result.returncode != 0
+    assert "voice 'jf_alpha' is not supported" in result.stderr

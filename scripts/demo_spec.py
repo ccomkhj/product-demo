@@ -2,9 +2,10 @@
 
 import copy
 import json
+import shutil
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
-BACKENDS = ("say", "openai", "elevenlabs")
+BACKENDS = ("say", "kokoro", "openai", "elevenlabs")
 ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
 
 
@@ -119,6 +120,8 @@ def choose_backend(flag, spec, env):
         return "elevenlabs"
     if env.get("OPENAI_API_KEY"):
         return "openai"
+    if env.get("PATH") and shutil.which("uv", path=env["PATH"]):
+        return "kokoro"
     return "say"
 
 

@@ -27,6 +27,29 @@ def test_empty_key_counts_as_unset():
     assert choose_backend(None, NO_VOICE, {"OPENAI_API_KEY": ""}) == "say"
 
 
+@pytest.fixture
+def uv_path(tmp_path):
+    """A PATH holding a fake executable ``uv``."""
+    uv = tmp_path / "uv"
+    uv.write_text("#!/bin/sh\n")
+    uv.chmod(0o755)
+    return str(tmp_path)
+
+
+def test_uv_on_path_selects_kokoro(uv_path):
+    assert choose_backend(None, NO_VOICE, {"PATH": uv_path}) == "kokoro"
+
+
+def test_say_is_used_when_uv_is_not_on_path(tmp_path):
+    assert choose_backend(None, NO_VOICE, {"PATH": str(tmp_path)}) == "say"
+
+
+def test_api_keys_beat_kokoro(uv_path):
+    env = {"PATH": uv_path, "OPENAI_API_KEY": "sk-x"}
+
+    assert choose_backend(None, NO_VOICE, env) == "openai"
+
+
 def test_spec_backend_beats_env():
     spec = {"voice": {"backend": "say"}, "scenes": []}
     env = {"OPENAI_API_KEY": "sk-x", "ELEVENLABS_API_KEY": "el-x"}

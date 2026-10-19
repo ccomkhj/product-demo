@@ -2,19 +2,21 @@
 """Generate one narration WAV per scene of a demo spec, plus durations.json.
 
 Usage:
-    python3 scripts/tts.py demos/<slug>/demo.json [--backend say|openai|elevenlabs]
+    python3 scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs]
                            [--out-dir DIR]
 
 Writes <out-dir>/<scene-id>.wav (48 kHz, mono, 16-bit PCM) for every scene and
 <out-dir>/durations.json mapping scene id -> seconds, in spec order. The default
 out-dir is the `audio/` folder next to the demo spec.
 
-Backends: `say` (macOS), `openai` (gpt-4o-mini-tts, needs OPENAI_API_KEY) and
-`elevenlabs` (needs ELEVENLABS_API_KEY). `voice.voice` in the spec picks the voice:
-a `say -v` name, an OpenAI voice name (default alloy) or an ElevenLabs voice ID.
+Backends: `say` (macOS), `kokoro` (the free, local Kokoro-82M model, needs uv),
+`openai` (gpt-4o-mini-tts, needs OPENAI_API_KEY) and `elevenlabs` (needs
+ELEVENLABS_API_KEY). `voice.voice` in the spec picks the voice: a `say -v` name, a
+Kokoro voice (default af_heart), an OpenAI voice name (default alloy) or an ElevenLabs
+voice ID.
 
 Stdlib only (HTTP via urllib); needs ffmpeg/ffprobe on PATH (and macOS `say` for
-the say backend).
+the say backend, uv for the kokoro backend, which runs scripts/kokoro_tts.py).
 """
 
 import argparse
@@ -55,6 +57,18 @@ def _check_say_voice(voice):
     names = {line.split("  ")[0].strip() for line in listing.splitlines() if line.strip()}
     if voice not in names:
         raise TtsError(f"unknown say voice {voice!r} (list voices with: say -v '?')")
+
+
+KOKORO_SCRIPT = Path(__file__).resolve().parent / "kokoro_tts.py"
+KOKORO_DEFAULT_VOICE = "af_heart"
+
+
+def synth_kokoro(text, voice, out_base, _env, _transport):
+    """Render ``text`` with Kokoro-82M via ``uv run`` and return the raw WAV path."""
+    out_path = out_base.with_suffix(".wav")
+    _run(["uv", "run", "--quiet", "--script", str(KOKORO_SCRIPT),
+          "--voice", voice or KOKORO_DEFAULT_VOICE, "--out", str(out_path), text])
+    return out_path
 
 
 OPENAI_URL = "https://api.openai.com/v1/audio/speech"
@@ -135,6 +149,7 @@ def urllib_transport(url, headers, body, timeout=120):
 # ``transport(url, headers, body) -> (status, bytes)`` is only used by the HTTP backends.
 SYNTHESIZERS = {
     "say": synth_say,
+    "kokoro": synth_kokoro,
     "openai": synth_openai,
     "elevenlabs": synth_elevenlabs,
 }

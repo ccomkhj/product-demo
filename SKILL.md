@@ -39,14 +39,14 @@ narration still fits the visuals.
 ## 3. Narration audio first
 
 ```
-python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|openai|elevenlabs]
+python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs]
 ```
 
 It validates the spec, writes `audio/<scene-id>.wav` and `audio/durations.json`, and prints
 each scene's length. Knowing these lengths before recording shows how much motion each
 scene needs: compose holds the screen until each `at` phrase, and holds the last frame
 when the motion runs out before the narration. Without `--backend` it uses `voice.backend`, then an ElevenLabs or OpenAI
-key if one is set, then macOS `say`.
+key if one is set, then the free local Kokoro model if `uv` is on PATH, then macOS `say`.
 
 ## 4. Logins
 

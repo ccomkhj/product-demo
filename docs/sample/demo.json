@@ -7,8 +7,8 @@
     "height": 1080
   },
   "voice": {
-    "backend": "say",
-    "voice": "Samantha"
+    "backend": "kokoro",
+    "voice": "af_heart"
   },
   "scenes": [
     {
