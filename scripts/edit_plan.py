@@ -9,7 +9,7 @@ decimated video lengths and feeds them back through ``Plan.with_video_lengths``.
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 MAX_SPEED = 1.5
 FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
@@ -126,9 +126,8 @@ class Plan:
 
     def with_video_lengths(self, video_lengths):
         """Re-fit every scene with measured (decimated) video lengths, keyed by scene id."""
-        drafts = [dict(_draft_fields(scene), video_s=float(video_lengths[scene.id]))
-                  for scene in self.scenes]
-        return _assemble(drafts)
+        return _lay_out([replace(scene, video_s=float(video_lengths[scene.id]))
+                         for scene in self.scenes])
 
 
 # Words that end in a full stop without ending the sentence (compared lower-case,
@@ -175,23 +174,20 @@ def build_plan(spec, timeline, durations):
     ``Plan.with_video_lengths`` once the decimated lengths are measured.
     """
     windows = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]})
-    drafts = []
+    scenes = []
     for scene in spec["scenes"]:
         scene_id = scene["id"]
         if scene_id not in windows:
             raise PlanError(f"scene '{scene_id}' has no start marker in the timeline")
         audio_s = _duration(durations, scene_id)
         trim_start, trim_end = windows[scene_id]
-        drafts.append({
-            "id": scene_id,
-            "title": scene.get("title") or scene_id,
-            "narration": scene["narration"],
-            "trim_start": trim_start,
-            "trim_end": trim_end,
-            "audio_s": audio_s,
-            "video_s": trim_end - trim_start,
-        })
-    return _assemble(drafts)
+        video_s = trim_end - trim_start
+        scenes.append(ScenePlan(
+            id=scene_id, title=scene.get("title") or scene_id, narration=scene["narration"],
+            trim_start=trim_start, trim_end=trim_end, audio_s=audio_s, video_s=video_s,
+            fit=fit(video_s, audio_s), offset_s=0.0,
+        ))
+    return _lay_out(scenes)
 
 
 def load_timeline(path):
@@ -286,25 +282,11 @@ def _t_ms(event):
     return t_ms
 
 
-def _draft_fields(scene):
-    return {
-        "id": scene.id,
-        "title": scene.title,
-        "narration": scene.narration,
-        "trim_start": scene.trim_start,
-        "trim_end": scene.trim_end,
-        "audio_s": scene.audio_s,
-        "video_s": scene.video_s,
-    }
-
-
-def _assemble(drafts):
-    """Fit each draft scene and lay the scenes end to end in order."""
-    scenes = []
-    offset = 0.0
-    for draft in drafts:
-        scene_fit = fit(draft["video_s"], draft["audio_s"])
-        scene = ScenePlan(**draft, fit=scene_fit, offset_s=offset)
-        scenes.append(scene)
+def _lay_out(scenes):
+    """Fit each scene to its current video length and lay the scenes end to end in order."""
+    laid_out, offset = [], 0.0
+    for scene in scenes:
+        scene = replace(scene, fit=fit(scene.video_s, scene.audio_s), offset_s=offset)
+        laid_out.append(scene)
         offset += scene.scene_s
-    return Plan(tuple(scenes))
+    return Plan(tuple(laid_out))
