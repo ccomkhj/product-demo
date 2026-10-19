@@ -61,19 +61,19 @@ def test_say_backend_writes_48k_mono_wav_per_scene_and_durations(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "args, env_extra, backend",
+    "args, voice, key",
     [
-        (["--backend", "openai"], {}, "openai"),
-        ([], {"ELEVENLABS_API_KEY": "el-test"}, "elevenlabs"),
+        (["--backend", "openai"], None, "OPENAI_API_KEY"),
+        ([], {"backend": "elevenlabs"}, "ELEVENLABS_API_KEY"),
     ],
 )
-def test_unbuilt_backend_fails_with_not_implemented(tmp_path, args, env_extra, backend):
-    spec_path = write_spec(tmp_path)
+def test_forced_http_backend_without_key_fails_clearly(tmp_path, args, voice, key):
+    spec_path = write_spec(tmp_path, voice=voice)
 
-    result = run_tts(spec_path, *args, env_extra=env_extra)
+    result = run_tts(spec_path, *args, env_extra={key: ""})
 
     assert result.returncode != 0
-    assert f"'{backend}' is not implemented" in result.stderr
+    assert f"{key} is not set" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "audio" / "durations.json").exists()
 

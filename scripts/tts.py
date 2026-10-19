@@ -9,7 +9,12 @@ Writes <out-dir>/<scene-id>.wav (48 kHz, mono, 16-bit PCM) for every scene and
 <out-dir>/durations.json mapping scene id -> seconds, in spec order. The default
 out-dir is the `audio/` folder next to the demo spec.
 
-Stdlib only; needs ffmpeg/ffprobe on PATH (and macOS `say` for the say backend).
+Backends: `say` (macOS), `openai` (gpt-4o-mini-tts, needs OPENAI_API_KEY) and
+`elevenlabs` (needs ELEVENLABS_API_KEY). `voice.voice` in the spec picks the voice:
+a `say -v` name, an OpenAI voice name (default alloy) or an ElevenLabs voice ID.
+
+Stdlib only (HTTP via urllib); needs ffmpeg/ffprobe on PATH (and macOS `say` for
+the say backend).
 """
 
 import argparse
@@ -18,6 +23,9 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from demo_spec import SpecError, choose_backend, load_spec
@@ -29,7 +37,7 @@ class TtsError(RuntimeError):
     """Raised when narration audio can't be produced."""
 
 
-def synth_say(text, voice, out_base, env):
+def synth_say(text, voice, out_base, env, transport):
     """Render ``text`` with macOS ``say`` and return the path of the raw audio file."""
     if voice:
         _check_say_voice(voice)
@@ -49,24 +57,115 @@ def _check_say_voice(voice):
         raise TtsError(f"unknown say voice {voice!r} (list voices with: say -v '?')")
 
 
-# Backend name -> synthesize(text, voice, out_base: Path, env) -> Path of raw audio.
+OPENAI_URL = "https://api.openai.com/v1/audio/speech"
+OPENAI_MODEL = "gpt-4o-mini-tts"
+OPENAI_DEFAULT_VOICE = "alloy"
+
+
+def synth_openai(text, voice, out_base, env, transport):
+    """Render ``text`` with OpenAI ``gpt-4o-mini-tts`` and return the raw WAV path."""
+    payload = {"model": OPENAI_MODEL, "voice": voice or OPENAI_DEFAULT_VOICE,
+               "input": text, "response_format": "wav"}
+    headers = {"Authorization": f"Bearer {env['OPENAI_API_KEY'].strip()}",
+               "Content-Type": "application/json"}
+    audio = _post("openai", transport, OPENAI_URL, headers, payload)
+    out_path = out_base.with_suffix(".wav")
+    out_path.write_bytes(audio)
+    return out_path
+
+
+ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128"
+ELEVENLABS_MODEL = "eleven_multilingual_v2"
+ELEVENLABS_DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # "George", an ElevenLabs premade voice
+
+
+def synth_elevenlabs(text, voice, out_base, env, transport):
+    """Render ``text`` with ElevenLabs; ``voice`` is a voice ID. Return the raw MP3 path."""
+    voice_id = urllib.parse.quote(voice or ELEVENLABS_DEFAULT_VOICE, safe="")
+    payload = {"text": text, "model_id": ELEVENLABS_MODEL}
+    headers = {"xi-api-key": env["ELEVENLABS_API_KEY"].strip(),
+               "Content-Type": "application/json", "Accept": "audio/mpeg"}
+    audio = _post("elevenlabs", transport, ELEVENLABS_URL.format(voice_id=voice_id), headers,
+                  payload)
+    out_path = out_base.with_suffix(".mp3")
+    out_path.write_bytes(audio)
+    return out_path
+
+
+def _post(backend, transport, url, headers, payload):
+    """Send a JSON POST through ``transport``; return the body or raise on a non-2xx status."""
+    status, body = transport(url, headers, json.dumps(payload).encode())
+    if not 200 <= status < 300:
+        raise TtsError(f"{backend} request failed with HTTP {status}: {_error_detail(body)}")
+    if not body:
+        raise TtsError(f"{backend} returned no audio")
+    return body
+
+
+def _error_detail(body):
+    """Pull a human-readable message out of an API error body (OpenAI or ElevenLabs shape)."""
+    text = body.decode("utf-8", errors="replace").strip()
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text[:300] or "(empty response)"
+    for key in ("error", "detail"):
+        value = data.get(key) if isinstance(data, dict) else None
+        if isinstance(value, dict):
+            value = value.get("message") or value
+        if value:
+            return str(value)[:300]
+    return text[:300]
+
+
+def urllib_transport(url, headers, body, timeout=120):
+    """POST ``body`` to ``url``; return (status, response bytes). Never raises on HTTP errors."""
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+    except OSError as exc:  # URLError, timeouts, connection resets
+        reason = getattr(exc, "reason", exc)
+        raise TtsError(f"could not reach {urllib.parse.urlsplit(url).netloc}: {reason}") from exc
+
+
+# Backend name -> synthesize(text, voice, out_base: Path, env, transport) -> Path of raw audio.
+# ``transport(url, headers, body) -> (status, bytes)`` is only used by the HTTP backends.
 SYNTHESIZERS = {
     "say": synth_say,
+    "openai": synth_openai,
+    "elevenlabs": synth_elevenlabs,
+}
+
+# Backend name -> environment variable holding its API key, checked before any request.
+API_KEYS = {
+    "openai": "OPENAI_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
 }
 
 
-def generate(spec, backend, out_dir, env):
+def generate(spec, backend, out_dir, env, transport=urllib_transport):
     """Write one normalised WAV per scene and durations.json; return the durations."""
     synthesize = SYNTHESIZERS.get(backend)
     if synthesize is None:
         raise TtsError(f"TTS backend {backend!r} is not implemented yet")
+    key_name = API_KEYS.get(backend)
+    if key_name and not (env.get(key_name) or "").strip():
+        raise TtsError(f"{key_name} is not set; the {backend} backend needs it "
+                       f"(set it, or pick another backend with --backend)")
     voice = (spec.get("voice") or {}).get("voice")
     out_dir.mkdir(parents=True, exist_ok=True)
     durations = {}
     with tempfile.TemporaryDirectory(prefix="tts-") as tmp:
         for scene in spec["scenes"]:
             scene_id = scene["id"]
-            raw = synthesize(scene["narration"].strip(), voice, Path(tmp) / scene_id, env)
+            try:
+                raw = synthesize(scene["narration"].strip(), voice, Path(tmp) / scene_id, env,
+                                 transport)
+            except TtsError as exc:
+                raise TtsError(f"scene {scene_id!r}: {exc}") from exc
             wav = out_dir / f"{scene_id}.wav"
             normalise_to_wav(raw, wav)
             durations[scene_id] = round(measure_seconds(wav), 3)
