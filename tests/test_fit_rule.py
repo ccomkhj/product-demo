@@ -1,6 +1,6 @@
 import pytest
 
-from edit_plan import fit
+from edit_plan import Strategy, fit
 
 
 def test_video_shorter_than_audio_holds_last_frame():
@@ -61,3 +61,13 @@ def test_much_longer_video_is_capped_at_one_and_a_half_and_audio_is_padded():
 def test_audio_length_must_be_positive():
     with pytest.raises(ValueError, match="audio length"):
         fit(video_s=1.0, audio_s=0.0)
+
+
+@pytest.mark.parametrize("video_s, strategy, text", [
+    (2.0, Strategy.HOLD, "hold"), (6.0, Strategy.SPEEDUP, "speedup"), (9.0, Strategy.PAD, "pad"),
+])
+def test_strategy_is_an_enum_that_still_reads_as_its_name(video_s, strategy, text):
+    result = fit(video_s=video_s, audio_s=5.0)
+
+    assert result.strategy is strategy
+    assert f"{result.strategy}" == text

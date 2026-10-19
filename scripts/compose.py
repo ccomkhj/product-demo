@@ -24,6 +24,7 @@ import shutil
 import sys
 import tempfile
 import textwrap
+from enum import StrEnum
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -37,6 +38,13 @@ X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv
 
 class ComposeError(RuntimeError):
     """Raised when an input is missing or an ffmpeg step fails."""
+
+
+class BurnMethod(StrEnum):
+    """How --burn-subs draws the subtitles (see docs/adr/0001-burn-subs-rsvg-fallback.md)."""
+
+    SUBTITLES = "subtitles"  # ffmpeg's libass `subtitles` filter
+    OVERLAY = "overlay"  # cue images rendered by rsvg-convert, overlaid by ffmpeg
 
 
 # --- command builders (pure: arguments in, argument list out) ---------------------------
@@ -183,21 +191,21 @@ def run(cmd, cwd=None):
 
 
 def burn_method():
-    """How subtitles can be burned in here: "subtitles" (libass), "overlay" (rsvg-convert) or None."""
+    """How subtitles can be burned in here: a BurnMethod, or None if neither tool is present."""
     try:
         filters = run(["ffmpeg", "-hide_banner", "-filters"])
     except ComposeError:
         filters = ""
     if any(line.split()[1:2] == ["subtitles"] for line in filters.splitlines()):
-        return "subtitles"
+        return BurnMethod.SUBTITLES
     if shutil.which("rsvg-convert"):
-        return "overlay"
+        return BurnMethod.OVERLAY
     return None
 
 
 def burn_subtitles(video, cues, viewport, method, out, work_dir):
     """Burn ``cues`` into ``video`` with libass, or as pre-rendered images overlaid by ffmpeg."""
-    if method == "subtitles":
+    if method is BurnMethod.SUBTITLES:
         (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
         run(subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve()),
             cwd=work_dir)

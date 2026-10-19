@@ -10,6 +10,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, replace
+from enum import StrEnum
 
 MAX_SPEED = 1.5
 FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
@@ -19,16 +20,19 @@ class PlanError(ValueError):
     """Raised when the timeline, durations and demo spec don't line up."""
 
 
+class Strategy(StrEnum):
+    """How a scene's video is fitted to its narration (string-compatible: "hold" etc.)."""
+
+    HOLD = "hold"  # freeze the last frame for ``hold_s``
+    SPEEDUP = "speedup"  # play at ``speed``x so it lasts exactly as long as the audio
+    PAD = "pad"  # play at MAX_SPEED and pad the audio with ``pad_s`` of silence
+
+
 @dataclass(frozen=True)
 class Fit:
-    """How one scene's video is fitted to its narration.
+    """How one scene's video is fitted to its narration (see Strategy)."""
 
-    strategy: "hold" (freeze the last frame for ``hold_s``), "speedup" (play at
-    ``speed``x so it lasts exactly as long as the audio) or "pad" (play at
-    MAX_SPEED and pad the audio with ``pad_s`` of silence).
-    """
-
-    strategy: str
+    strategy: Strategy
     speed: float
     hold_s: float
     pad_s: float
@@ -41,11 +45,11 @@ def fit(video_s, audio_s):
         raise ValueError(f"audio length must be positive, got {audio_s}")
     video_s = max(0.0, float(video_s))
     if video_s <= audio_s:
-        return Fit("hold", 1.0, audio_s - video_s, 0.0, audio_s)
+        return Fit(Strategy.HOLD, 1.0, audio_s - video_s, 0.0, audio_s)
     if video_s <= MAX_SPEED * audio_s:
-        return Fit("speedup", video_s / audio_s, 0.0, 0.0, audio_s)
+        return Fit(Strategy.SPEEDUP, video_s / audio_s, 0.0, 0.0, audio_s)
     scene_s = video_s / MAX_SPEED
-    return Fit("pad", MAX_SPEED, 0.0, scene_s - audio_s, scene_s)
+    return Fit(Strategy.PAD, MAX_SPEED, 0.0, scene_s - audio_s, scene_s)
 
 
 @dataclass(frozen=True)
