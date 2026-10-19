@@ -1,0 +1,57 @@
+import pytest
+
+from demo_spec import SpecError, choose_backend
+
+NO_VOICE = {"scenes": []}
+
+
+def test_say_is_used_when_no_flag_spec_or_keys():
+    assert choose_backend(None, NO_VOICE, {}) == "say"
+
+
+def test_openai_key_selects_openai():
+    assert choose_backend(None, NO_VOICE, {"OPENAI_API_KEY": "sk-x"}) == "openai"
+
+
+def test_elevenlabs_key_selects_elevenlabs():
+    assert choose_backend(None, NO_VOICE, {"ELEVENLABS_API_KEY": "el-x"}) == "elevenlabs"
+
+
+def test_elevenlabs_beats_openai_when_both_keys_set():
+    env = {"OPENAI_API_KEY": "sk-x", "ELEVENLABS_API_KEY": "el-x"}
+
+    assert choose_backend(None, NO_VOICE, env) == "elevenlabs"
+
+
+def test_empty_key_counts_as_unset():
+    assert choose_backend(None, NO_VOICE, {"OPENAI_API_KEY": ""}) == "say"
+
+
+def test_spec_backend_beats_env():
+    spec = {"voice": {"backend": "say"}, "scenes": []}
+    env = {"OPENAI_API_KEY": "sk-x", "ELEVENLABS_API_KEY": "el-x"}
+
+    assert choose_backend(None, spec, env) == "say"
+
+
+def test_flag_beats_spec_and_env():
+    spec = {"voice": {"backend": "openai"}, "scenes": []}
+    env = {"ELEVENLABS_API_KEY": "el-x"}
+
+    assert choose_backend("say", spec, env) == "say"
+
+
+def test_flag_beats_env_without_spec_backend():
+    assert choose_backend("openai", NO_VOICE, {}) == "openai"
+
+
+def test_unknown_backend_in_flag_is_rejected():
+    with pytest.raises(SpecError, match="unknown TTS backend 'polly'"):
+        choose_backend("polly", NO_VOICE, {})
+
+
+def test_unknown_backend_in_spec_is_rejected():
+    spec = {"voice": {"backend": "polly"}, "scenes": []}
+
+    with pytest.raises(SpecError, match="unknown TTS backend 'polly'"):
+        choose_backend(None, spec, {})
