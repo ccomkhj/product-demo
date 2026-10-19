@@ -1,0 +1,10 @@
+# Generated narration audio and raw/final recordings
+demos/**/*.wav
+demos/**/raw.mp4
+demos/**/final.mp4
+
+# Python / uv
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
