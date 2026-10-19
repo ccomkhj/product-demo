@@ -212,20 +212,20 @@ def load_timeline(path):
 
 
 def _scene_windows(timeline):
-    """Return {scene id: (start, end)} in raw-video seconds, validating the timeline."""
-    rec_starts = [e for e in timeline if e.get("event") == "rec_start"]
+    """Return {scene id: (start, end)} in raw-video seconds, validating the timeline.
+
+    Only the events after the last ``rec_start`` count: each re-recording appends
+    a new one, so earlier takes in the file are ignored.
+    """
+    rec_starts = [i for i, e in enumerate(timeline) if e.get("event") == "rec_start"]
     if not rec_starts:
         raise PlanError("timeline has no rec_start marker; run `mark.py TIMELINE rec_start` "
                         "right after starting the screencast")
-    if len(rec_starts) > 1:
-        raise PlanError("timeline has more than one rec_start marker")
-    origin_ms = _t_ms(rec_starts[0])
+    origin_ms = _t_ms(timeline[rec_starts[-1]])
 
     marks = {}
-    for event in timeline:
+    for event in timeline[rec_starts[-1] + 1:]:
         kind = event.get("event")
-        if kind == "rec_start":
-            continue
         if kind not in ("start", "end"):
             raise PlanError(f"timeline event {event!r} has unknown event type {kind!r}")
         scene_id = event.get("scene")

@@ -87,6 +87,22 @@ def test_measured_decimated_lengths_refit_scenes_and_shift_offsets():
     assert refitted.scenes[0].narration == "This is home."
 
 
+def test_a_re_recording_uses_only_the_events_after_the_last_rec_start():
+    # an aborted first take (rec_start at 0 s, home only, a stray 'bonus' scene), then the real one
+    first_take = [
+        {"event": "rec_start", "t_ms": 0},
+        {"scene": "home", "event": "start", "t_ms": 500},
+        {"scene": "home", "event": "end", "t_ms": 9_000},
+        {"scene": "bonus", "event": "start", "t_ms": 9_100},
+    ]
+
+    plan = build_plan(SPEC, [*first_take, *TIMELINE], DURATIONS)
+
+    assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
+        (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
+    ]
+
+
 def test_scene_carries_title_falling_back_to_id():
     plan = build_plan(SPEC, TIMELINE, DURATIONS)
 
