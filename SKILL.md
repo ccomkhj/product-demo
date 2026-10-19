@@ -13,8 +13,9 @@ scene out, drops the frozen frames and fits the rest to its narration.
 
 `<skill dir>` below is the directory of this file. Each demo lives in `demos/<slug>/`
 under the current working directory: the MCP can only write files (the screencast) inside
-its workspace roots, which is normally that directory. The scripts need only `python3` and
-`ffmpeg`.
+its workspace roots, which is normally that directory. The scripts need `python3` and
+`ffmpeg`. `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
+ffmpeg without libass (see `docs/adr/0001-burn-subs-rsvg-fallback.md`).
 
 ## 1. Interview
 
@@ -73,29 +74,21 @@ Done when `screencast_stop` has saved `demos/<slug>/raw.mp4` and the timeline ho
 python3 <skill dir>/scripts/compose.py demos/<slug>/demo.json [--burn-subs]
 ```
 
-It prints one line per scene (`<id>  <hold|speedup|pad>  <speed>x  video <s>s  audio <s>s
-scene <s>s`), then `total <s>s`, and writes `final.mp4`, `final.srt` and `transcript.md`.
-Burn subtitles in only when the user's platform can't load an `.srt`.
+It prints one line per scene with its fit (hold, speed-up or pad) and lengths, then a
+`total` line, and writes `final.mp4`, `final.srt` and `transcript.md` (output format in
+`references/verify.md`). Burn subtitles in only when the user's platform can't load an `.srt`.
 
 ## 7. Verify
 
 Check the result before handing it over; a fitting bug or a missing overlay is invisible
-in the compose output.
+in the compose output. Use the recipes in `references/verify.md`:
 
-- **Length:** `ffprobe -v error -show_entries format=duration -of csv=p=0 demos/<slug>/final.mp4`
-  must match the `total` line to within 1/30 s per scene (each scene is cut on a whole
-  frame).
-- **Frames:** for each scene, extract a contact sheet from the part of the scene where its
-  actions play (`offset` = sum of the earlier scenes' `scene` values; `active` = its
-  `video` value ÷ its speed; ffmpeg won't create `frames/`, so make it first):
-  `ffmpeg -v error -y -ss <offset> -t <active> -i demos/<slug>/final.mp4 -vf "fps=6/<active>,scale=960:-1,tile=2x3" -frames:v 1 demos/<slug>/frames/<scene-id>.png`
-  Look at each with Read. Confirm the page is the scene's page, the cursor sits on each
-  pointed target, clicks show a ripple, keys show their keycap and Back shows its badge.
-  A ripple lasts about 0.65 s, so six samples often miss it. Before calling one missing,
-  tile every frame of that second, cropped around the target:
-  `ffmpeg -v error -y -ss <time> -t 1 -i demos/<slug>/final.mp4 -vf "crop=480:270:<x-240>:<y-135>,tile=6x5" -frames:v 1 demos/<slug>/frames/<scene-id>-dense.png`
-  (`x`, `y` in output-video pixels). A link click with no ripple at all means the
-  hold-the-navigation step of the click recipe was skipped.
+- **Length:** ffprobe's duration of `final.mp4` must match compose's `total` line, not the
+  sum of the narration lengths, because padded scenes run longer than their narration.
+- **Frames:** a contact sheet per scene, taken where its actions play, must show the
+  scene's page, the cursor on each pointed target, a ripple per click, a keycap per key
+  press and a badge per Back. Effects are short (a ripple lasts about 0.65 s), so tile
+  every frame of the moment before calling one missing.
 
 Done when the length matches and every scene's expected overlay effect has been seen.
 

@@ -36,7 +36,7 @@ def test_mark_appends_wall_clock_events_for_a_recording(tmp_path):
     assert before <= stamps[0] and stamps[-1] <= after
 
 
-def test_rec_start_begins_a_fresh_timeline(tmp_path):
+def test_rec_start_appends_and_keeps_the_earlier_recording(tmp_path):
     timeline = tmp_path / "timeline.jsonl"
     run_mark(timeline, "rec_start")
     run_mark(timeline, "start", "home")
@@ -44,7 +44,7 @@ def test_rec_start_begins_a_fresh_timeline(tmp_path):
     result = run_mark(timeline, "rec_start")
 
     assert result.returncode == 0, result.stderr
-    assert [e["event"] for e in read_events(timeline)] == ["rec_start"]
+    assert [e["event"] for e in read_events(timeline)] == ["rec_start", "start", "rec_start"]
 
 
 def test_scene_event_needs_a_scene_id(tmp_path):

@@ -20,25 +20,31 @@ run separately by ``run``.
 """
 
 import argparse
-import json
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
+from enum import StrEnum
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from demo_spec import SpecError, load_spec
-from edit_plan import PlanError, build_plan, load_timeline
+import proc
+from demo_spec import SpecError, load_spec, read_json_object
+from edit_plan import FPS, PlanError, build_plan, load_timeline
+from tts import SAMPLE_RATE
 
-FPS = 30
-SAMPLE_RATE = 48000
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
 
 class ComposeError(RuntimeError):
     """Raised when an input is missing or an ffmpeg step fails."""
+
+
+class BurnMethod(StrEnum):
+    """How --burn-subs draws the subtitles (see docs/adr/0001-burn-subs-rsvg-fallback.md)."""
+
+    SUBTITLES = "subtitles"  # ffmpeg's libass `subtitles` filter
+    OVERLAY = "overlay"  # cue images rendered by rsvg-convert, overlaid by ffmpeg
 
 
 # --- command builders (pure: arguments in, argument list out) ---------------------------
@@ -181,32 +187,25 @@ def _srt_time(seconds):
 
 def run(cmd, cwd=None):
     """Run one command; raise ComposeError with ffmpeg's message if it fails."""
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
-    except FileNotFoundError as exc:
-        raise ComposeError(f"{cmd[0]} not found on PATH") from exc
-    if result.returncode != 0:
-        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
-        raise ComposeError(f"{cmd[0]} failed (exit {result.returncode}): {tail}")
-    return result.stdout
+    return proc.run(cmd, cwd=cwd, error=ComposeError)
 
 
 def burn_method():
-    """How subtitles can be burned in here: "subtitles" (libass), "overlay" (rsvg-convert) or None."""
+    """How subtitles can be burned in here: a BurnMethod, or None if neither tool is present."""
     try:
         filters = run(["ffmpeg", "-hide_banner", "-filters"])
     except ComposeError:
         filters = ""
     if any(line.split()[1:2] == ["subtitles"] for line in filters.splitlines()):
-        return "subtitles"
+        return BurnMethod.SUBTITLES
     if shutil.which("rsvg-convert"):
-        return "overlay"
+        return BurnMethod.OVERLAY
     return None
 
 
 def burn_subtitles(video, cues, viewport, method, out, work_dir):
     """Burn ``cues`` into ``video`` with libass, or as pre-rendered images overlaid by ffmpeg."""
-    if method == "subtitles":
+    if method is BurnMethod.SUBTITLES:
         (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
         run(subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve()),
             cwd=work_dir)
@@ -260,11 +259,10 @@ def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
-        frames = max(1, round(scene.scene_s * FPS))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        run(fit_cmd(decimated[scene.id], scene.fit, frames, spec["viewport"], fitted))
+        run(fit_cmd(decimated[scene.id], scene.fit, scene.frames, spec["viewport"], fitted))
         list_lines.append(f"file '{fitted.as_posix()}'")
-        audio_parts.append((wavs[scene.id], frames / FPS))
+        audio_parts.append((wavs[scene.id], scene.scene_s))
     list_file = work_dir / "scenes.txt"
     list_file.write_text("\n".join(list_lines) + "\n")
 
@@ -299,7 +297,9 @@ def main(argv=None):
     try:
         spec = load_spec(args.spec)
         timeline = load_timeline(args.timeline or demo_dir / "timeline.jsonl")
-        durations = _load_durations(args.durations or audio_dir / "durations.json")
+        durations = read_json_object(args.durations or audio_dir / "durations.json",
+                                     "durations", ComposeError, hint="; run tts.py first",
+                                     shape="a JSON object of scene id -> seconds")
         plan = build_plan(spec, timeline, durations)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
             plan = compose(spec, plan, args.raw or demo_dir / "raw.mp4", audio_dir, out, work_dir,
@@ -318,19 +318,6 @@ def main(argv=None):
     print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}")
     print(f"transcript\t{transcript_path}")
     return 0
-
-
-def _load_durations(path):
-    try:
-        with open(path, encoding="utf-8") as handle:
-            durations = json.load(handle)
-    except OSError as exc:
-        raise ComposeError(f"cannot read durations {path}: {exc.strerror}; run tts.py first") from exc
-    except json.JSONDecodeError as exc:
-        raise ComposeError(f"durations {path} is not valid JSON: {exc}") from exc
-    if not isinstance(durations, dict):
-        raise ComposeError(f"durations {path} must be a JSON object of scene id -> seconds")
-    return durations
 
 
 def _even(value):

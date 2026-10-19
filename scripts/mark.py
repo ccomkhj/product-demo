@@ -7,8 +7,8 @@ Usage:
 
 Each call appends one JSON line ``{"scene": ..., "event": ..., "t_ms": ...}``
 with the current wall-clock time in milliseconds. ``rec_start`` marks the moment
-the screencast started; it begins a new recording, so it replaces any earlier
-timeline in the file.
+the screencast started. A re-recording appends a new ``rec_start``; compose uses
+only the events after the last one, so earlier takes can stay in the file.
 """
 
 import argparse
@@ -31,16 +31,14 @@ def main(argv=None):
         if args.scene:
             parser.error("rec_start takes no scene id")
         record = {"event": "rec_start", "t_ms": _now_ms()}
-        mode = "w"
     else:
         if not args.scene:
             parser.error(f"'{args.event}' needs a scene id")
         record = {"scene": args.scene, "event": args.event, "t_ms": _now_ms()}
-        mode = "a"
 
     try:
         args.timeline.parent.mkdir(parents=True, exist_ok=True)
-        with args.timeline.open(mode, encoding="utf-8") as handle:
+        with args.timeline.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record) + "\n")
     except OSError as exc:
         print(f"mark: error: cannot write {args.timeline}: {exc.strerror}", file=sys.stderr)

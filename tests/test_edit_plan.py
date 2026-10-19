@@ -87,6 +87,22 @@ def test_measured_decimated_lengths_refit_scenes_and_shift_offsets():
     assert refitted.scenes[0].narration == "This is home."
 
 
+def test_a_re_recording_uses_only_the_events_after_the_last_rec_start():
+    # an aborted first take (rec_start at 0 s, home only, a stray 'bonus' scene), then the real one
+    first_take = [
+        {"event": "rec_start", "t_ms": 0},
+        {"scene": "home", "event": "start", "t_ms": 500},
+        {"scene": "home", "event": "end", "t_ms": 9_000},
+        {"scene": "bonus", "event": "start", "t_ms": 9_100},
+    ]
+
+    plan = build_plan(SPEC, [*first_take, *TIMELINE], DURATIONS)
+
+    assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
+        (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
+    ]
+
+
 def test_scene_carries_title_falling_back_to_id():
     plan = build_plan(SPEC, TIMELINE, DURATIONS)
 
@@ -135,6 +151,23 @@ def test_scene_in_timeline_but_not_in_spec_is_an_error():
     assert "not in the demo spec" in message
 
 
+@pytest.mark.parametrize("kind", ["start", "end"])
+def test_unknown_timeline_scene_with_one_marker_reports_not_in_the_spec(kind):
+    message = errors_for([*TIMELINE, {"scene": "bonus", "event": kind, "t_ms": 32_000}])
+
+    assert "'bonus'" in message
+    assert "not in the demo spec" in message
+
+
+def test_scene_ending_when_it_starts_has_its_own_error():
+    timeline = [dict(e) for e in TIMELINE]
+    timeline[4]["t_ms"] = 14_000  # details ends at 14 s, the moment it started
+
+    message = errors_for(timeline)
+
+    assert "scene 'details' has zero length: end equals start" in message
+
+
 def test_spec_scene_missing_from_timeline_is_an_error():
     timeline = [e for e in TIMELINE if e.get("scene") != "outro"]
 
@@ -179,3 +212,11 @@ def test_load_timeline_reads_jsonl_and_reports_bad_lines(tmp_path):
     ]
     with pytest.raises(PlanError, match="line 2"):
         load_timeline(bad)
+
+
+@pytest.mark.parametrize("seconds", [0, 0.0, -1.5, float("nan"), "4.0s", None, True, [4.0]])
+def test_unusable_scene_duration_is_an_error_naming_the_scene(seconds):
+    message = errors_for(TIMELINE, durations={**DURATIONS, "details": seconds})
+
+    assert "'details'" in message
+    assert "duration" in message

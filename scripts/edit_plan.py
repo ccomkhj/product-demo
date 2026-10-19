@@ -7,26 +7,32 @@ decimated video lengths and feeds them back through ``Plan.with_video_lengths``.
 """
 
 import json
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from enum import StrEnum
 
 MAX_SPEED = 1.5
+FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
 
 
 class PlanError(ValueError):
     """Raised when the timeline, durations and demo spec don't line up."""
 
 
+class Strategy(StrEnum):
+    """How a scene's video is fitted to its narration (string-compatible: "hold" etc.)."""
+
+    HOLD = "hold"  # freeze the last frame for ``hold_s``
+    SPEEDUP = "speedup"  # play at ``speed``x so it lasts exactly as long as the audio
+    PAD = "pad"  # play at MAX_SPEED and pad the audio with ``pad_s`` of silence
+
+
 @dataclass(frozen=True)
 class Fit:
-    """How one scene's video is fitted to its narration.
+    """How one scene's video is fitted to its narration (see Strategy)."""
 
-    strategy: "hold" (freeze the last frame for ``hold_s``), "speedup" (play at
-    ``speed``x so it lasts exactly as long as the audio) or "pad" (play at
-    MAX_SPEED and pad the audio with ``pad_s`` of silence).
-    """
-
-    strategy: str
+    strategy: Strategy
     speed: float
     hold_s: float
     pad_s: float
@@ -39,11 +45,11 @@ def fit(video_s, audio_s):
         raise ValueError(f"audio length must be positive, got {audio_s}")
     video_s = max(0.0, float(video_s))
     if video_s <= audio_s:
-        return Fit("hold", 1.0, audio_s - video_s, 0.0, audio_s)
+        return Fit(Strategy.HOLD, 1.0, audio_s - video_s, 0.0, audio_s)
     if video_s <= MAX_SPEED * audio_s:
-        return Fit("speedup", video_s / audio_s, 0.0, 0.0, audio_s)
+        return Fit(Strategy.SPEEDUP, video_s / audio_s, 0.0, 0.0, audio_s)
     scene_s = video_s / MAX_SPEED
-    return Fit("pad", MAX_SPEED, 0.0, scene_s - audio_s, scene_s)
+    return Fit(Strategy.PAD, MAX_SPEED, 0.0, scene_s - audio_s, scene_s)
 
 
 @dataclass(frozen=True)
@@ -54,6 +60,8 @@ class ScenePlan:
     audio_s: narration length. video_s: the video length the fit was worked out
     from (the trimmed length at first, the decimated length once measured).
     offset_s: where the scene starts in the final video (cumulative scene lengths).
+    The scene's length is the fit's length rounded to whole frames at FPS, which is
+    exactly what compose cuts, so offsets and subtitle cues don't drift.
     """
 
     id: str
@@ -67,8 +75,12 @@ class ScenePlan:
     offset_s: float
 
     @property
+    def frames(self):
+        return max(1, round(self.fit.scene_s * FPS))
+
+    @property
     def scene_s(self):
-        return self.fit.scene_s
+        return self.frames / FPS
 
     @property
     def end_s(self):
@@ -101,7 +113,8 @@ class Plan:
 
         A scene's *audio* length is shared out across its sentences by character
         count; each scene's cues start at its offset (cumulative *scene* lengths),
-        so padding in one scene pushes every later cue back.
+        so padding in one scene pushes every later cue back. A cue never runs
+        past the end of its (frame-rounded) scene, where compose cuts the audio.
         """
         cues = []
         for scene in self.scenes:
@@ -109,17 +122,16 @@ class Plan:
             total_chars = sum(len(s) for s in sentences)
             done = 0
             for sentence in sentences:
-                start = scene.offset_s + scene.audio_s * done / total_chars
+                start = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
                 done += len(sentence)
-                end = scene.offset_s + scene.audio_s * done / total_chars
+                end = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
                 cues.append(Cue(scene.id, start, end, sentence))
         return tuple(cues)
 
     def with_video_lengths(self, video_lengths):
         """Re-fit every scene with measured (decimated) video lengths, keyed by scene id."""
-        drafts = [dict(_draft_fields(scene), video_s=float(video_lengths[scene.id]))
-                  for scene in self.scenes]
-        return _assemble(drafts)
+        return _lay_out([replace(scene, video_s=float(video_lengths[scene.id]))
+                         for scene in self.scenes])
 
 
 # Words that end in a full stop without ending the sentence (compared lower-case,
@@ -165,29 +177,21 @@ def build_plan(spec, timeline, durations):
     Each scene is first fitted from its trimmed length; call
     ``Plan.with_video_lengths`` once the decimated lengths are measured.
     """
-    windows = _scene_windows(timeline)
-    spec_ids = [scene["id"] for scene in spec["scenes"]]
-    for scene_id in windows:
-        if scene_id not in spec_ids:
-            raise PlanError(f"timeline scene '{scene_id}' is not in the demo spec")
-    drafts = []
+    windows = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]})
+    scenes = []
     for scene in spec["scenes"]:
         scene_id = scene["id"]
         if scene_id not in windows:
             raise PlanError(f"scene '{scene_id}' has no start marker in the timeline")
-        if scene_id not in durations:
-            raise PlanError(f"scene '{scene_id}' is missing from the durations file")
+        audio_s = _duration(durations, scene_id)
         trim_start, trim_end = windows[scene_id]
-        drafts.append({
-            "id": scene_id,
-            "title": scene.get("title") or scene_id,
-            "narration": scene["narration"],
-            "trim_start": trim_start,
-            "trim_end": trim_end,
-            "audio_s": float(durations[scene_id]),
-            "video_s": trim_end - trim_start,
-        })
-    return _assemble(drafts)
+        video_s = trim_end - trim_start
+        scenes.append(ScenePlan(
+            id=scene_id, title=scene.get("title") or scene_id, narration=scene["narration"],
+            trim_start=trim_start, trim_end=trim_end, audio_s=audio_s, video_s=video_s,
+            fit=fit(video_s, audio_s), offset_s=0.0,
+        ))
+    return _lay_out(scenes)
 
 
 def load_timeline(path):
@@ -211,21 +215,22 @@ def load_timeline(path):
     return events
 
 
-def _scene_windows(timeline):
-    """Return {scene id: (start, end)} in raw-video seconds, validating the timeline."""
-    rec_starts = [e for e in timeline if e.get("event") == "rec_start"]
+def _scene_windows(timeline, spec_ids):
+    """Return {scene id: (start, end)} in raw-video seconds, validating the timeline.
+
+    Every timeline scene must be one of ``spec_ids``; that is checked before its
+    markers are paired, so a stray scene is reported as such. Only the events after the last ``rec_start`` count: each re-recording appends
+    a new one, so earlier takes in the file are ignored.
+    """
+    rec_starts = [i for i, e in enumerate(timeline) if e.get("event") == "rec_start"]
     if not rec_starts:
         raise PlanError("timeline has no rec_start marker; run `mark.py TIMELINE rec_start` "
                         "right after starting the screencast")
-    if len(rec_starts) > 1:
-        raise PlanError("timeline has more than one rec_start marker")
-    origin_ms = _t_ms(rec_starts[0])
+    origin_ms = _t_ms(timeline[rec_starts[-1]])
 
     marks = {}
-    for event in timeline:
+    for event in timeline[rec_starts[-1] + 1:]:
         kind = event.get("event")
-        if kind == "rec_start":
-            continue
         if kind not in ("start", "end"):
             raise PlanError(f"timeline event {event!r} has unknown event type {kind!r}")
         scene_id = event.get("scene")
@@ -236,6 +241,10 @@ def _scene_windows(timeline):
             raise PlanError(f"scene '{scene_id}' has more than one {kind} marker")
         scene_marks[kind] = _t_ms(event)
 
+    for scene_id in marks:
+        if scene_id not in spec_ids:
+            raise PlanError(f"timeline scene '{scene_id}' is not in the demo spec")
+
     windows = {}
     for scene_id, scene_marks in marks.items():
         if "start" not in scene_marks:
@@ -245,12 +254,29 @@ def _scene_windows(timeline):
         start_ms, end_ms = scene_marks["start"], scene_marks["end"]
         if start_ms < origin_ms:
             raise PlanError(f"scene '{scene_id}' starts before rec_start")
-        if end_ms <= start_ms:
+        if end_ms == start_ms:
+            raise PlanError(f"scene '{scene_id}' has zero length: end equals start "
+                            f"(t_ms={start_ms})")
+        if end_ms < start_ms:
             raise PlanError(
                 f"scene '{scene_id}' ends (t_ms={end_ms}) before it starts (t_ms={start_ms})"
             )
         windows[scene_id] = ((start_ms - origin_ms) / 1000, (end_ms - origin_ms) / 1000)
     return windows
+
+
+def _duration(durations, scene_id):
+    """The scene's narration length in seconds; a positive number or a PlanError."""
+    if scene_id not in durations:
+        raise PlanError(f"scene '{scene_id}' is missing from the durations file")
+    seconds = durations[scene_id]
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        raise PlanError(f"scene '{scene_id}' has a non-numeric duration {seconds!r} "
+                        f"in the durations file; re-run tts.py")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise PlanError(f"scene '{scene_id}' has duration {seconds!r}; it must be positive "
+                        f"(re-run tts.py)")
+    return float(seconds)
 
 
 def _t_ms(event):
@@ -260,24 +286,11 @@ def _t_ms(event):
     return t_ms
 
 
-def _draft_fields(scene):
-    return {
-        "id": scene.id,
-        "title": scene.title,
-        "narration": scene.narration,
-        "trim_start": scene.trim_start,
-        "trim_end": scene.trim_end,
-        "audio_s": scene.audio_s,
-        "video_s": scene.video_s,
-    }
-
-
-def _assemble(drafts):
-    """Fit each draft scene and lay the scenes end to end in order."""
-    scenes = []
-    offset = 0.0
-    for draft in drafts:
-        scene_fit = fit(draft["video_s"], draft["audio_s"])
-        scenes.append(ScenePlan(**draft, fit=scene_fit, offset_s=offset))
-        offset += scene_fit.scene_s
-    return Plan(tuple(scenes))
+def _lay_out(scenes):
+    """Fit each scene to its current video length and lay the scenes end to end in order."""
+    laid_out, offset = [], 0.0
+    for scene in scenes:
+        scene = replace(scene, fit=fit(scene.video_s, scene.audio_s), offset_s=offset)
+        laid_out.append(scene)
+        offset += scene.scene_s
+    return Plan(tuple(laid_out))

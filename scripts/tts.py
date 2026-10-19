@@ -20,7 +20,6 @@ the say backend).
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -28,16 +27,17 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from demo_spec import SpecError, choose_backend, load_spec
+import proc
+from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
 
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 48000  # every narration WAV is 48 kHz mono 16-bit PCM; compose resamples to it
 
 
 class TtsError(RuntimeError):
     """Raised when narration audio can't be produced."""
 
 
-def synth_say(text, voice, out_base, env, transport):
+def synth_say(text, voice, out_base, _env, _transport):
     """Render ``text`` with macOS ``say`` and return the path of the raw audio file."""
     if voice:
         _check_say_voice(voice)
@@ -46,12 +46,12 @@ def synth_say(text, voice, out_base, env, transport):
     if voice:
         command += ["-v", voice]
     command.append(text)
-    _run(command, "say")
+    _run(command)
     return out_path
 
 
 def _check_say_voice(voice):
-    listing = _run(["say", "-v", "?"], "say").stdout
+    listing = _run(["say", "-v", "?"])
     names = {line.split("  ")[0].strip() for line in listing.splitlines() if line.strip()}
     if voice not in names:
         raise TtsError(f"unknown say voice {voice!r} (list voices with: say -v '?')")
@@ -148,9 +148,7 @@ API_KEYS = {
 
 def generate(spec, backend, out_dir, env, transport=urllib_transport):
     """Write one normalised WAV per scene and durations.json; return the durations."""
-    synthesize = SYNTHESIZERS.get(backend)
-    if synthesize is None:
-        raise TtsError(f"TTS backend {backend!r} is not implemented yet")
+    synthesize = SYNTHESIZERS[backend]
     key_name = API_KEYS.get(backend)
     if key_name and not (env.get(key_name) or "").strip():
         raise TtsError(f"{key_name} is not set; the {backend} backend needs it "
@@ -177,7 +175,6 @@ def normalise_to_wav(source, target):
     _run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
          "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(target)],
-        "ffmpeg",
     )
 
 
@@ -185,28 +182,21 @@ def measure_seconds(path):
     output = _run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        "ffprobe",
-    ).stdout.strip()
+    ).strip()
     try:
         return float(output)
     except ValueError as exc:
         raise TtsError(f"ffprobe could not measure {path}: {output!r}") from exc
 
 
-def _run(command, tool):
-    try:
-        result = subprocess.run(command, capture_output=True, text=True)
-    except FileNotFoundError as exc:
-        raise TtsError(f"{tool} not found on PATH") from exc
-    if result.returncode != 0:
-        raise TtsError(f"{tool} failed: {result.stderr.strip() or result.returncode}")
-    return result
+def _run(command):
+    return proc.run(command, error=TtsError)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("spec", type=Path, help="path to the demo spec (demo.json)")
-    parser.add_argument("--backend", choices=sorted(("say", "openai", "elevenlabs")),
+    parser.add_argument("--backend", choices=BACKENDS,
                         help="force a TTS backend (default: voice.backend, then auto-detect)")
     parser.add_argument("--out-dir", type=Path,
                         help="where to write WAVs and durations.json (default: <spec dir>/audio)")

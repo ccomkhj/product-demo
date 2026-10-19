@@ -85,8 +85,8 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
    `filePath`. The result names the temp file
    (`Screencast recording started. The recording will be saved to /…/screencast.mp4`).
    After stopping, move that file to `demos/<slug>/raw.mp4`.
-6. Immediately mark the recording start. This truncates the timeline, so every recording
-   starts a fresh one:
+6. Immediately mark the recording start. It appends to the timeline; compose uses only the
+   events after the last `rec_start`, so a re-recording needs no cleanup:
    `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start`
 
 Then, for each scene in spec order:
