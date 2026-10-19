@@ -20,6 +20,28 @@ SCENES = [
     ("long", (9.5, 12.0), 1.0),    # 2.5 s vs 1.0 s: capped at 1.5x, audio padded
 ]
 EXPECTED_TOTAL = 3.0 + 2.0 + 2.5 / 1.5
+NARRATION = {
+    "frozen": "Nothing moves here. Dr. Who waits.",  # 19 + 14 chars share 3.0 s
+    "brisk": "Scene brisk.",
+    "long": "Scene long.",
+}
+# Cues follow the narration audio; offsets are cumulative scene lengths (3.0, 5.0).
+EXPECTED_SRT = """1
+00:00:00,000 --> 00:00:01,727
+Nothing moves here.
+
+2
+00:00:01,727 --> 00:00:03,000
+Dr. Who waits.
+
+3
+00:00:03,000 --> 00:00:05,000
+Scene brisk.
+
+4
+00:00:05,000 --> 00:00:06,000
+Scene long.
+"""
 
 
 def ffmpeg(*args):
@@ -40,7 +62,7 @@ def write_demo(demo_dir, rec_start_ms=1_700_000_000_000):
         "viewport": {"width": 320, "height": 240},
         "scenes": [
             {"id": sid, "title": sid.title(), "url": "https://example.com", "actions": [],
-             "narration": f"Scene {sid}."}
+             "narration": NARRATION[sid]}
             for sid, _, _ in SCENES
         ],
     }
@@ -94,6 +116,48 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path):
     assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert float(kinds["audio"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
+    assert (tmp_path / "final.srt").read_text() == EXPECTED_SRT
+    transcript = (tmp_path / "transcript.md").read_text()
+    assert transcript.startswith("# Smoke\n")
+    headings = [line for line in transcript.splitlines() if line.startswith("## ")]
+    assert headings == ["## Frozen", "## Brisk", "## Long"]
+    assert all(text in transcript for text in NARRATION.values())
+
+
+def bottom_and_top_difference(a, b, width=320, height=240, at=0.5):
+    """Mean absolute luma difference between two videos' frames at ``at`` s: (bottom, top)."""
+    frames = []
+    for path in (a, b):
+        frames.append(subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
+             "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+            capture_output=True, check=True,
+        ).stdout)
+    rows = len(frames[0]) // width
+    assert rows == height
+    def mean_diff(first_row, last_row):
+        span = slice(first_row * width, last_row * width)
+        return sum(abs(x - y) for x, y in zip(frames[0][span], frames[1][span])) / len(frames[0][span])
+    return mean_diff(height * 3 // 4, height), mean_diff(0, height // 4)
+
+
+@needs_ffmpeg
+def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
+    audio = write_demo(tmp_path)
+    make_media(tmp_path, audio)
+
+    plain = run_compose(tmp_path / "demo.json")
+    burned = run_compose(tmp_path / "demo.json", "--burn-subs", "--out", tmp_path / "burned.mp4")
+
+    assert plain.returncode == 0, plain.stderr
+    assert burned.returncode == 0, burned.stderr
+    info = probe(tmp_path / "burned.mp4")
+    assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
+    assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
+    assert (tmp_path / "burned.srt").read_text() == EXPECTED_SRT
+    # the burned-in subtitle changes the bottom of the frame, not the top
+    bottom, top = bottom_and_top_difference(tmp_path / "final.mp4", tmp_path / "burned.mp4")
+    assert bottom > 5 * max(top, 1.0)
 
 
 def test_compose_reports_timeline_errors_without_a_traceback(tmp_path):

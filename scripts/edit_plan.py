@@ -7,6 +7,7 @@ decimated video lengths and feeds them back through ``Plan.with_video_lengths``.
 """
 
 import json
+import re
 from dataclasses import dataclass
 
 MAX_SPEED = 1.5
@@ -75,6 +76,16 @@ class ScenePlan:
 
 
 @dataclass(frozen=True)
+class Cue:
+    """One subtitle cue: a narration sentence with absolute times in the final video."""
+
+    scene_id: str
+    start_s: float
+    end_s: float
+    text: str
+
+
+@dataclass(frozen=True)
 class Plan:
     """The scenes in spec order, laid end to end."""
 
@@ -84,11 +95,68 @@ class Plan:
     def total_s(self):
         return self.scenes[-1].end_s if self.scenes else 0.0
 
+    @property
+    def cues(self):
+        """Subtitle cues for every scene, one per narration sentence, in final-video time.
+
+        A scene's *audio* length is shared out across its sentences by character
+        count; each scene's cues start at its offset (cumulative *scene* lengths),
+        so padding in one scene pushes every later cue back.
+        """
+        cues = []
+        for scene in self.scenes:
+            sentences = split_sentences(scene.narration)
+            total_chars = sum(len(s) for s in sentences)
+            done = 0
+            for sentence in sentences:
+                start = scene.offset_s + scene.audio_s * done / total_chars
+                done += len(sentence)
+                end = scene.offset_s + scene.audio_s * done / total_chars
+                cues.append(Cue(scene.id, start, end, sentence))
+        return tuple(cues)
+
     def with_video_lengths(self, video_lengths):
         """Re-fit every scene with measured (decimated) video lengths, keyed by scene id."""
         drafts = [dict(_draft_fields(scene), video_s=float(video_lengths[scene.id]))
                   for scene in self.scenes]
         return _assemble(drafts)
+
+
+# Words that end in a full stop without ending the sentence (compared lower-case,
+# without the stop). Dotted forms such as "e.g." and "U.S." and single-letter
+# initials are recognised without being listed.
+ABBREVIATIONS = frozenset({
+    "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "st", "mt", "vs", "etc", "approx",
+    "fig", "inc", "ltd", "co", "corp", "dept",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+})
+
+_BOUNDARY = re.compile(r"[.!?]+[\"')\]]*\s+")
+
+
+def split_sentences(text):
+    """Split narration into sentences without breaking after abbreviations like "e.g." or "Dr."."""
+    text = " ".join(text.split())
+    sentences, start = [], 0
+    for match in _BOUNDARY.finditer(text):
+        candidate = text[start:match.end()].strip()
+        if match.group().startswith(".") and _ends_with_abbreviation(candidate):
+            continue
+        sentences.append(candidate)
+        start = match.end()
+    if text[start:].strip():
+        sentences.append(text[start:].strip())
+    return sentences
+
+
+def _ends_with_abbreviation(candidate):
+    word = candidate.rstrip("\"')]").split(" ")[-1].lstrip("\"'([")
+    stem = word[:-1] if word.endswith(".") else word
+    if "." in stem:  # e.g. / i.e. / U.S.
+        return True
+    if len(stem) == 1 and stem.isalpha():  # an initial, as in "J. Smith"
+        return True
+    return stem.lower() in ABBREVIATIONS
 
 
 def build_plan(spec, timeline, durations):
