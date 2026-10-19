@@ -20,7 +20,6 @@ the say backend).
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -28,9 +27,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import proc
 from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
 
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 48000  # every narration WAV is 48 kHz mono 16-bit PCM; compose resamples to it
 
 
 class TtsError(RuntimeError):
@@ -46,12 +46,12 @@ def synth_say(text, voice, out_base, _env, _transport):
     if voice:
         command += ["-v", voice]
     command.append(text)
-    _run(command, "say")
+    _run(command)
     return out_path
 
 
 def _check_say_voice(voice):
-    listing = _run(["say", "-v", "?"], "say").stdout
+    listing = _run(["say", "-v", "?"])
     names = {line.split("  ")[0].strip() for line in listing.splitlines() if line.strip()}
     if voice not in names:
         raise TtsError(f"unknown say voice {voice!r} (list voices with: say -v '?')")
@@ -175,7 +175,6 @@ def normalise_to_wav(source, target):
     _run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
          "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(target)],
-        "ffmpeg",
     )
 
 
@@ -183,22 +182,15 @@ def measure_seconds(path):
     output = _run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        "ffprobe",
-    ).stdout.strip()
+    ).strip()
     try:
         return float(output)
     except ValueError as exc:
         raise TtsError(f"ffprobe could not measure {path}: {output!r}") from exc
 
 
-def _run(command, tool):
-    try:
-        result = subprocess.run(command, capture_output=True, text=True)
-    except FileNotFoundError as exc:
-        raise TtsError(f"{tool} not found on PATH") from exc
-    if result.returncode != 0:
-        raise TtsError(f"{tool} failed: {result.stderr.strip() or result.returncode}")
-    return result
+def _run(command):
+    return proc.run(command, error=TtsError)
 
 
 def main(argv=None):

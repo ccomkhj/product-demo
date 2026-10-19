@@ -20,19 +20,18 @@ run separately by ``run``.
 """
 
 import argparse
-import json
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-from demo_spec import SpecError, load_spec
+import proc
+from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
+from tts import SAMPLE_RATE
 
-SAMPLE_RATE = 48000
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
 
@@ -180,14 +179,7 @@ def _srt_time(seconds):
 
 def run(cmd, cwd=None):
     """Run one command; raise ComposeError with ffmpeg's message if it fails."""
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
-    except FileNotFoundError as exc:
-        raise ComposeError(f"{cmd[0]} not found on PATH") from exc
-    if result.returncode != 0:
-        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
-        raise ComposeError(f"{cmd[0]} failed (exit {result.returncode}): {tail}")
-    return result.stdout
+    return proc.run(cmd, cwd=cwd, error=ComposeError)
 
 
 def burn_method():
@@ -297,7 +289,9 @@ def main(argv=None):
     try:
         spec = load_spec(args.spec)
         timeline = load_timeline(args.timeline or demo_dir / "timeline.jsonl")
-        durations = _load_durations(args.durations or audio_dir / "durations.json")
+        durations = read_json_object(args.durations or audio_dir / "durations.json",
+                                     "durations", ComposeError, hint="; run tts.py first",
+                                     shape="a JSON object of scene id -> seconds")
         plan = build_plan(spec, timeline, durations)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
             plan = compose(spec, plan, args.raw or demo_dir / "raw.mp4", audio_dir, out, work_dir,
@@ -316,19 +310,6 @@ def main(argv=None):
     print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}")
     print(f"transcript\t{transcript_path}")
     return 0
-
-
-def _load_durations(path):
-    try:
-        with open(path, encoding="utf-8") as handle:
-            durations = json.load(handle)
-    except OSError as exc:
-        raise ComposeError(f"cannot read durations {path}: {exc.strerror}; run tts.py first") from exc
-    except json.JSONDecodeError as exc:
-        raise ComposeError(f"durations {path} is not valid JSON: {exc}") from exc
-    if not isinstance(durations, dict):
-        raise ComposeError(f"durations {path} must be a JSON object of scene id -> seconds")
-    return durations
 
 
 def _even(value):

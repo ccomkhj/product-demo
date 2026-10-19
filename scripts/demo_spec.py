@@ -12,18 +12,27 @@ class SpecError(ValueError):
     """Raised when a demo spec is malformed."""
 
 
-def load_spec(path):
-    """Read a demo spec JSON file and return it validated, with defaults filled in."""
+def read_json_object(path, label, error, hint="", shape="a JSON object"):
+    """Read a JSON file that must hold an object; raise ``error`` naming ``label`` otherwise.
+
+    ``hint`` is appended to the cannot-read message (e.g. "; run tts.py first");
+    ``shape`` describes the expected object in the wrong-type message.
+    """
     try:
         with open(path, encoding="utf-8") as handle:
-            spec = json.load(handle)
+            data = json.load(handle)
     except OSError as exc:
-        raise SpecError(f"cannot read demo spec {path}: {exc.strerror}") from exc
+        raise error(f"cannot read {label} {path}: {exc.strerror}{hint}") from exc
     except json.JSONDecodeError as exc:
-        raise SpecError(f"demo spec {path} is not valid JSON: {exc}") from exc
-    if not isinstance(spec, dict):
-        raise SpecError(f"demo spec {path} must be a JSON object")
-    return validate_spec(spec)
+        raise error(f"{label} {path} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise error(f"{label} {path} must be {shape}")
+    return data
+
+
+def load_spec(path):
+    """Read a demo spec JSON file and return it validated, with defaults filled in."""
+    return validate_spec(read_json_object(path, "demo spec", SpecError))
 
 
 def validate_spec(spec):
