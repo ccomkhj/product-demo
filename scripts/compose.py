@@ -2,10 +2,15 @@
 
 Usage:
     python3 scripts/compose.py demos/<slug>/demo.json [--raw RAW] [--timeline TIMELINE]
-        [--audio-dir DIR] [--durations DURATIONS] [--out FINAL]
+        [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--burn-subs]
 
 Defaults are relative to the demo spec's folder: raw.mp4, timeline.jsonl,
 audio/ (with <scene-id>.wav), audio/durations.json and final.mp4.
+
+Next to FINAL it also writes FINAL's name with .srt (one cue per narration
+sentence) and transcript.md (scene titles + narration). --burn-subs also draws
+the subtitles into the video: with libass when ffmpeg has the `subtitles`
+filter, otherwise as cue images rendered by rsvg-convert and overlaid.
 
 Each scene is cut from the raw recording, its frozen frames are dropped with
 mpdecimate, and it is fitted to its narration (see edit_plan.fit). The scenes
@@ -16,10 +21,13 @@ run separately by ``run``.
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from demo_spec import SpecError, load_spec
 from edit_plan import PlanError, build_plan, load_timeline
@@ -88,18 +96,93 @@ def concat_audio_cmd(wavs_and_lengths, out):
                    "-c:a", "pcm_s16le", str(out)]
 
 
+def subtitles_burn_cmd(video, srt_name, out):
+    """Burn an .srt with libass (the ``subtitles`` filter); run with cwd = the srt's folder."""
+    style = ("FontName=Helvetica,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+             "BorderStyle=1,Outline=1.5,Shadow=0,MarginV=18")
+    return ["ffmpeg", "-v", "error", "-y", "-i", str(video),
+            "-vf", f"subtitles=filename={srt_name}:force_style='{style}'",
+            "-an", "-r", str(FPS), *X264, str(out)]
+
+
+def overlay_burn_cmd(video, overlays, out):
+    """Burn pre-rendered cue images: ``overlays`` is [(png, start_s, end_s, y)], one per cue."""
+    args = ["ffmpeg", "-v", "error", "-y", "-i", str(video)]
+    for png, *_ in overlays:
+        args += ["-i", str(png)]
+    chain, last = [], "0:v"
+    for index, (_, start, end, y) in enumerate(overlays, start=1):
+        chain.append(f"[{last}][{index}:v]overlay=x=0:y={y}:"
+                     f"enable='between(t,{start:.3f},{end:.3f})'[v{index}]")
+        last = f"v{index}"
+    return args + ["-filter_complex", ";".join(chain), "-map", f"[{last}]",
+                   "-an", "-r", str(FPS), *X264, str(out)]
+
+
+def svg_to_png_cmd(svg, png):
+    return ["rsvg-convert", "-o", str(png), str(svg)]
+
+
 def mux_cmd(video, audio, out):
     return ["ffmpeg", "-v", "error", "-y", "-i", str(video), "-i", str(audio),
             "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(out)]
 
 
+# --- text outputs (pure) -------------------------------------------------------------
+
+def srt_text(cues):
+    """Render subtitle cues as a SubRip (.srt) document."""
+    blocks = [f"{n}\n{_srt_time(cue.start_s)} --> {_srt_time(cue.end_s)}\n{cue.text}\n"
+              for n, cue in enumerate(cues, start=1)]
+    return "\n".join(blocks)
+
+
+def transcript_text(title, plan):
+    """Render the narration as Markdown: the demo title, then each scene's title and narration."""
+    lines = [f"# {title}", ""]
+    for scene in plan.scenes:
+        lines += [f"## {scene.title}", "", scene.narration.strip(), ""]
+    return "\n".join(lines)
+
+
+def cue_svg(text, width, height):
+    """Render one cue as a transparent ``width``-wide SVG strip of centred, outlined text.
+
+    Returns (svg, strip_height). Used to burn subtitles when ffmpeg lacks libass.
+    """
+    font = max(14, round(height * 0.045))
+    line_h = round(font * 1.3)
+    per_line = max(10, int(width * 0.85 / (font * 0.55)))
+    lines = textwrap.wrap(text, per_line) or [""]
+    strip_h = line_h * len(lines) + font
+    tspans = "".join(
+        f'<tspan x="{width / 2:.0f}" y="{font // 2 + line_h * (i + 1) - (line_h - font)}">'
+        f"{xml_escape(line)}</tspan>"
+        for i, line in enumerate(lines)
+    )
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{strip_h}">'
+           f'<text font-family="Helvetica, Arial, sans-serif" font-size="{font}" '
+           f'font-weight="600" text-anchor="middle" fill="white" stroke="black" '
+           f'stroke-width="{max(2, font // 6)}" stroke-linejoin="round" paint-order="stroke">'
+           f"{tspans}</text></svg>")
+    return svg, strip_h
+
+
+def _srt_time(seconds):
+    ms = max(0, round(seconds * 1000))
+    hours, ms = divmod(ms, 3_600_000)
+    minutes, ms = divmod(ms, 60_000)
+    secs, ms = divmod(ms, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
+
+
 # --- runner ---------------------------------------------------------------------------
 
-def run(cmd):
+def run(cmd, cwd=None):
     """Run one command; raise ComposeError with ffmpeg's message if it fails."""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
     except FileNotFoundError as exc:
         raise ComposeError(f"{cmd[0]} not found on PATH") from exc
     if result.returncode != 0:
@@ -108,9 +191,52 @@ def run(cmd):
     return result.stdout
 
 
-def compose(spec, plan, raw, audio_dir, out, work_dir):
-    """Run the ffmpeg pipeline for ``plan``; return the plan re-fitted to measured lengths."""
+def burn_method():
+    """How subtitles can be burned in here: "subtitles" (libass), "overlay" (rsvg-convert) or None."""
+    try:
+        filters = run(["ffmpeg", "-hide_banner", "-filters"])
+    except ComposeError:
+        filters = ""
+    if any(line.split()[1:2] == ["subtitles"] for line in filters.splitlines()):
+        return "subtitles"
+    if shutil.which("rsvg-convert"):
+        return "overlay"
+    return None
+
+
+def burn_subtitles(video, cues, viewport, method, out, work_dir):
+    """Burn ``cues`` into ``video`` with libass, or as pre-rendered images overlaid by ffmpeg."""
+    if method == "subtitles":
+        (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
+        run(subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve()),
+            cwd=work_dir)
+        return
+    width, height = _even(viewport["width"]), _even(viewport["height"])
+    overlays = []
+    for index, cue in enumerate(cues):
+        svg, strip_h = cue_svg(cue.text, width, height)
+        svg_path, png = work_dir / f"cue-{index:03d}.svg", work_dir / f"cue-{index:03d}.png"
+        svg_path.write_text(svg, encoding="utf-8")
+        run(svg_to_png_cmd(svg_path, png))
+        y = max(0, height - strip_h - round(height * 0.04))
+        overlays.append((png, cue.start_s, cue.end_s, y))
+    if not overlays:
+        shutil.copyfile(video, out)
+        return
+    run(overlay_burn_cmd(video, overlays, out))
+
+
+def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
+    """Run the ffmpeg pipeline for ``plan``; return the plan re-fitted to measured lengths.
+
+    With ``burn_subs`` the plan's subtitle cues are drawn into the video.
+    """
     raw, audio_dir, work_dir = Path(raw), Path(audio_dir), Path(work_dir)
+    method = burn_method() if burn_subs else None
+    if burn_subs and method is None:
+        raise ComposeError("--burn-subs needs an ffmpeg with libass (the `subtitles` filter) "
+                           "or rsvg-convert (`brew install librsvg`); drop the flag to get "
+                           "the subtitles only as a separate .srt")
     if not raw.is_file():
         raise ComposeError(f"raw recording not found: {raw}")
     wavs = {scene.id: audio_dir / f"{scene.id}.wav" for scene in plan.scenes}
@@ -145,6 +271,10 @@ def compose(spec, plan, raw, audio_dir, out, work_dir):
     video, audio = work_dir / "video.mp4", work_dir / "audio.wav"
     run(concat_video_cmd(list_file, video))
     run(concat_audio_cmd(audio_parts, audio))
+    if burn_subs:
+        burned = work_dir / "burned.mp4"
+        burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir)
+        video = burned
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     run(mux_cmd(video, audio, out))
     return plan
@@ -158,18 +288,25 @@ def main(argv=None):
     parser.add_argument("--audio-dir", type=Path, help="default: <demo>/audio")
     parser.add_argument("--durations", type=Path, help="default: <audio-dir>/durations.json")
     parser.add_argument("--out", type=Path, help="default: <demo>/final.mp4")
+    parser.add_argument("--burn-subs", action="store_true",
+                        help="also burn the subtitles into the video (the .srt is always written)")
     args = parser.parse_args(argv)
 
     demo_dir = args.spec.parent
     audio_dir = args.audio_dir or demo_dir / "audio"
+    out = args.out or demo_dir / "final.mp4"
+    srt_path, transcript_path = out.with_suffix(".srt"), out.parent / "transcript.md"
     try:
         spec = load_spec(args.spec)
         timeline = load_timeline(args.timeline or demo_dir / "timeline.jsonl")
         durations = _load_durations(args.durations or audio_dir / "durations.json")
         plan = build_plan(spec, timeline, durations)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
-            plan = compose(spec, plan, args.raw or demo_dir / "raw.mp4", audio_dir,
-                           args.out or demo_dir / "final.mp4", work_dir)
+            plan = compose(spec, plan, args.raw or demo_dir / "raw.mp4", audio_dir, out, work_dir,
+                           burn_subs=args.burn_subs)
+        srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
+        transcript_path.write_text(transcript_text(spec.get("title") or demo_dir.name, plan),
+                                   encoding="utf-8")
     except (SpecError, PlanError, ComposeError) as exc:
         print(f"compose: error: {exc}", file=sys.stderr)
         return 1
@@ -177,7 +314,9 @@ def main(argv=None):
     for scene in plan.scenes:
         print(f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
               f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s")
-    print(f"total\t{plan.total_s:.3f}s\t{args.out or demo_dir / 'final.mp4'}")
+    print(f"total\t{plan.total_s:.3f}s\t{out}")
+    print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}")
+    print(f"transcript\t{transcript_path}")
     return 0
 
 
