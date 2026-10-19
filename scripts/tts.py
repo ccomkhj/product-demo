@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from demo_spec import SpecError, choose_backend, load_spec
+from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
 
 SAMPLE_RATE = 48000
 
@@ -37,7 +37,7 @@ class TtsError(RuntimeError):
     """Raised when narration audio can't be produced."""
 
 
-def synth_say(text, voice, out_base, env, transport):
+def synth_say(text, voice, out_base, _env, _transport):
     """Render ``text`` with macOS ``say`` and return the path of the raw audio file."""
     if voice:
         _check_say_voice(voice)
@@ -148,9 +148,7 @@ API_KEYS = {
 
 def generate(spec, backend, out_dir, env, transport=urllib_transport):
     """Write one normalised WAV per scene and durations.json; return the durations."""
-    synthesize = SYNTHESIZERS.get(backend)
-    if synthesize is None:
-        raise TtsError(f"TTS backend {backend!r} is not implemented yet")
+    synthesize = SYNTHESIZERS[backend]
     key_name = API_KEYS.get(backend)
     if key_name and not (env.get(key_name) or "").strip():
         raise TtsError(f"{key_name} is not set; the {backend} backend needs it "
@@ -206,7 +204,7 @@ def _run(command, tool):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("spec", type=Path, help="path to the demo spec (demo.json)")
-    parser.add_argument("--backend", choices=sorted(("say", "openai", "elevenlabs")),
+    parser.add_argument("--backend", choices=BACKENDS,
                         help="force a TTS backend (default: voice.backend, then auto-detect)")
     parser.add_argument("--out-dir", type=Path,
                         help="where to write WAVs and durations.json (default: <spec dir>/audio)")
