@@ -1,0 +1,144 @@
+# Chrome DevTools MCP recipes
+
+The exact call sequences to use when recording a demo. Follow them literally. Every call
+below was run against the Chrome DevTools MCP (`mcp__chrome-devtools__*`). If the tools
+are deferred, load them first with
+`ToolSearch("select:mcp__chrome-devtools__list_pages,mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__screencast_start,mcp__chrome-devtools__screencast_stop")`.
+
+Every tool takes `pageId`. Get it once with `list_pages` (the selected page is marked
+`[selected]`) and use the same id for the whole recording.
+
+## Rules
+
+- **One tab.** The screencast records one page. Never call `new_page`. Follow links in the
+  same tab, and avoid targets that open a new window.
+- **Re-inject the overlay after every navigation**: after every `navigate_page`
+  (url, back, forward, reload) and after any `click` whose result says
+  `Page navigated to ...`. Injecting again on a page that already has the overlay is safe:
+  it returns `"overlay already present"`.
+- **Point before every click.** `__demo.point` makes the fake cursor glide to the target,
+  so viewers see where the click is going.
+- **Badge before Back.** Show `◀ Back` before `navigate_page` with `type: "back"`.
+- **Resolve targets at record time.** Element targets in the demo spec are natural-language
+  descriptions. Take a fresh `take_snapshot` on each page and pick the uid that matches the
+  description. Never reuse uids from an earlier run or an earlier snapshot of a page that
+  has since changed: uids are not stable.
+- **Use real input.** Clicks, double-clicks and key presses must go through `click`,
+  `press_key` and `type_text`. They send real CDP input events, which the overlay draws on
+  its own (ripple, double ring, keycap). Don't use `fill` or `fill_form` on screen: they
+  set the value without key events, so nothing is shown.
+
+## Overlay injection
+
+`assets/overlay.js` is a classic script. Inject it with `format: "script"`:
+
+```
+evaluate_script({ pageId, sourcePath: "<skill dir>/assets/overlay.js", format: "script" })
+```
+
+It returns `"overlay installed"` the first time on a document and
+`"overlay already present"` after that.
+
+`sourcePath` only works when the file is inside one of the MCP server's workspace roots
+(normally the directory Claude Code was started in). Otherwise the call fails with
+`Access denied: path "..." is not within any of the configured workspace roots`. In that
+case, read `assets/overlay.js` and pass its full contents inline:
+
+```
+evaluate_script({ pageId, format: "script", function: "<entire contents of assets/overlay.js>" })
+```
+
+Leaving out `format: "script"` makes the MCP treat the source as a function declaration,
+and the injection fails with `Error: fn is not a function`.
+
+After a Back or Forward navigation the browser may restore the previous document from
+its back/forward cache, overlay included. Re-injecting then returns
+`"overlay already present"`. That is expected.
+
+## Overlay API
+
+Called with `evaluate_script` (default `format: "function"`, so `args` work):
+
+| Call | Effect |
+|------|--------|
+| `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. |
+| `__demo.badge(text[, ms])` | Transient badge at the top left (default 1500 ms). Resolves after ~700 ms, so awaiting it before a navigation keeps it on screen long enough to be recorded. |
+| `__demo.caption(text)` | Lower-third caption at the bottom left. It stays until replaced. `caption("")` hides it. |
+
+## Recording start and stop
+
+1. `list_pages({})` → note the selected `pageId`.
+2. `resize_page({ pageId, width: <viewport.width>, height: <viewport.height> })` (default 1920×1080).
+3. `navigate_page({ pageId, type: "url", url: "<first scene url>" })`.
+4. Inject the overlay (see above).
+5. `screencast_start({ pageId, filePath: "<abs path>/demos/<slug>/raw.mp4" })`. The output is
+   an `.mp4`. Like `sourcePath`, `filePath` must be inside a workspace root, or the call
+   fails with `Access denied`. If it does, call `screencast_start({ pageId })` with no
+   `filePath`. The result names the temp file
+   (`Screencast recording started. The recording will be saved to /…/screencast.mp4`).
+   After stopping, move that file to `demos/<slug>/raw.mp4`.
+6. Immediately run the mark CLI for the `rec_start` event (see `python3 scripts/mark.py --help`).
+
+Then, for each scene: mark the scene start → run its actions with the recipes below → wait
+until the time on screen roughly covers the scene's narration length (from
+`audio/durations.json`) → mark the scene end.
+
+At the end: `screencast_stop({ pageId })`. It returns
+`The screencast recording has been stopped and saved to <path>`.
+
+## Action recipes
+
+### point
+1. `take_snapshot({ pageId })` → choose the uid that matches the target description.
+2. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
+
+### click
+1. `take_snapshot({ pageId })` → choose the uid.
+2. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
+3. `click({ pageId, uid: "<uid>" })`. The overlay draws the ripple.
+4. If the result says `Page navigated to ...`, re-inject the overlay.
+
+### dblclick
+1. `take_snapshot({ pageId })` → choose the uid.
+2. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
+3. `click({ pageId, uid: "<uid>", dblClick: true })`. The overlay draws two ripples and the
+   yellow double ring.
+
+### key
+`press_key({ pageId, key: "<key>" })`. Use Playwright-style names: `"Enter"`, `"Space"`,
+`"ArrowLeft"`, `"Escape"`, `"Tab"`, and combinations such as `"Meta+K"`,
+`"Control+Shift+R"` (modifiers: `Control`, `Shift`, `Alt`, `Meta`). The keycap appears at the
+bottom right: `⌘ K`, `Space`, `Enter`, `←`, `⇧ Tab`. If the key causes a navigation,
+re-inject the overlay.
+
+### type
+1. Focus the field with the **click** recipe (point, then click).
+2. `type_text({ pageId, text: "<text>" })`. Add `submitKey: "Enter"` to press a key after the
+   text. The typed characters are combined into one keycap (`hello demo`).
+
+### scroll
+There is no scroll tool. Use a smooth scroll and wait for it to finish:
+
+- To an element: `evaluate_script({ pageId, function: "async (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); await new Promise((r) => { addEventListener('scrollend', r, { once: true }); setTimeout(r, 1500); }); }", args: ["<uid>"] })`
+- By an amount: `evaluate_script({ pageId, function: "async () => { scrollBy({ top: 600, behavior: 'smooth' }); await new Promise((r) => { addEventListener('scrollend', r, { once: true }); setTimeout(r, 1500); }); }" })` (a negative `top` scrolls up).
+
+`press_key` with `"Space"` or `"PageDown"` also scrolls, and it shows a keycap.
+
+### back
+1. `evaluate_script({ pageId, function: "() => __demo.badge('◀ Back')" })`. The returned promise is awaited, so the badge is on screen before the page changes.
+2. `navigate_page({ pageId, type: "back" })`
+3. Re-inject the overlay.
+
+### wait
+- For time on screen (filling out a scene's narration, or letting an animation finish):
+  `evaluate_script({ pageId, function: "() => new Promise((r) => setTimeout(r, <ms>))" })`.
+  Prefer this to doing nothing between calls: the frames are recorded either way, but this
+  keeps the elapsed time predictable.
+- For content to appear: `wait_for({ pageId, text: ["<visible text>"], timeout: 10000 })`.
+
+## Checking a frame
+
+`take_screenshot({ pageId })` returns the current viewport. Overlay effects are brief
+(ripple ~0.65 s, keycap ~1.5 s, badge ~1.5 s), so a screenshot taken a few calls later won't
+show them. To check the recording, pull frames from the video with ffmpeg instead.
+`take_snapshot` doesn't list overlay elements, because the overlay host is `aria-hidden`.
