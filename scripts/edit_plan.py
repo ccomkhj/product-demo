@@ -166,11 +166,7 @@ def build_plan(spec, timeline, durations):
     Each scene is first fitted from its trimmed length; call
     ``Plan.with_video_lengths`` once the decimated lengths are measured.
     """
-    windows = _scene_windows(timeline)
-    spec_ids = [scene["id"] for scene in spec["scenes"]]
-    for scene_id in windows:
-        if scene_id not in spec_ids:
-            raise PlanError(f"timeline scene '{scene_id}' is not in the demo spec")
+    windows = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]})
     drafts = []
     for scene in spec["scenes"]:
         scene_id = scene["id"]
@@ -211,10 +207,11 @@ def load_timeline(path):
     return events
 
 
-def _scene_windows(timeline):
+def _scene_windows(timeline, spec_ids):
     """Return {scene id: (start, end)} in raw-video seconds, validating the timeline.
 
-    Only the events after the last ``rec_start`` count: each re-recording appends
+    Every timeline scene must be one of ``spec_ids``; that is checked before its
+    markers are paired, so a stray scene is reported as such. Only the events after the last ``rec_start`` count: each re-recording appends
     a new one, so earlier takes in the file are ignored.
     """
     rec_starts = [i for i, e in enumerate(timeline) if e.get("event") == "rec_start"]
@@ -236,6 +233,10 @@ def _scene_windows(timeline):
             raise PlanError(f"scene '{scene_id}' has more than one {kind} marker")
         scene_marks[kind] = _t_ms(event)
 
+    for scene_id in marks:
+        if scene_id not in spec_ids:
+            raise PlanError(f"timeline scene '{scene_id}' is not in the demo spec")
+
     windows = {}
     for scene_id, scene_marks in marks.items():
         if "start" not in scene_marks:
@@ -245,7 +246,10 @@ def _scene_windows(timeline):
         start_ms, end_ms = scene_marks["start"], scene_marks["end"]
         if start_ms < origin_ms:
             raise PlanError(f"scene '{scene_id}' starts before rec_start")
-        if end_ms <= start_ms:
+        if end_ms == start_ms:
+            raise PlanError(f"scene '{scene_id}' has zero length: end equals start "
+                            f"(t_ms={start_ms})")
+        if end_ms < start_ms:
             raise PlanError(
                 f"scene '{scene_id}' ends (t_ms={end_ms}) before it starts (t_ms={start_ms})"
             )

@@ -151,6 +151,23 @@ def test_scene_in_timeline_but_not_in_spec_is_an_error():
     assert "not in the demo spec" in message
 
 
+@pytest.mark.parametrize("kind", ["start", "end"])
+def test_unknown_timeline_scene_with_one_marker_reports_not_in_the_spec(kind):
+    message = errors_for([*TIMELINE, {"scene": "bonus", "event": kind, "t_ms": 32_000}])
+
+    assert "'bonus'" in message
+    assert "not in the demo spec" in message
+
+
+def test_scene_ending_when_it_starts_has_its_own_error():
+    timeline = [dict(e) for e in TIMELINE]
+    timeline[4]["t_ms"] = 14_000  # details ends at 14 s, the moment it started
+
+    message = errors_for(timeline)
+
+    assert "scene 'details' has zero length: end equals start" in message
+
+
 def test_spec_scene_missing_from_timeline_is_an_error():
     timeline = [e for e in TIMELINE if e.get("scene") != "outro"]
 
