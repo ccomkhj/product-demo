@@ -179,3 +179,11 @@ def test_load_timeline_reads_jsonl_and_reports_bad_lines(tmp_path):
     ]
     with pytest.raises(PlanError, match="line 2"):
         load_timeline(bad)
+
+
+@pytest.mark.parametrize("seconds", [0, 0.0, -1.5, float("nan"), "4.0s", None, True, [4.0]])
+def test_unusable_scene_duration_is_an_error_naming_the_scene(seconds):
+    message = errors_for(TIMELINE, durations={**DURATIONS, "details": seconds})
+
+    assert "'details'" in message
+    assert "duration" in message

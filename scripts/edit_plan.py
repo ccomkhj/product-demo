@@ -7,6 +7,7 @@ decimated video lengths and feeds them back through ``Plan.with_video_lengths``.
 """
 
 import json
+import math
 import re
 from dataclasses import dataclass
 
@@ -175,8 +176,7 @@ def build_plan(spec, timeline, durations):
         scene_id = scene["id"]
         if scene_id not in windows:
             raise PlanError(f"scene '{scene_id}' has no start marker in the timeline")
-        if scene_id not in durations:
-            raise PlanError(f"scene '{scene_id}' is missing from the durations file")
+        audio_s = _duration(durations, scene_id)
         trim_start, trim_end = windows[scene_id]
         drafts.append({
             "id": scene_id,
@@ -184,7 +184,7 @@ def build_plan(spec, timeline, durations):
             "narration": scene["narration"],
             "trim_start": trim_start,
             "trim_end": trim_end,
-            "audio_s": float(durations[scene_id]),
+            "audio_s": audio_s,
             "video_s": trim_end - trim_start,
         })
     return _assemble(drafts)
@@ -251,6 +251,20 @@ def _scene_windows(timeline):
             )
         windows[scene_id] = ((start_ms - origin_ms) / 1000, (end_ms - origin_ms) / 1000)
     return windows
+
+
+def _duration(durations, scene_id):
+    """The scene's narration length in seconds; a positive number or a PlanError."""
+    if scene_id not in durations:
+        raise PlanError(f"scene '{scene_id}' is missing from the durations file")
+    seconds = durations[scene_id]
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        raise PlanError(f"scene '{scene_id}' has a non-numeric duration {seconds!r} "
+                        f"in the durations file; re-run tts.py")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise PlanError(f"scene '{scene_id}' has duration {seconds!r}; it must be positive "
+                        f"(re-run tts.py)")
+    return float(seconds)
 
 
 def _t_ms(event):

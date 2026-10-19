@@ -173,3 +173,17 @@ def test_compose_reports_timeline_errors_without_a_traceback(tmp_path):
     assert "rec_start" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "final.mp4").exists()
+
+
+@pytest.mark.parametrize("seconds", [0, -2.0, "two"])
+def test_compose_reports_bad_durations_without_a_traceback(tmp_path, seconds):
+    audio = write_demo(tmp_path)
+    (audio / "durations.json").write_text(
+        json.dumps({"frozen": 3.0, "brisk": seconds, "long": 1.0}))
+
+    result = run_compose(tmp_path / "demo.json")
+
+    assert result.returncode == 1
+    assert "compose: error:" in result.stderr
+    assert "'brisk'" in result.stderr
+    assert "Traceback" not in result.stderr
