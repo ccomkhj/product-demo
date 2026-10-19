@@ -96,3 +96,43 @@ def test_empty_narration_is_rejected_naming_the_scene(narration):
     message = str(excinfo.value)
     assert "empty narration" in message
     assert "'details'" in message
+
+
+@pytest.mark.parametrize("url", [None, "", "   ", 42])
+def test_scene_without_a_url_is_rejected_naming_the_scene(url):
+    spec = make_spec()
+    spec["scenes"][1]["url"] = url
+
+    with pytest.raises(SpecError) as excinfo:
+        validate_spec(spec)
+
+    message = str(excinfo.value)
+    assert "url" in message
+    assert "'details'" in message
+
+
+@pytest.mark.parametrize("scene", ["home", 3, None, ["home"]])
+def test_scene_that_is_not_an_object_is_rejected_naming_the_scene(scene):
+    spec = make_spec()
+    spec["scenes"][1] = scene
+
+    with pytest.raises(SpecError) as excinfo:
+        validate_spec(spec)
+
+    message = str(excinfo.value)
+    assert "scene 2" in message
+    assert "object" in message
+
+
+@pytest.mark.parametrize("action", ["click", 7, None])
+def test_action_that_is_not_an_object_is_rejected_naming_the_scene(action):
+    spec = make_spec()
+    spec["scenes"][0]["actions"].append(action)
+
+    with pytest.raises(SpecError) as excinfo:
+        validate_spec(spec)
+
+    message = str(excinfo.value)
+    assert "'home'" in message
+    assert "action 2" in message
+    assert "object" in message

@@ -35,6 +35,8 @@ def validate_spec(spec):
         raise SpecError("demo spec must have a 'scenes' list with at least one scene")
     seen_ids = {}
     for index, scene in enumerate(result["scenes"], start=1):
+        if not isinstance(scene, dict):
+            raise SpecError(f"scene {index}: must be a JSON object, got {scene!r}")
         where = _describe(index, scene)
         scene_id = scene.get("id")
         if not scene_id:
@@ -47,7 +49,13 @@ def validate_spec(spec):
         narration = scene.get("narration")
         if not isinstance(narration, str) or not narration.strip():
             raise SpecError(f"{where}: empty narration")
+        url = scene.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise SpecError(f"{where}: missing url")
         for position, action in enumerate(scene.get("actions", []), start=1):
+            if not isinstance(action, dict):
+                raise SpecError(f"{where}, action {position}: must be a JSON object, "
+                                f"got {action!r}")
             action_type = action.get("type")
             if action_type not in ACTION_TYPES:
                 raise SpecError(
