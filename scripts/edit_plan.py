@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 
 MAX_SPEED = 1.5
+FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
 
 
 class PlanError(ValueError):
@@ -55,6 +56,8 @@ class ScenePlan:
     audio_s: narration length. video_s: the video length the fit was worked out
     from (the trimmed length at first, the decimated length once measured).
     offset_s: where the scene starts in the final video (cumulative scene lengths).
+    The scene's length is the fit's length rounded to whole frames at FPS, which is
+    exactly what compose cuts, so offsets and subtitle cues don't drift.
     """
 
     id: str
@@ -68,8 +71,12 @@ class ScenePlan:
     offset_s: float
 
     @property
+    def frames(self):
+        return max(1, round(self.fit.scene_s * FPS))
+
+    @property
     def scene_s(self):
-        return self.fit.scene_s
+        return self.frames / FPS
 
     @property
     def end_s(self):
@@ -102,7 +109,8 @@ class Plan:
 
         A scene's *audio* length is shared out across its sentences by character
         count; each scene's cues start at its offset (cumulative *scene* lengths),
-        so padding in one scene pushes every later cue back.
+        so padding in one scene pushes every later cue back. A cue never runs
+        past the end of its (frame-rounded) scene, where compose cuts the audio.
         """
         cues = []
         for scene in self.scenes:
@@ -110,9 +118,9 @@ class Plan:
             total_chars = sum(len(s) for s in sentences)
             done = 0
             for sentence in sentences:
-                start = scene.offset_s + scene.audio_s * done / total_chars
+                start = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
                 done += len(sentence)
-                end = scene.offset_s + scene.audio_s * done / total_chars
+                end = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
                 cues.append(Cue(scene.id, start, end, sentence))
         return tuple(cues)
 
@@ -296,6 +304,7 @@ def _assemble(drafts):
     offset = 0.0
     for draft in drafts:
         scene_fit = fit(draft["video_s"], draft["audio_s"])
-        scenes.append(ScenePlan(**draft, fit=scene_fit, offset_s=offset))
-        offset += scene_fit.scene_s
+        scene = ScenePlan(**draft, fit=scene_fit, offset_s=offset)
+        scenes.append(scene)
+        offset += scene.scene_s
     return Plan(tuple(scenes))

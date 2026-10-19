@@ -30,9 +30,8 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from demo_spec import SpecError, load_spec
-from edit_plan import PlanError, build_plan, load_timeline
+from edit_plan import FPS, PlanError, build_plan, load_timeline
 
-FPS = 30
 SAMPLE_RATE = 48000
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
@@ -260,11 +259,10 @@ def compose(spec, plan, raw, audio_dir, out, work_dir, burn_subs=False):
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
-        frames = max(1, round(scene.scene_s * FPS))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        run(fit_cmd(decimated[scene.id], scene.fit, frames, spec["viewport"], fitted))
+        run(fit_cmd(decimated[scene.id], scene.fit, scene.frames, spec["viewport"], fitted))
         list_lines.append(f"file '{fitted.as_posix()}'")
-        audio_parts.append((wavs[scene.id], frames / FPS))
+        audio_parts.append((wavs[scene.id], scene.scene_s))
     list_file = work_dir / "scenes.txt"
     list_file.write_text("\n".join(list_lines) + "\n")
 
