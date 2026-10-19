@@ -4,10 +4,14 @@
 
 **Blocked by:** 01 (Narrate a demo spec with macOS `say`)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Choosing `openai` or `elevenlabs` (by flag, spec or env auto-detect) produces WAVs and a durations file in the same format as `say`.
-- [ ] The HTTP transport can be swapped out in tests. Tests check that each backend sends the configured voice and the scene's narration, and that a non-2xx response gives a clear error naming the backend and the scene.
-- [ ] A missing API key for a forced backend fails with a clear message before any request is sent.
-- [ ] No third-party dependencies are added.
+- [x] Choosing `openai` or `elevenlabs` (by flag, spec or env auto-detect) produces WAVs and a durations file in the same format as `say`.
+- [x] The HTTP transport can be swapped out in tests. Tests check that each backend sends the configured voice and the scene's narration, and that a non-2xx response gives a clear error naming the backend and the scene.
+- [x] A missing API key for a forced backend fails with a clear message before any request is sent.
+- [x] No third-party dependencies are added.
 - [ ] Manual smoke test, run only if a key is present: a 2-scene spec gives durations > 0 for every scene.
+
+## Comments
+
+2026-10-19: Resolved on `narrated-product-demo` (merge 9ff93e1). Manual smoke test NOT run: no OPENAI_API_KEY or ELEVENLABS_API_KEY in the environment. Behaviour is covered by fake-transport tests. ElevenLabs `voice.voice` must be a voice ID.

@@ -17,10 +17,14 @@ SKILL.md stays short and focused on *why*. Schemas and call sequences go in the 
 
 **Blocked by:** 01 (Narrate a demo spec with macOS `say`), 03 (Compose a fitted video from a recording and timeline), 04 (Subtitles, transcript and burn-in), 05 (Visible-interaction overlay and MCP recipes)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] SKILL.md covers each workflow step and why it's there: record-then-edit, audio first, re-inject after every navigation, single tab, and natural-language targets resolved at record time.
-- [ ] The demo spec reference documents the top-level fields (`title`, `product`, `audience`, `viewport`, `voice`, `scenes[]`), the scene fields and the action types, with one worked example that validates.
-- [ ] The skill is installed by a single symlink, so edits in the project folder take effect at once.
-- [ ] The workflow supports re-running only compose, and re-running TTS + compose after a narration edit.
-- [ ] End-to-end smoke run: a 3-scene demo on a public site (example.com → link click → Back, plus a Space press on a scrollable page). The final length matches the planned total, and the extracted frame for each scene shows the cursor, ripple and key badge where expected.
+- [x] SKILL.md covers each workflow step and why it's there: record-then-edit, audio first, re-inject after every navigation, single tab, and natural-language targets resolved at record time.
+- [x] The demo spec reference documents the top-level fields (`title`, `product`, `audience`, `viewport`, `voice`, `scenes[]`), the scene fields and the action types, with one worked example that validates.
+- [x] The skill is installed by a single symlink, so edits in the project folder take effect at once.
+- [x] The workflow supports re-running only compose, and re-running TTS + compose after a narration edit.
+- [x] End-to-end smoke run: a 3-scene demo on a public site (example.com → link click → Back, plus a Space press on a scrollable page). The final length matches the planned total, and the extracted frame for each scene shows the cursor, ripple and key badge where expected.
+
+## Comments
+
+2026-10-19: Resolved on `narrated-product-demo` (merge dee31b7). Symlink ~/.claude/skills/product-demo installed. E2E run: planned 15.42 s, final 15.40 s; after the review fixes it is frame-exact at 15.400 s. The Space scene uses iana.org/domains/reserved, because example.com no longer scrolls.

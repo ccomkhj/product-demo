@@ -10,10 +10,14 @@ The edit plan gains the full list of subtitle cues, with absolute times in the f
 
 **Blocked by:** 03 (Compose a fitted video from a recording and timeline)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Planner tests check cue start/end times for a multi-sentence scene, a single-sentence scene, and narration containing abbreviations (e.g. "e.g.", "Dr.").
-- [ ] A planner test shows that silence padding in an earlier scene moves later scenes' cues back by the padded amount.
-- [ ] Compose writes a valid `.srt` and a `transcript.md` (scene titles + narration in spec order).
-- [ ] `--burn-subs` produces a `final.mp4` with the subtitles burned in. Without the flag, subtitles are only in the separate file.
-- [ ] The compose smoke test also checks that the `.srt` and `transcript.md` exist and that `--burn-subs` produces a playable video.
+- [x] Planner tests check cue start/end times for a multi-sentence scene, a single-sentence scene, and narration containing abbreviations (e.g. "e.g.", "Dr.").
+- [x] A planner test shows that silence padding in an earlier scene moves later scenes' cues back by the padded amount.
+- [x] Compose writes a valid `.srt` and a `transcript.md` (scene titles + narration in spec order).
+- [x] `--burn-subs` produces a `final.mp4` with the subtitles burned in. Without the flag, subtitles are only in the separate file.
+- [x] The compose smoke test also checks that the `.srt` and `transcript.md` exist and that `--burn-subs` produces a playable video.
+
+## Comments
+
+2026-10-19: Resolved on `narrated-product-demo` (merge fe4dd10). The local ffmpeg has no libass, so --burn-subs falls back to rsvg-convert. See docs/adr/0001-burn-subs-rsvg-fallback.md.

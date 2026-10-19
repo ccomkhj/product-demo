@@ -18,9 +18,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Injecting the overlay twice into the same page leaves exactly one cursor and one set of listeners.
-- [ ] Manual check through the Chrome DevTools MCP on example.com: after a `point` + click, a key press with a modifier, a Space press and a Back badge, a screenshot shows the cursor, ripple, keycap and badge.
-- [ ] Clicking a real link with the overlay present still navigates (the overlay doesn't block anything).
-- [ ] The MCP recipes reference documents every action type plus injection, re-injection, and screencast start/stop, in the form the agent will follow literally.
+- [x] Injecting the overlay twice into the same page leaves exactly one cursor and one set of listeners.
+- [x] Manual check through the Chrome DevTools MCP on example.com: after a `point` + click, a key press with a modifier, a Space press and a Back badge, a screenshot shows the cursor, ripple, keycap and badge.
+- [x] Clicking a real link with the overlay present still navigates (the overlay doesn't block anything).
+- [x] The MCP recipes reference documents every action type plus injection, re-injection, and screencast start/stop, in the form the agent will follow literally.
+
+## Comments
+
+2026-10-19: Resolved on `narrated-product-demo` (merge dc5c0b6). 8 headless-Chrome node tests, now run through `uv run pytest`. The manual MCP check on example.com passed.

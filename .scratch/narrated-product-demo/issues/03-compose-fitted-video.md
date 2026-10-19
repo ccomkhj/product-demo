@@ -29,10 +29,14 @@ Subtitles and the transcript are not part of this ticket (see 04).
 
 **Blocked by:** 01 (Narrate a demo spec with macOS `say`), for demo spec validation and the durations file format.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `mark` appends well-formed events to the timeline, including `rec_start`, with no timing maths needed from the caller.
-- [ ] Planner tests check trim windows, fit strategy, speed factor and scene lengths for each fit case, including exactly 1.5× and a zero-length decimated video.
-- [ ] Planner tests cover each timeline-inconsistency error and its message.
-- [ ] Tests use only the public planner/fit functions and the CLI. They don't assert on exact ffmpeg filter strings.
-- [ ] Smoke test (skipped if ffmpeg is missing): a synthetic `testsrc` raw video with a frozen stretch, synthetic WAVs, a timeline and durations go through compose end to end. ffprobe then confirms that `final.mp4` has video and audio streams, runs at 30 fps, and lasts about as long as the sum of the planned scene lengths.
+- [x] `mark` appends well-formed events to the timeline, including `rec_start`, with no timing maths needed from the caller.
+- [x] Planner tests check trim windows, fit strategy, speed factor and scene lengths for each fit case, including exactly 1.5× and a zero-length decimated video.
+- [x] Planner tests cover each timeline-inconsistency error and its message.
+- [x] Tests use only the public planner/fit functions and the CLI. They don't assert on exact ffmpeg filter strings.
+- [x] Smoke test (skipped if ffmpeg is missing): a synthetic `testsrc` raw video with a frozen stretch, synthetic WAVs, a timeline and durations go through compose end to end. ffprobe then confirms that `final.mp4` has video and audio streams, runs at 30 fps, and lasts about as long as the sum of the planned scene lengths.
+
+## Comments
+
+2026-10-19: Resolved on `narrated-product-demo` (merge f38c584). The smoke test uses testsrc2, because plain testsrc only changes every other frame. After the code review, `rec_start` appends, and the planner uses events after the last `rec_start`.

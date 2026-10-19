@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Spec: `product-demo` skill for narrated product-demo videos
 

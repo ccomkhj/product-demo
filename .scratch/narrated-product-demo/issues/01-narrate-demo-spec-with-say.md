@@ -8,12 +8,16 @@ Only the Python stdlib plus ffmpeg/ffprobe may be used. ffmpeg normalises every 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Before committing:** git puts this folder's repo root at `~`, not at `~/personal`. Ask the user whether `product-demo` should be a nested repo or be ignored in the parent repo. Do not commit until they answer. No AI co-author trailers.
 
-- [ ] `uv run pytest` runs and passes. The `.gitignore` covers raw recordings and WAVs.
-- [ ] Spec validation tests: a valid spec is accepted with the viewport default filled in, and each malformed case (missing id, duplicate id, unknown action type, empty narration) is rejected with a message that names the problem and the scene.
-- [ ] Backend choice tests cover flag / spec / env combinations, with the env injected: the flag beats the spec, the spec beats the env, ElevenLabs beats OpenAI when both keys are set, and `say` is used when neither is set.
-- [ ] The TTS CLI writes one WAV per scene (48 kHz, mono) and a durations file keyed by scene id.
-- [ ] Manual smoke test: on a 2-scene spec with the `say` backend, every duration is > 0.
+- [x] `uv run pytest` runs and passes. The `.gitignore` covers raw recordings and WAVs.
+- [x] Spec validation tests: a valid spec is accepted with the viewport default filled in, and each malformed case (missing id, duplicate id, unknown action type, empty narration) is rejected with a message that names the problem and the scene.
+- [x] Backend choice tests cover flag / spec / env combinations, with the env injected: the flag beats the spec, the spec beats the env, ElevenLabs beats OpenAI when both keys are set, and `say` is used when neither is set.
+- [x] The TTS CLI writes one WAV per scene (48 kHz, mono) and a durations file keyed by scene id.
+- [x] Manual smoke test: on a 2-scene spec with the `say` backend, every duration is > 0.
+
+## Comments
+
+2026-10-19: Resolved on branch `narrated-product-demo` (merge 97e174d). This is a nested repo, per the user. say smoke run: durations 3.969 s and 3.597 s.
