@@ -160,7 +160,7 @@ def test_at_phrase_missing_from_the_narration_is_rejected_naming_the_action():
 
 
 def test_at_phrases_out_of_narration_order_are_rejected():
-    with pytest.raises(SpecError, match="action 2: .* after the previous 'at' phrase"):
+    with pytest.raises(SpecError, match="action 2: .* after the previous phrase"):
         validate_spec(spec_with_actions([
             {"type": "click", "target": "Save", "at": "click Save"},
             {"type": "point", "target": "the heading", "at": "the heading"},
@@ -171,3 +171,46 @@ def test_at_phrases_out_of_narration_order_are_rejected():
 def test_at_that_is_not_a_phrase_is_rejected(phrase):
     with pytest.raises(SpecError, match="action 1: 'at' must be a phrase"):
         validate_spec(spec_with_actions([{"type": "point", "target": "x", "at": phrase}]))
+
+
+@pytest.mark.parametrize('purpose', ['feature-announcement', 'customer-tutorial', 'sales-walkthrough', 'custom'])
+def test_purpose_metadata_and_scene_checks(purpose):
+    spec = make_spec(purpose=purpose, outcome='Export a report', target_duration_s=30)
+    spec['scenes'][0]['prerequisites'] = [
+        {'type': 'visible_text', 'text': 'Reports'},
+        {'type': 'visible_target', 'target': 'the enabled Export button'},
+    ]
+    spec['scenes'][0]['expected_outcomes'] = []
+    result = validate_spec(spec)
+    assert result['purpose'] == purpose
+    assert result['scenes'][0]['prerequisites'] == spec['scenes'][0]['prerequisites']
+    result['scenes'][0]['prerequisites'].clear()
+    assert len(spec['scenes'][0]['prerequisites']) == 2
+
+
+def test_old_spec_does_not_get_template_defaults():
+    result = validate_spec(make_spec())
+    assert not {'purpose', 'outcome', 'target_duration_s'} & result.keys()
+
+
+@pytest.mark.parametrize('field,value', [
+    ('purpose', 'unknown'), ('purpose', []), ('purpose', None),
+    ('outcome', ''), ('outcome', '  '), ('outcome', 1),
+    *[('target_duration_s', v) for v in (0, -1, True, False, '30', None, float('nan'), float('inf'))],
+])
+def test_invalid_demo_metadata(field, value):
+    with pytest.raises(SpecError, match=field):
+        validate_spec(make_spec(**{field: value}))
+
+
+@pytest.mark.parametrize('field', ['prerequisites', 'expected_outcomes'])
+@pytest.mark.parametrize('checks', [None, {}, 'Reports', [None], [{}],
+    [{'type': 'script', 'text': 'Reports'}],
+    [{'type': 'visible_text'}], [{'type': 'visible_text', 'text': ' '}],
+    [{'type': 'visible_target', 'target': False}],
+])
+def test_invalid_scene_checks(field, checks):
+    spec = make_spec()
+    spec['scenes'][0][field] = checks
+    with pytest.raises(SpecError, match=f"scene 1.*home.*{field}"):
+        validate_spec(spec)

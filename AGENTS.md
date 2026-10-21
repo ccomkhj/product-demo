@@ -9,3 +9,8 @@
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Engineering Principle
+
+- DRY (Don't Repeat Yourself)
+- KISS (Keep It Stupid and Simple)

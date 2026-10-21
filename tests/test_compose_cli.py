@@ -99,8 +99,16 @@ def run_compose(*args):
 
 
 @needs_ffmpeg
-def test_compose_writes_fitted_30fps_video_with_audio(tmp_path):
+@pytest.mark.parametrize("with_readiness", [False, True])
+def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     audio = write_demo(tmp_path)
+    if with_readiness:
+        path = tmp_path / "demo.json"
+        spec = json.loads(path.read_text())
+        spec.update(purpose="feature-announcement", outcome="Explain the workflow", target_duration_s=30)
+        spec["scenes"][0]["prerequisites"] = [{"type": "visible_text", "text": "Reports"}]
+        spec["scenes"][0]["expected_outcomes"] = [{"type": "visible_target", "target": "the result"}]
+        path.write_text(json.dumps(spec))
     make_media(tmp_path, audio)
 
     result = run_compose(tmp_path / "demo.json")

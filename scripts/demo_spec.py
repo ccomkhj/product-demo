@@ -2,11 +2,15 @@
 
 import copy
 import json
+import math
 import shutil
+
+from narration import Narration, PhraseError
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
 BACKENDS = ("say", "kokoro", "openai", "elevenlabs")
 ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
+PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
 
 class SpecError(ValueError):
@@ -39,6 +43,7 @@ def load_spec(path):
 def validate_spec(spec):
     """Return a validated copy of ``spec`` with defaults filled in."""
     result = copy.deepcopy(spec)
+    _validate_metadata(result)
     result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
     scenes = result.get("scenes")
     if not isinstance(scenes, list) or not scenes:
@@ -48,6 +53,7 @@ def validate_spec(spec):
         if not isinstance(scene, dict):
             raise SpecError(f"scene {index}: must be a JSON object, got {scene!r}")
         where = _describe(index, scene)
+        _validate_checks(scene, where)
         scene_id = scene.get("id")
         if not scene_id:
             raise SpecError(f"{where}: missing id")
@@ -72,37 +78,49 @@ def validate_spec(spec):
                     f"{where}, action {position}: unknown action type {action_type!r} "
                     f"(allowed: {', '.join(ACTION_TYPES)})"
                 )
-        at_positions(narration, scene.get("actions", []), where)
+        anchored = [(number, action["at"])
+                    for number, action in enumerate(scene.get("actions", []), start=1)
+                    if "at" in action]
+        try:
+            Narration(narration).phrase_shares([phrase for _, phrase in anchored])
+        except PhraseError as exc:
+            raise SpecError(f"{where}, action {anchored[exc.index][0]}: 'at' {exc}") from exc
     return result
 
 
-def at_positions(narration, actions, where="scene"):
-    """Where each action's ``at`` phrase starts in the narration, or None if it has none.
+def positive_seconds(value):
+    """Whether a JSON value is a finite positive duration (not a boolean)."""
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and value > 0 and (isinstance(value, int) or math.isfinite(value)))
 
-    Positions index the narration with its whitespace collapsed (as subtitle cues
-    see it). Phrases match case-insensitively, each one at or after the previous
-    one, so the actions keep the narration's order; a phrase that isn't found
-    that way is a SpecError naming the action.
-    """
-    text = " ".join(narration.split()).lower()
-    positions, cursor = [], 0
-    for number, action in enumerate(actions, start=1):
-        if "at" not in action:
-            positions.append(None)
-            continue
-        phrase = action["at"]
-        if not isinstance(phrase, str) or not phrase.strip():
-            raise SpecError(f"{where}, action {number}: 'at' must be a phrase from the "
-                            f"narration, got {phrase!r}")
-        needle = " ".join(phrase.split()).lower()
-        found = text.find(needle, cursor)
-        if found < 0:
-            place = " after the previous 'at' phrase" if needle in text else ""
-            raise SpecError(f"{where}, action {number}: 'at' phrase {phrase!r} is not in "
-                            f"the narration{place}")
-        positions.append(found)
-        cursor = found
-    return positions
+
+def _validate_metadata(spec):
+    if "purpose" in spec and spec["purpose"] not in PURPOSES:
+        raise SpecError(f"purpose must be one of {', '.join(PURPOSES)}")
+    if "outcome" in spec:
+        value = spec["outcome"]
+        if not isinstance(value, str) or not value.strip():
+            raise SpecError("outcome must be a non-empty string")
+    if "target_duration_s" in spec and not positive_seconds(spec["target_duration_s"]):
+        raise SpecError("target_duration_s must be a finite positive number")
+
+
+def _validate_checks(scene, where):
+    for field in ("prerequisites", "expected_outcomes"):
+        checks = scene.get(field, [])
+        if not isinstance(checks, list):
+            raise SpecError(f"{where}: {field} must be a list")
+        for position, check in enumerate(checks, start=1):
+            label = f"{where}, {field} check {position}"
+            if not isinstance(check, dict):
+                raise SpecError(f"{label}: must be a JSON object")
+            kind = check.get("type")
+            if kind not in ("visible_text", "visible_target"):
+                raise SpecError(f"{label}: type must be visible_text or visible_target")
+            payload = "text" if kind == "visible_text" else "target"
+            value = check.get(payload)
+            if not isinstance(value, str) or not value.strip():
+                raise SpecError(f"{label}: {payload} must be a non-empty string")
 
 
 def choose_backend(flag, spec, env):

@@ -1,6 +1,7 @@
 import pytest
 
-from edit_plan import PlanError, build_plan, load_timeline, sync_ms
+from edit_plan import PlanError, build_plan, load_timeline
+from fake_video import FakeVideo
 
 SPEC = {
     "title": "Demo",
@@ -29,7 +30,7 @@ DURATIONS = {"home": 5.0, "details": 4.0, "outro": 4.0}
 
 
 def test_plan_has_trim_windows_relative_to_rec_start_in_spec_order():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo())
 
     assert [s.id for s in plan.scenes] == ["home", "details", "outro"]
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
@@ -41,14 +42,14 @@ def test_plan_has_trim_windows_relative_to_rec_start_in_spec_order():
 def test_scene_order_follows_the_spec_not_the_timeline():
     shuffled = [TIMELINE[0], *TIMELINE[3:5], *TIMELINE[1:3], *TIMELINE[5:]]
 
-    plan = build_plan(SPEC, shuffled, DURATIONS)
+    plan = build_plan(SPEC, shuffled, DURATIONS, FakeVideo())
 
     assert [s.id for s in plan.scenes] == ["home", "details", "outro"]
     assert plan.scenes[1].trim_start == 4.0
 
 
-def test_initial_plan_fits_each_scene_from_its_trimmed_length():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+def test_a_scene_without_frozen_frames_is_fitted_from_its_trimmed_length():
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo())
 
     home, details, outro = plan.scenes
     assert (home.fit.strategy, home.scene_s) == ("hold", 5.0)
@@ -61,19 +62,19 @@ def test_initial_plan_fits_each_scene_from_its_trimmed_length():
 
 
 def test_scene_offsets_accumulate_scene_lengths_including_padding():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo())
 
     assert [s.offset_s for s in plan.scenes] == pytest.approx([0.0, 5.0, 9.0])
     assert plan.total_s == pytest.approx(9.0 + 10 / 1.5)
 
 
-def test_measured_decimated_lengths_refit_scenes_and_shift_offsets():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+def test_each_scene_is_fitted_from_its_decimated_length_and_offsets_follow():
+    video = FakeVideo({(1.0, 3.0): 0.5, (4.0, 10.0): 9.0, (11.0, 21.0): 4.5})
 
-    refitted = plan.with_video_lengths({"home": 0.0, "details": 9.0, "outro": 4.5})
+    refitted = build_plan(SPEC, TIMELINE, DURATIONS, video)
 
     home, details, outro = refitted.scenes
-    assert (home.video_s, home.fit.strategy, home.fit.hold_s) == (0.0, "hold", 5.0)
+    assert (home.video_s, home.fit.strategy, home.fit.hold_s) == (0.5, "hold", 4.5)
     assert details.fit.strategy == "pad"
     assert details.scene_s == pytest.approx(6.0)
     assert outro.fit.strategy == "speedup"
@@ -96,7 +97,7 @@ def test_a_re_recording_uses_only_the_events_after_the_last_rec_start():
         {"scene": "bonus", "event": "start", "t_ms": 9_100},
     ]
 
-    plan = build_plan(SPEC, [*first_take, *TIMELINE], DURATIONS)
+    plan = build_plan(SPEC, [*first_take, *TIMELINE], DURATIONS, FakeVideo())
 
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
         (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
@@ -104,14 +105,14 @@ def test_a_re_recording_uses_only_the_events_after_the_last_rec_start():
 
 
 def test_scene_carries_title_falling_back_to_id():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo())
 
     assert [s.title for s in plan.scenes] == ["Home", "details", "Outro"]
 
 
 def errors_for(timeline, durations=DURATIONS):
     with pytest.raises(PlanError) as excinfo:
-        build_plan(SPEC, timeline, durations)
+        build_plan(SPEC, timeline, durations, FakeVideo())
     return str(excinfo.value)
 
 
@@ -244,7 +245,7 @@ ACTIONS = [{"type": "point", "target": "a"}, {"type": "click", "target": "b", "a
 
 
 def test_beats_cut_a_scene_into_segments_anchored_to_their_phrases():
-    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0}, FakeVideo())
 
     first, second = plan.scenes[0].segments
     assert (first.trim_start, first.trim_end, first.anchor_s) == (1.0, 6.0, 0.0)
@@ -253,9 +254,9 @@ def test_beats_cut_a_scene_into_segments_anchored_to_their_phrases():
 
 
 def test_a_segment_is_held_back_until_the_narration_reaches_its_phrase():
-    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+    video = FakeVideo({(1.0, 6.0): 1.0, (6.0, 9.0): 2.0})
 
-    scene = plan.with_video_lengths({"home": [1.0, 2.0]}).scenes[0]
+    scene = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0}, video).scenes[0]
 
     assert [s.lead_frames for s in scene.segments] == [0, 90]  # 1 s played, held to 4 s
     assert scene.video_s == pytest.approx(6.0)
@@ -263,9 +264,9 @@ def test_a_segment_is_held_back_until_the_narration_reaches_its_phrase():
 
 
 def test_a_segment_that_runs_past_the_next_anchor_pushes_it_back_and_the_scene_fits_as_a_whole():
-    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+    video = FakeVideo({(1.0, 6.0): 5.0, (6.0, 9.0): 5.0})
 
-    scene = plan.with_video_lengths({"home": [5.0, 5.0]}).scenes[0]
+    scene = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0}, video).scenes[0]
 
     assert [s.lead_frames for s in scene.segments] == [0, 0]
     assert scene.video_s == pytest.approx(10.0)
@@ -273,16 +274,17 @@ def test_a_segment_that_runs_past_the_next_anchor_pushes_it_back_and_the_scene_f
 
 
 def test_an_empty_first_segment_leaves_the_next_one_to_hold_its_first_frame():
-    plan = build_plan(synced_spec(ACTIONS), synced_timeline(1.0), {"home": 8.0})
+    video = FakeVideo({(1.0, 9.0): 2.0})
 
-    scene = plan.with_video_lengths({"home": [0.0, 2.0]}).scenes[0]
+    scene = build_plan(synced_spec(ACTIONS), synced_timeline(1.0), {"home": 8.0}, video).scenes[0]
 
+    assert video.measured == [(1.0, 9.0)]  # the empty first segment has nothing to measure
     assert [s.lead_frames for s in scene.segments] == [0, 120]
     assert scene.video_s == pytest.approx(6.0)
 
 
 def test_scene_without_beats_is_one_segment_from_start_to_end():
-    plan = build_plan(SPEC, TIMELINE, DURATIONS)
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo())
 
     assert [len(s.segments) for s in plan.scenes] == [1, 1, 1]
     assert plan.scenes[1].segments[0].trim_start == 4.0
@@ -290,16 +292,16 @@ def test_scene_without_beats_is_one_segment_from_start_to_end():
 
 def test_beat_count_must_match_the_actions_with_an_at_phrase():
     with pytest.raises(PlanError, match="'home' has 0 beat markers but 1 actions with an 'at'"):
-        build_plan(synced_spec(ACTIONS), synced_timeline(), {"home": 8.0})
+        build_plan(synced_spec(ACTIONS), synced_timeline(), {"home": 8.0}, FakeVideo())
 
 
 def test_beat_outside_its_scene_is_an_error():
     with pytest.raises(PlanError, match="'home' has a beat marker outside its start and end"):
-        build_plan(synced_spec(ACTIONS), synced_timeline(9.5), {"home": 8.0})
+        build_plan(synced_spec(ACTIONS), synced_timeline(9.5), {"home": 8.0}, FakeVideo())
 
 
 def test_anchor_matches_the_start_of_the_subtitle_cue_holding_the_phrase():
-    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0})
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0}, FakeVideo())
 
     assert plan.cues[1].text.startswith("Then")
     assert plan.scenes[0].segments[1].anchor_s == pytest.approx(plan.cues[1].start_s)
@@ -312,17 +314,50 @@ def test_a_sync_flash_sets_raw_time_zero_however_late_rec_start_was_marked():
     # recording began at 7.5 s; rec_start itself was only marked at 10 s.
     synced = [{**TIMELINE[0], "sync_ms": 9_500}, *TIMELINE[1:]]
 
-    plan = build_plan(SPEC, synced, DURATIONS, flash_s=2.0)
+    plan = build_plan(SPEC, synced, DURATIONS, FakeVideo(flash_s=2.0))
 
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
         (3.5, 5.5), (6.5, 12.5), (13.5, 23.5),
     ]
-    assert sync_ms(synced) == 9_500
-    assert sync_ms(TIMELINE) is None
+    assert plan.flash_s == 2.0
 
 
-def test_a_sync_ms_without_the_flash_time_is_an_error():
+def test_without_a_sync_ms_the_video_is_not_scanned_for_a_flash():
+    video = FakeVideo(flash_s=2.0)
+
+    plan = build_plan(SPEC, TIMELINE, DURATIONS, video)
+
+    assert not video.scanned
+    assert plan.flash_s is None
+
+
+def test_a_sync_ms_with_no_flash_in_the_video_is_an_error():
     synced = [{**TIMELINE[0], "sync_ms": 9_500}, *TIMELINE[1:]]
 
-    with pytest.raises(PlanError, match="sync flash's time in the raw video was not given"):
-        build_plan(SPEC, synced, DURATIONS)
+    with pytest.raises(PlanError, match=r"no sync flash found.*__demo\.sync\(\)"):
+        build_plan(SPEC, synced, DURATIONS, FakeVideo(flash_s=None))
+
+
+# --- measuring: the raw video is only decimated once everything else checks out ---
+
+def test_segments_are_measured_once_each_in_plan_order():
+    video = FakeVideo()
+
+    build_plan(SPEC, TIMELINE, DURATIONS, video)
+
+    assert video.measured == [(1.0, 3.0), (4.0, 10.0), (11.0, 21.0)]
+
+
+def test_nothing_is_measured_when_a_later_scene_is_wrong():
+    video = FakeVideo()
+
+    with pytest.raises(PlanError, match="'outro'"):
+        build_plan(SPEC, TIMELINE, {"home": 5.0, "details": 4.0}, video)
+
+    assert video.measured == []
+
+
+def test_a_scene_with_no_frames_left_is_an_error():
+    with pytest.raises(PlanError, match="'details' has no video frames in its trim window "
+                                        "4.000-10.000s"):
+        build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo({(4.0, 10.0): 0.0}))

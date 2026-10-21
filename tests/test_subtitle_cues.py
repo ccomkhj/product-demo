@@ -1,6 +1,7 @@
 import pytest
 
 from edit_plan import build_plan
+from fake_video import FakeVideo
 
 # rec_start at 10 s; trimmed windows of 2 s, 6 s and 10 s.
 TIMELINE = [
@@ -39,7 +40,7 @@ def cues_for(plan, scene_id):
 
 
 def test_multi_sentence_scene_shares_its_audio_by_character_count():
-    plan = build_plan(spec(), TIMELINE, DURATIONS)
+    plan = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo())
 
     assert cues_for(plan, "intro") == [
         pytest.approx((0.0, 1.0, "Aaaa bbbb.")),
@@ -48,7 +49,7 @@ def test_multi_sentence_scene_shares_its_audio_by_character_count():
 
 
 def test_abbreviations_do_not_split_sentences():
-    plan = build_plan(spec(), TIMELINE, DURATIONS)
+    plan = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo())
 
     # intro holds for its 4 s of audio, so filters starts at 4 s.
     assert cues_for(plan, "filters") == [
@@ -58,7 +59,7 @@ def test_abbreviations_do_not_split_sentences():
 
 
 def test_single_sentence_scene_gets_one_cue_for_its_audio_not_its_padding():
-    plan = build_plan(spec(), TIMELINE, DURATIONS)
+    plan = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo())
 
     # outro: 10 s of video vs 2 s of audio is padded to 10/1.5 s, but the cue
     # only covers the spoken 2 s, starting after intro (4 s) + filters (4.4 s).
@@ -67,10 +68,9 @@ def test_single_sentence_scene_gets_one_cue_for_its_audio_not_its_padding():
 
 
 def test_padding_an_earlier_scene_pushes_later_cues_back_by_the_padded_amount():
-    plan = build_plan(spec(), TIMELINE, DURATIONS)
-    unpadded = plan.with_video_lengths({"intro": 2.0, "filters": 6.0, "outro": 10.0})
+    unpadded = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo())
     # 9 s of intro video against 4 s of audio: 1.5x leaves 6 s, so 2 s of silence.
-    padded = plan.with_video_lengths({"intro": 9.0, "filters": 6.0, "outro": 10.0})
+    padded = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo({(1.0, 3.0): 9.0}))
 
     assert padded.scenes[0].fit.pad_s == pytest.approx(2.0)
     assert cues_for(padded, "intro") == cues_for(unpadded, "intro")
@@ -83,7 +83,7 @@ def test_padding_an_earlier_scene_pushes_later_cues_back_by_the_padded_amount():
 
 
 def test_cues_cover_every_scene_in_spec_order():
-    plan = build_plan(spec(), TIMELINE, DURATIONS)
+    plan = build_plan(spec(), TIMELINE, DURATIONS, FakeVideo())
 
     assert [c.scene_id for c in plan.cues] == ["intro", "intro", "filters", "filters", "outro"]
     starts = [c.start_s for c in plan.cues]
@@ -93,7 +93,8 @@ def test_cues_cover_every_scene_in_spec_order():
 def test_scene_lengths_and_cue_offsets_snap_to_whole_frames_at_30fps():
     # intro: hold, 3.969 s of audio -> 119 frames (3.9667 s); filters: speed-up, 4.41 s
     # -> 132 frames (4.4 s); outro: padded to 10/1.5 s = 200 frames.
-    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0})
+    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0},
+                      FakeVideo())
 
     assert [s.frames for s in plan.scenes] == [119, 132, 200]
     assert [s.scene_s for s in plan.scenes] == pytest.approx([119 / 30, 132 / 30, 200 / 30])
@@ -106,7 +107,8 @@ def test_scene_lengths_and_cue_offsets_snap_to_whole_frames_at_30fps():
 
 def test_a_cue_never_runs_past_its_frame_rounded_scene():
     # 3.969 s of audio in a scene cut at 119 frames (3.9667 s): compose trims the audio there
-    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0})
+    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0},
+                      FakeVideo())
 
     ends = {s.id: s.end_s for s in plan.scenes}
     assert all(c.end_s <= ends[c.scene_id] + 1e-9 for c in plan.cues)

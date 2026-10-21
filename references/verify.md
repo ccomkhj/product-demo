@@ -64,7 +64,7 @@ marked after the action had started.
 
 ## Frames: dense tile around one moment
 
-A ripple lasts about 0.65 s, so eight samples often miss it. Before calling one missing, tile
+A ripple lasts about 0.9 s, so eight samples often miss it. Before calling one missing, tile
 every frame of that second, cropped around the target (`x`, `y` in output-video pixels):
 
 ```
@@ -75,3 +75,15 @@ ffmpeg -v error -y -ss <time> -t 1 -i demos/<slug>/final.mp4 \
 
 A link click with no ripple at all means the hold-the-navigation step of the click recipe
 was skipped.
+
+## Scene readiness and outcomes
+
+Before delivering a new take, read `demos/<slug>/readiness.md`: all declared prerequisites
+and expected outcomes must have passed for this take. Deferred, ambiguous, timed-out, or
+failed checks prevent delivery. No checks declared means “not declared,” not proof of an
+outcome. Existing demos without these optional fields remain compatible with the original
+visual checks. Do not deliver an old `final.mp4` as the result of a failed retry.
+
+Compare final measured duration with `target_duration_s` if present, and report the actual
+duration. The pre-recording narration check is an editorial warning, not a guarantee about
+final video length. Preserve the existing duration, frame and sync verification above.

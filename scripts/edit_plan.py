@@ -1,21 +1,20 @@
-"""Pure edit planner for compose: demo spec + timeline + durations -> plan (stdlib only).
+"""Edit planner for compose: demo spec + timeline + durations + raw video -> plan (stdlib only).
 
 The plan lists every scene in spec order with its trim window in raw-video
 seconds, its narration length, how it is fitted to that narration, and where it
 lands in the final video. A scene is cut into segments at its beat markers; each
 segment after the first starts when the narration reaches its action's ``at``
-phrase, holding the previous frame until then. Nothing here runs ffmpeg: the
-runner measures the decimated segment lengths and feeds them back through
-``Plan.with_video_lengths``.
+phrase, holding the previous frame until then. Nothing here runs ffmpeg: the raw
+video is passed in, and asked only where its sync flash is and how much of each
+segment is left once frozen frames are dropped (see ``build_plan``).
 """
 
 import json
 import math
-import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
-from demo_spec import at_positions
+from narration import Narration
 
 MAX_SPEED = 1.5
 FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
@@ -63,7 +62,7 @@ class Segment:
 
     trim_start/trim_end: its window in raw-video seconds. anchor_s: when, from the
     scene start, the narration reaches its action's ``at`` phrase (0 for the first
-    segment). frames: its length (trimmed at first, decimated once measured).
+    segment). frames: its length once frozen frames are dropped.
     lead_frames: how long its first frame is held before it plays, so that it
     starts on its anchor (or right after the previous segment, if that runs late).
     """
@@ -82,8 +81,7 @@ class ScenePlan:
     trim_start/trim_end: the scene's window in raw-video seconds.
     segments: the scene cut at its beat markers, synced to their ``at`` phrases.
     audio_s: narration length. video_s: the video length the fit was worked out
-    from: the segments' frames plus their leads (trimmed lengths at first,
-    decimated lengths once measured).
+    from: the segments' frames plus their leads.
     offset_s: where the scene starts in the final video (cumulative scene lengths).
     The scene's length is the fit's length rounded to whole frames at FPS, which is
     exactly what compose cuts, so offsets and subtitle cues don't drift.
@@ -125,9 +123,14 @@ class Cue:
 
 @dataclass(frozen=True)
 class Plan:
-    """The scenes in spec order, laid end to end."""
+    """The scenes in spec order, laid end to end.
+
+    flash_s: where the sync flash is in the raw video, or None when the timeline
+    has no ``sync_ms`` and raw time 0 is the ``rec_start`` mark.
+    """
 
     scenes: tuple
+    flash_s: float | None = None
 
     @property
     def total_s(self):
@@ -144,112 +147,30 @@ class Plan:
         """
         cues = []
         for scene in self.scenes:
-            sentences = split_sentences(scene.narration)
-            total_chars = sum(len(s) for s in sentences)
-            done = 0
-            for sentence in sentences:
-                start = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
-                done += len(sentence)
-                end = min(scene.offset_s + scene.audio_s * done / total_chars, scene.end_s)
-                cues.append(Cue(scene.id, start, end, sentence))
+            for start, end, sentence in Narration(scene.narration).cue_shares():
+                cues.append(Cue(scene.id,
+                                min(scene.offset_s + scene.audio_s * start, scene.end_s),
+                                min(scene.offset_s + scene.audio_s * end, scene.end_s),
+                                sentence))
         return tuple(cues)
 
-    def with_video_lengths(self, video_lengths):
-        """Re-fit every scene with measured (decimated) video lengths, keyed by scene id.
 
-        A scene's value is the list of its segments' lengths in seconds, or a single
-        number for a scene with one segment.
-        """
-        scenes = []
-        for scene in self.scenes:
-            lengths = video_lengths[scene.id]
-            if isinstance(lengths, (int, float)):
-                lengths = [lengths]
-            if len(lengths) != len(scene.segments):
-                raise PlanError(f"scene '{scene.id}' has {len(scene.segments)} segments but "
-                                f"{len(lengths)} measured lengths")
-            segments = tuple(replace(segment, frames=_frames(seconds))
-                             for segment, seconds in zip(scene.segments, lengths))
-            scenes.append(replace(scene, segments=segments))
-        return _lay_out(scenes)
+def build_plan(spec, timeline, durations, video):
+    """Build the edit plan from a validated demo spec, timeline events, durations and raw video.
 
+    ``video`` is the raw recording, asked only for what the plan needs:
 
-# Words that end in a full stop without ending the sentence (compared lower-case,
-# without the stop). Dotted forms such as "e.g." and "U.S." and single-letter
-# initials are recognised without being listed.
-ABBREVIATIONS = frozenset({
-    "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "st", "mt", "vs", "etc", "approx",
-    "fig", "inc", "ltd", "co", "corp", "dept",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
-})
+    - ``video.flash_s()``: where the sync flash first shows, in seconds, or None.
+      Called only when the last ``rec_start`` has a ``sync_ms``.
+    - ``video.frames(trim_start, trim_end)``: how many frames at FPS are left of
+      that window once frozen frames are dropped. Called once per segment at least
+      a frame long, in plan order, after the spec, timeline and durations have all
+      been checked.
 
-_BOUNDARY = re.compile(r"[.!?]+[\"')\]]*\s+")
-
-
-def split_sentences(text):
-    """Split narration into sentences without breaking after abbreviations like "e.g." or "Dr."."""
-    text = " ".join(text.split())
-    sentences, start = [], 0
-    for match in _BOUNDARY.finditer(text):
-        candidate = text[start:match.end()].strip()
-        if match.group().startswith(".") and _ends_with_abbreviation(candidate):
-            continue
-        sentences.append(candidate)
-        start = match.end()
-    if text[start:].strip():
-        sentences.append(text[start:].strip())
-    return sentences
-
-
-def narration_time(narration, audio_s, position):
-    """When the voice reaches character ``position`` of the whitespace-collapsed narration.
-
-    Uses the same character share as the subtitle cues (sentences only, not the
-    spaces between them), so an action anchored to a phrase starts with its cue.
+    Raises PlanError when they don't line up; errors raised by ``video`` pass through.
     """
-    text = " ".join(narration.split())
-    sentences = split_sentences(narration)
-    total = sum(len(s) for s in sentences)
-    done, cursor = 0, 0
-    for sentence in sentences:
-        start = text.find(sentence, cursor)
-        if position < start + len(sentence):
-            done += max(0, position - start)
-            break
-        done += len(sentence)
-        cursor = start + len(sentence)
-    return audio_s * done / total
-
-
-def _ends_with_abbreviation(candidate):
-    word = candidate.rstrip("\"')]").split(" ")[-1].lstrip("\"'([")
-    stem = word[:-1] if word.endswith(".") else word
-    if "." in stem:  # e.g. / i.e. / U.S.
-        return True
-    if len(stem) == 1 and stem.isalpha():  # an initial, as in "J. Smith"
-        return True
-    return stem.lower() in ABBREVIATIONS
-
-
-def sync_ms(timeline):
-    """The ``sync_ms`` of the last ``rec_start``: when its sync flash was painted, or None.
-
-    When it is set, compose must find the flash in the raw video and pass its time
-    to ``build_plan`` as ``flash_s``.
-    """
-    rec_starts = [e for e in timeline if e.get("event") == "rec_start"]
-    return rec_starts[-1].get("sync_ms") if rec_starts else None
-
-
-def build_plan(spec, timeline, durations, flash_s=None):
-    """Build the edit plan from a validated demo spec, timeline events and durations.
-
-    ``flash_s`` is where the sync flash appears in the raw video, needed when the
-    last ``rec_start`` has a ``sync_ms``. Each scene is first fitted from its
-    trimmed segment lengths; call ``Plan.with_video_lengths`` once the decimated
-    lengths are measured.
-    """
-    windows = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]}, flash_s)
+    windows, flash_s = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]},
+                                      video)
     scenes = []
     for scene in spec["scenes"]:
         scene_id = scene["id"]
@@ -257,9 +178,9 @@ def build_plan(spec, timeline, durations, flash_s=None):
             raise PlanError(f"scene '{scene_id}' has no start marker in the timeline")
         audio_s = _duration(durations, scene_id)
         trim_start, trim_end, beats = windows[scene_id]
-        anchors = [narration_time(scene["narration"], audio_s, position)
-                   for position in at_positions(scene["narration"], scene.get("actions", []))
-                   if position is not None]
+        phrases = [action["at"] for action in scene.get("actions", []) if "at" in action]
+        anchors = [audio_s * share
+                   for share in Narration(scene["narration"]).phrase_shares(phrases)]
         if len(beats) != len(anchors):
             raise PlanError(f"scene '{scene_id}' has {len(beats)} beat markers but "
                             f"{len(anchors)} actions with an 'at' phrase; mark a beat right "
@@ -272,7 +193,7 @@ def build_plan(spec, timeline, durations, flash_s=None):
             trim_start=trim_start, trim_end=trim_end, audio_s=audio_s, video_s=0.0,
             fit=fit(0.0, audio_s), offset_s=0.0, segments=segments,
         ))
-    return _lay_out(scenes)
+    return _lay_out([_measure(scene, video) for scene in scenes], flash_s)
 
 
 def load_timeline(path):
@@ -296,28 +217,29 @@ def load_timeline(path):
     return events
 
 
-def _scene_windows(timeline, spec_ids, flash_s=None):
-    """Return {scene id: (start, end, beats)} in raw-video seconds, validating the timeline.
+def _scene_windows(timeline, spec_ids, video):
+    """Return ({scene id: (start, end, beats)} in raw-video seconds, flash_s), validating.
 
     Every timeline scene must be one of ``spec_ids``; that is checked before its
     markers are paired, so a stray scene is reported as such. Only the events after the last ``rec_start`` count: each re-recording appends
     a new one, so earlier takes in the file are ignored. Raw-video time 0 is the
-    sync flash's wall-clock time minus ``flash_s`` when the ``rec_start`` has a
-    ``sync_ms``, and the ``rec_start`` itself otherwise.
+    sync flash's wall-clock time minus where ``video`` shows it when the
+    ``rec_start`` has a ``sync_ms``, and the ``rec_start`` itself otherwise.
     """
     rec_starts = [i for i, e in enumerate(timeline) if e.get("event") == "rec_start"]
     if not rec_starts:
         raise PlanError("timeline has no rec_start marker; run `mark.py TIMELINE rec_start` "
                         "right after starting the screencast")
     rec_start = timeline[rec_starts[-1]]
-    origin_ms = _t_ms(rec_start)
+    origin_ms, flash_s = _t_ms(rec_start), None
     if rec_start.get("sync_ms") is not None:
-        if flash_s is None:
-            raise PlanError("rec_start has a sync_ms but the sync flash's time in the raw "
-                            "video was not given")
         sync = rec_start["sync_ms"]
         if not isinstance(sync, (int, float)) or isinstance(sync, bool):
             raise PlanError(f"rec_start has a non-numeric sync_ms {sync!r}")
+        flash_s = video.flash_s()
+        if flash_s is None:
+            raise PlanError("no sync flash found in the raw video; run __demo.sync() right "
+                            "after screencast_start, then mark rec_start with --sync-ms")
         origin_ms = sync - flash_s * 1000
 
     marks, beats = {}, {}
@@ -361,7 +283,7 @@ def _scene_windows(timeline, spec_ids, flash_s=None):
             raise PlanError(f"scene '{scene_id}' has a beat marker outside its start and end")
         windows[scene_id] = ((start_ms - origin_ms) / 1000, (end_ms - origin_ms) / 1000,
                              tuple((beat_ms - origin_ms) / 1000 for beat_ms in scene_beats))
-    return windows
+    return windows, flash_s
 
 
 def _duration(durations, scene_id):
@@ -389,6 +311,18 @@ def _frames(seconds):
     return max(0, round(seconds * FPS))
 
 
+def _measure(scene, video):
+    """The scene with each segment's frames measured in ``video``; PlanError if none are left."""
+    segments = tuple(replace(segment, frames=video.frames(segment.trim_start, segment.trim_end))
+                     if segment.frames else segment  # shorter than a frame: nothing to cut
+                     for segment in scene.segments)
+    if not any(segment.frames for segment in segments):
+        raise PlanError(f"scene '{scene.id}' has no video frames in its trim window "
+                        f"{scene.trim_start:.3f}-{scene.trim_end:.3f}s; is it past the end of "
+                        f"the raw recording?")
+    return replace(scene, segments=segments)
+
+
 def _sync(segments):
     """Give each segment the lead that starts it on its anchor; return (segments, frames).
 
@@ -403,7 +337,7 @@ def _sync(segments):
     return tuple(synced), end
 
 
-def _lay_out(scenes):
+def _lay_out(scenes, flash_s):
     """Sync, then fit each scene to its video length and lay the scenes end to end in order."""
     laid_out, offset = [], 0.0
     for scene in scenes:
@@ -413,4 +347,4 @@ def _lay_out(scenes):
                         fit=fit(video_s, scene.audio_s), offset_s=offset)
         laid_out.append(scene)
         offset += scene.scene_s
-    return Plan(tuple(laid_out))
+    return Plan(tuple(laid_out), flash_s)

@@ -33,9 +33,43 @@ https://github.com/user-attachments/assets/0708be78-771b-4499-8c81-c5d854d2a679
 /product-demo We shipped CSV export on the Reports page. Show a customer how to export last month's report.
 ```
 
-1. **It asks only what's missing**: the audience, the pages, and whether you need to sign in.
+1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in.
 2. **You approve the script** before anything is recorded.
-3. **You get `final.mp4`, `final.srt` and `transcript.md`**, ready for the release notes.
+3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
+4. **You get `final.mp4`, `final.srt` and `transcript.md`**, ready for the release notes.
+
+Choose a purpose in your request:
+
+```text
+/product-demo Make a 30-second feature announcement for CSV export on our Reports page.
+/product-demo Make a customer tutorial showing how to export last month's report.
+/product-demo Make a sales walkthrough of reporting for a finance team.
+```
+
+Suggested targets are 30, 90, and 120 seconds respectively. Your structure and duration
+always take precedence. Custom walkthroughs remain supported. The skill asks for missing
+URLs and context, then uses the selected [writing template](references/templates/) to draft
+the script; it does not invent product behavior or sales claims.
+
+Run local checks separately from the skill directory:
+
+```bash
+python3 scripts/preflight.py /path/to/demos/export/demo.json
+python3 scripts/preflight.py /path/to/demos/export/demo.json --json
+python3 scripts/preflight.py /path/to/demos/export/demo.json --durations /path/to/demos/export/audio/durations.json
+```
+
+Use `--backend` to override voice selection and `--burn-subs` / `--no-burn-subs` to choose
+subtitle policy, passing the same choices to TTS/compose. Exit 0 means no **local** blockers,
+1 means blockers, and 2 means a usage error. Warnings can remain on success. Preflight does
+not contact voice services, download models, or verify browser access/login.
+
+Optional scene `prerequisites` and `expected_outcomes` describe visible text or targets.
+The agent checks them in the recording browser, stops on a failed condition, and records
+brief evidence in `demos/<slug>/readiness.md`. These browser checks are agent instructions,
+not a standalone Python browser runner. Narration more than 10% over a target produces a
+warning; the final video may be longer because of padding. See the [spec](references/demo-spec.md)
+and [readiness workflow](references/readiness.md).
 
 ## Install
 
@@ -44,7 +78,7 @@ git clone https://github.com/ccomkhj/product-demo ~/.claude/skills/product-demo
 claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
 ```
 
-Needs `python3` (3.11+), `ffmpeg` and [`uv`](https://docs.astral.sh/uv/). uv runs the free
+Needs `python3` (3.11+; use `uv run python` if your system Python is older), `ffmpeg` and [`uv`](https://docs.astral.sh/uv/). uv runs the free
 Kokoro voice, which downloads once (~340 MB). Without uv, narration falls back to macOS `say`.
 
 Demos are written to `demos/<slug>/` in the project you run it from.
@@ -85,6 +119,8 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 |------|------------|
 | `SKILL.md` | The skill's instructions: interview, approval, narration, recording, compose and verify |
 | `references/` | Demo spec format, browser recording recipes and verification recipes |
+| `scripts/preflight.py` | Local readiness and measured narration duration checks |
+| `references/templates/` | Announcement, tutorial and sales script guidance |
 | `scripts/tts.py` | Narration audio (Kokoro, `say`, OpenAI or ElevenLabs) |
 | `scripts/kokoro_tts.py` | Local Kokoro synthesis, run by `tts.py` through `uv run` |
 | `scripts/mark.py` | Timeline markers written while recording |
@@ -93,3 +129,8 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `tests/` | `uv run pytest` (the overlay tests need node and Chrome) |
 
 </details>
+
+## License
+
+[Apache-2.0](LICENSE). You may use, change, republish and sell it; copies and derivative
+works must keep the [`NOTICE`](NOTICE) file, which credits this repository.

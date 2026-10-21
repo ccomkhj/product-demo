@@ -19,9 +19,21 @@ ffmpeg without libass (see `docs/adr/0001-burn-subs-rsvg-fallback.md`).
 
 ## 1. Interview
 
-Ask for the product, the audience, and the ordered list of pages. For each page: the URL,
-what to do there, the key message, and whether it needs a login. Pick a short slug.
-Done when every page has all four answers.
+Infer the purpose from the request and read only the selected template:
+
+| Purpose | Template | Suggested target |
+|---------|----------|------------------|
+| Feature announcement | `references/templates/feature-announcement.md` | 30 s |
+| Customer tutorial | `references/templates/customer-tutorial.md` | 90 s |
+| Sales walkthrough | `references/templates/sales-walkthrough.md` | 120 s |
+| Custom | No template required | User's choice |
+
+Explicit user structure and duration override template suggestions (a 60-second
+announcement stays 60 seconds). If purpose is unclear, ask one concise purpose question
+alongside other missing details; allow custom. Do not add a separate template approval.
+Ask only for missing product, audience, viewer outcome, and ordered pages. For each page:
+the URL, what to do there, the key message, and whether it needs a login. Never invent
+URLs, UI controls, or sales metrics. Pick a short slug. Done when those details are known.
 
 ## 2. Spec and transcript approval
 
@@ -32,11 +44,35 @@ resolved while recording. Give every action the narration talks about an `at` ph
 from its narration: compose starts the action when the voice says it, so the screen shows
 what the words describe instead of racing ahead of them.
 
-Show the user every scene's title and narration and get explicit approval before going
-on. Wording is cheap to change now; after recording, it can only be changed if the new
-narration still fits the visuals.
+Write optional `purpose`, `outcome`, and `target_duration_s` metadata. Copy a template's
+suggested target only when the user has not supplied one; custom specs need no target.
+Add `prerequisites` and `expected_outcomes` for observable entry and success states using
+`references/readiness.md`. Keep targets in words and intermediate states in separate scenes.
 
-## 3. Narration audio first
+Show the purpose, audience, outcome, duration target (if any), and every scene's title and
+narration. Get explicit script approval before going on. Wording is cheap to change now;
+after recording, it can only be changed if the new narration still fits the visuals.
+
+## 3. Recording readiness
+
+Run the local preflight before generating narration:
+
+```
+python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs] [--burn-subs|--no-burn-subs]
+```
+
+Resolve failures before continuing. Carry the same explicit backend to TTS and subtitle
+policy to compose. A successful local report does not verify browser access or login.
+Follow `references/readiness.md` to check MCP capabilities, entry pages, authentication,
+and actual viewport in the recording browser. Do not rehearse state-changing actions.
+Defer state-dependent scenes until reached naturally, then check them before their start
+markers. Restore the first scene's entry state before capture.
+
+For `login: true`, verify the existing session; if signed out, ask the user to sign in
+by hand and wait for confirmation, then recheck. Never collect credentials. A loaded page
+alone does not prove authentication. Record brief evidence in `demos/<slug>/readiness.md`.
+
+## 4. Narration audio first
 
 ```
 python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs]
@@ -48,17 +84,27 @@ scene needs: compose holds the screen until each `at` phrase, and holds the last
 when the motion runs out before the narration. Without `--backend` it uses `voice.backend`, then an ElevenLabs or OpenAI
 key if one is set, then the free local Kokoro model if `uv` is on PATH, then macOS `say`.
 
-## 4. Logins
+After TTS, check measured narration against the optional target:
 
-For every scene with `"login": true`, navigate the MCP browser there and ask the user to
-sign in by hand, then wait for them to confirm. The MCP browser profile persists, so later
-runs skip this; there is no auth code to write.
+```
+python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
+```
+
+Carry the same backend/subtitle overrides here too. A warning means narration exceeds the
+target by more than 10%; final video can be longer because scenes may be padded. Propose
+shorter wording, get the existing script approval for changes, then regenerate audio and
+rerun the check. Never truncate or accelerate speech automatically. If the user keeps the
+longer script, note the accepted duration in the readiness report.
 
 ## 5. Record
 
 Follow `references/mcp-recipes.md` literally: its "Recording start and stop" section, then
 one action recipe per spec action. The rules that matter, and why:
 
+- **Check scene states.** Evaluate prerequisites immediately before each scene's start
+  marker and expected outcomes after its actions, before its end marker. Follow the bounded
+  checks in `references/readiness.md`. On failure or ambiguity, stop capture, keep diagnostics,
+  and report the condition. Do not compose or deliver the failed take.
 - **One tab.** The screencast is tied to one page; anything in another tab is not recorded.
 - **Re-inject the overlay after every navigation.** A new document has no overlay, and an
   MCP init script only applies to the next navigation, so it can't be relied on.
@@ -75,7 +121,7 @@ one action recipe per spec action. The rules that matter, and why:
 
 Done when `screencast_stop` has saved `demos/<slug>/raw.mp4` and the timeline holds
 `rec_start` with a `sync_ms`, plus a start, an end and one beat per `at` action for every
-scene.
+scene, and every declared prerequisite and expected outcome passed for this take.
 
 ## 6. Compose
 
@@ -91,14 +137,14 @@ wherever it plays; pass `--no-burn-subs` only when the user wants a clean video 
 
 ## 7. Verify
 
-Check the result before handing it over; a fitting bug or a missing overlay is invisible
-in the compose output. Use the recipes in `references/verify.md`:
+Confirm this take passed its scene checks in `readiness.md`. Check the result before
+handing it over; a fitting bug or a missing overlay is invisible in the compose output. Use the recipes in `references/verify.md`:
 
 - **Length:** ffprobe's duration of `final.mp4` must match compose's `total` line, not the
   sum of the narration lengths, because padded scenes run longer than their narration.
 - **Frames:** a contact sheet per scene must show the scene's page, the cursor on each
   pointed target, a ripple per click, a keycap per key press, a badge per Back, and the
-  burned-in subtitle. Effects are short (a ripple lasts about 0.65 s), so tile every frame
+  burned-in subtitle. Effects are short (a ripple lasts about 0.9 s), so tile every frame
   of the moment before calling one missing.
 - **Sync:** at the start of the subtitle cue holding each `at` phrase (from `final.srt`),
   its action must be starting, not already over.
@@ -110,6 +156,6 @@ the actions keep pace with the voice.
 
 - **Compose only** (different subtitle or fitting options): run step 6 again. It reads the
   existing recording, timeline and audio.
-- **Narration edit:** edit `narration` in `demo.json`, then run step 3 and step 6. This
+- **Narration edit:** edit `narration` in `demo.json`, then run step 4 and step 6. This
   works as long as the visuals still show what the new words describe and every `at`
-  phrase is still in the narration; otherwise record again from step 5.
+  phrase is still in the narration; otherwise repeat readiness from step 3 and record again from step 5.

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Recording readiness fixture</title>
+<style>body { font: 24px system-ui; margin: 4rem; } button { font: inherit; padding: 1rem; }</style>
+<h1>Reports</h1>
+<p>Export this month's report.</p>
+<button id="export">Export</button>
+<p id="result" role="status"></p>
+<section id="details" hidden><h2>Export details</h2><p>Your report is ready.</p></section>
+<script>
+const options = new URLSearchParams(location.search);
+const button = document.getElementById('export');
+if (options.has('missing')) button.remove();
+button.addEventListener('click', () => {
+  if (options.has('disabled_result')) return;
+  setTimeout(() => {
+    document.getElementById('result').textContent = 'Export ready';
+    document.getElementById('details').hidden = false;
+  }, Math.max(0, Number(options.get('delay')) || 0));
+});
+</script>
+</html>

@@ -25,7 +25,7 @@ def test_worked_example_validates():
 def test_worked_example_uses_every_documented_top_level_field():
     spec = worked_example()
 
-    for field in ("title", "product", "audience", "viewport", "voice", "scenes"):
+    for field in ("title", "product", "audience", "viewport", "voice", "scenes", "purpose", "outcome", "target_duration_s"):
         assert field in spec, field
 
 

@@ -21,7 +21,7 @@
  * max-z-index host; listeners are passive and never cancel or stop events.
  */
 (() => {
-  const VERSION = 2;
+  const VERSION = 3;
   const existing = window.__demo;
   if (existing && existing.version === VERSION) {
     existing._ensureHost();
@@ -40,11 +40,24 @@
     .cursor { position: absolute; left: 0; top: 0; width: 28px; height: 28px;
       transform: translate(-100px, -100px); will-change: transform;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
-    .cursor svg { display: block; width: 100%; height: 100%; }
-    .ripple { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
-      background: rgba(255, 64, 64, .45); border: 2px solid rgba(255, 64, 64, .95);
-      animation: ripple 650ms ease-out forwards; }
-    @keyframes ripple { from { transform: scale(.6); opacity: 1; } to { transform: scale(4.5); opacity: 0; } }
+    .cursor svg { display: block; width: 100%; height: 100%;
+      transform-origin: 4px 2px; transition: transform 120ms ease-out; }
+    /* A click squeezes the arrow towards its tip, like a finger pressing a button. */
+    .cursor.pressed svg { transform: scale(.78); }
+    /* A held dot plus two expanding waves (~120 px), red with a white edge so it reads on
+       light and dark pages alike, and lasting long enough to survive a 1.5x speed-up. */
+    .ripple { position: absolute; width: 0; height: 0; }
+    .ripple i { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border-radius: 50%; }
+    .ripple .core { background: rgba(255, 59, 48, .6); border: 2px solid #fff;
+      box-shadow: 0 0 0 2px rgba(255, 59, 48, .95), 0 2px 6px rgba(0,0,0,.35);
+      animation: core 900ms ease-out forwards; }
+    @keyframes core { 0% { transform: scale(.4); opacity: 1; } 15%, 60% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(.8); opacity: 0; } }
+    .ripple .wave { border: 3px solid rgba(255, 59, 48, .95); opacity: 0;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.8), inset 0 0 0 1px rgba(255,255,255,.8);
+      animation: wave 900ms cubic-bezier(.2, .6, .3, 1) forwards; }
+    .ripple .wave + .wave { animation-delay: 180ms; }
+    @keyframes wave { from { transform: scale(.5); opacity: 1; } to { transform: scale(5); opacity: 0; } }
     .double-ring { position: absolute; width: 0; height: 0; }
     .double-ring i { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border-radius: 50%;
       border: 3px solid rgba(255, 196, 0, 1); box-shadow: 0 0 0 2px rgba(0,0,0,.25);
@@ -278,16 +291,30 @@
     if (!e.isTrusted) return;
     const layerEl = ensureHost();
     glideTo(e.clientX, e.clientY, 0);
-    const r = el("div", "ripple", layerEl);
+    press();
+    // Under the cursor, so the arrow stays visible on top of the click.
+    const r = layerEl.insertBefore(el("div", "ripple"), cursorEl);
     r.style.left = e.clientX + "px";
     r.style.top = e.clientY + "px";
-    setTimeout(() => r.remove(), 700);
+    el("i", "core", r);
+    el("i", "wave", r);
+    el("i", "wave", r);
+    setTimeout(() => r.remove(), 1200);
+  }
+
+  // CDP sends mousedown and mouseup back to back, so the press is timed rather than held
+  // until mouseup: otherwise it would never reach a recorded frame.
+  let pressTimer = 0;
+  function press() {
+    cursorEl.classList.add("pressed");
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => cursorEl.classList.remove("pressed"), 180);
   }
 
   function onDblclick(e) {
     if (!e.isTrusted) return;
     const layerEl = ensureHost();
-    const d = el("div", "double-ring", layerEl);
+    const d = layerEl.insertBefore(el("div", "double-ring"), cursorEl);
     d.style.left = e.clientX + "px";
     d.style.top = e.clientY + "px";
     el("i", null, d);

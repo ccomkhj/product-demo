@@ -62,6 +62,22 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.deepEqual(await page.eval(texts('[data-demo="keycap"]')), ["hi there"]);
   });
 
+  test("a click presses the cursor and draws a ripple wide enough to see in a 1080p video", async () => {
+    await page.inject();
+    await page.click(360, 220);
+    const pressed = await page.eval(`document.querySelector("[data-demo-overlay]").shadowRoot
+      .querySelector('[data-demo="cursor"]').classList.contains("pressed")`);
+    assert.equal(pressed, true);
+
+    const later = await page.eval(`new Promise((r) => setTimeout(() => {
+      const root = document.querySelector("[data-demo-overlay]").shadowRoot;
+      const wave = root.querySelector('[data-demo="wave"]').getBoundingClientRect();
+      r({ width: wave.width, pressed: root.querySelector('[data-demo="cursor"]').classList.contains("pressed") });
+    }, 450))`);
+    assert.ok(later.width > 60, `wave is ${later.width}px wide half-way through`);
+    assert.equal(later.pressed, false);
+  });
+
   test("double-click draws a double ring that a single click does not", async () => {
     await page.inject();
     await page.click(360, 220);

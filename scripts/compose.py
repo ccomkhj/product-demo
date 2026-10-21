@@ -19,7 +19,7 @@ the narration reaches its action's `at` phrase, and the scene is fitted to its
 narration (see edit_plan). The scenes are joined in spec order and muxed with
 the narration as 30 fps H.264 + AAC.
 Every ffmpeg command is built as an argument list by a ``*_cmd`` function and
-run separately by ``run``.
+run separately by ``run``; ``RawVideo`` is how the edit plan measures the raw video.
 """
 
 import argparse
@@ -33,7 +33,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import proc
 from demo_spec import SpecError, load_spec, read_json_object
-from edit_plan import FPS, PlanError, build_plan, load_timeline, sync_ms
+from edit_plan import FPS, PlanError, build_plan, load_timeline
 from tts import SAMPLE_RATE
 
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
@@ -242,10 +242,10 @@ def run(cmd, cwd=None):
     return proc.run(cmd, cwd=cwd, error=ComposeError)
 
 
-def burn_method():
+def burn_method(*, probe=None):
     """How subtitles can be burned in here: a BurnMethod, or None if neither tool is present."""
     try:
-        filters = run(["ffmpeg", "-hide_banner", "-filters"])
+        filters = (probe or run)(["ffmpeg", "-hide_banner", "-filters"])
     except ComposeError:
         filters = ""
     if any(line.split()[1:2] == ["subtitles"] for line in filters.splitlines()):
@@ -277,43 +277,55 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir):
     run(overlay_burn_cmd(video, overlays, out))
 
 
-def compose(spec, plan, raw, audio_dir, out, work_dir, method=None):
-    """Run the ffmpeg pipeline for ``plan``; return the plan re-fitted to measured lengths.
+class RawVideo:
+    """The raw screencast as ``build_plan`` measures it, with ffmpeg.
+
+    Each window it is asked about is decimated into ``work_dir`` once and kept there
+    (``decimated``) for the rest of the pipeline. It only checks that the file
+    exists when first asked, so a bad timeline is reported before a missing video.
+    """
+
+    def __init__(self, path, work_dir):
+        self.path, self._work_dir = Path(path), Path(work_dir)
+        self._decimated = {}
+
+    def flash_s(self):
+        self._check()
+        return first_flash_s(run(flash_stats_cmd(self.path)))
+
+    def frames(self, trim_start, trim_end):
+        self._check()
+        out = self._work_dir / f"decimated-{len(self._decimated):03d}.mp4"
+        run(decimate_cmd(self.path, trim_start, trim_end, out))
+        self._decimated[(trim_start, trim_end)] = out
+        return int(run(count_frames_cmd(out)).strip() or 0)
+
+    def decimated(self, trim_start, trim_end):
+        """The decimated file of a window that ``frames`` measured."""
+        return self._decimated[(trim_start, trim_end)]
+
+    def _check(self):
+        if not self.path.is_file():
+            raise ComposeError(f"raw recording not found: {self.path}")
+
+
+def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None):
+    """Plan the edit against the raw recording and run the ffmpeg pipeline; return the plan.
 
     With a BurnMethod ``method`` the plan's subtitle cues are drawn into the video.
     """
-    raw, audio_dir, work_dir = Path(raw), Path(audio_dir), Path(work_dir)
-    if not raw.is_file():
-        raise ComposeError(f"raw recording not found: {raw}")
+    audio_dir, work_dir = Path(audio_dir), Path(work_dir)
+    raw_video = RawVideo(raw, work_dir)
+    plan = build_plan(spec, timeline, durations, raw_video)
     wavs = {scene.id: audio_dir / f"{scene.id}.wav" for scene in plan.scenes}
     for scene_id, wav in wavs.items():
         if not wav.is_file():
             raise ComposeError(f"narration audio for scene '{scene_id}' not found: {wav}")
 
-    decimated, lengths = {}, {}
-    for index, scene in enumerate(plan.scenes):
-        paths, frame_counts = [], []
-        for part, segment in enumerate(scene.segments):
-            path = work_dir / f"{index:03d}-{part:02d}-decimated.mp4"
-            frames = 0
-            if segment.frames:  # a segment shorter than a frame has nothing to cut
-                run(decimate_cmd(raw, segment.trim_start, segment.trim_end, path))
-                frames = int(run(count_frames_cmd(path)).strip() or 0)
-            paths.append(path)
-            frame_counts.append(frames)
-        if not any(frame_counts):
-            raise ComposeError(
-                f"scene '{scene.id}' has no video frames in its trim window "
-                f"{scene.trim_start:.3f}-{scene.trim_end:.3f}s; is it past the end of {raw}?"
-            )
-        decimated[scene.id] = paths
-        lengths[scene.id] = [frames / FPS for frames in frame_counts]
-    plan = plan.with_video_lengths(lengths)
-
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
-        parts = [(path, segment.lead_frames)
-                 for path, segment in zip(decimated[scene.id], scene.segments) if segment.frames]
+        parts = [(raw_video.decimated(segment.trim_start, segment.trim_end), segment.lead_frames)
+                 for segment in scene.segments if segment.frames]
         if len(parts) == 1 and parts[0][1] == 0:
             synced = parts[0][0]
         else:
@@ -362,15 +374,6 @@ def main(argv=None):
                                      "durations", ComposeError, hint="; run tts.py first",
                                      shape="a JSON object of scene id -> seconds")
         raw = args.raw or demo_dir / "raw.mp4"
-        flash_s = None
-        if sync_ms(timeline) is not None:
-            if not raw.is_file():
-                raise ComposeError(f"raw recording not found: {raw}")
-            flash_s = first_flash_s(run(flash_stats_cmd(raw)))
-            if flash_s is None:
-                raise ComposeError(f"no sync flash found in {raw}; run __demo.sync() right after "
-                                   f"screencast_start, then mark rec_start with --sync-ms")
-        plan = build_plan(spec, timeline, durations, flash_s=flash_s)
         method = burn_method() if args.burn_subs is not False else None
         if method is None and args.burn_subs:
             raise ComposeError("--burn-subs needs an ffmpeg with libass (the `subtitles` filter) "
@@ -381,7 +384,8 @@ def main(argv=None):
                   "subtitles are only in the .srt (`brew install librsvg` to burn them in)",
                   file=sys.stderr)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
-            plan = compose(spec, plan, raw, audio_dir, out, work_dir, method=method)
+            plan = compose(spec, timeline, durations, raw, audio_dir, out, work_dir,
+                           method=method)
         srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
         transcript_path.write_text(transcript_text(spec.get("title") or demo_dir.name, plan),
                                    encoding="utf-8")
@@ -392,8 +396,8 @@ def main(argv=None):
     for scene in plan.scenes:
         print(f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
               f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s")
-    if flash_s is not None:
-        print(f"sync\tflash at {flash_s:.3f}s in the raw video")
+    if plan.flash_s is not None:
+        print(f"sync\tflash at {plan.flash_s:.3f}s in the raw video")
     print(f"total\t{plan.total_s:.3f}s\t{out}")
     print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}\t"
           f"{f'burned in ({method})' if method else 'not burned in'}")

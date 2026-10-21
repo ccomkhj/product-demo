@@ -67,6 +67,14 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
 | `__demo.badge(text[, ms])` | Transient badge at the top left (default 1500 ms). Resolves after ~700 ms, so awaiting it before a navigation keeps it on screen long enough to be recorded. |
 | `__demo.caption(text)` | Lower-third caption at the bottom left. It stays until replaced. `caption("")` hides it. |
 
+## Readiness before recording
+
+Complete `readiness.md` before synthesis and capture: verify the local preflight, MCP
+capabilities, reachable entry pages, authentication and actual viewport. Do not rehearse
+state-changing actions. State-dependent pages are checked when naturally reached.
+Record brief results in `demos/<slug>/readiness.md`; old results never substitute for
+checking the current session. Capability discovery does not prove capture succeeds.
+
 ## Recording start and stop
 
 1. `list_pages({})` → note the selected `pageId`.
@@ -105,7 +113,9 @@ Then, for each scene in spec order:
 1. If the browser isn't on the scene's `url` yet, `navigate_page` there and re-inject the
    overlay. Do this **before** the start marker, so the page load falls in the gap between
    scenes, which compose drops.
-2. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
+2. Evaluate this scene's `prerequisites` using the checks in `readiness.md`, with fresh
+   snapshots and at most 10 seconds per condition. On failure or ambiguity, stop the take.
+   Only after they pass: `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
 3. Run the scene's actions with the recipes below. Right before each action that has an
    `at`, mark a beat, after any snapshot that action needs but before its first visible
    step (the `point` of a click):
@@ -114,10 +124,19 @@ Then, for each scene in spec order:
    pause on a still page never reaches the video: a scene lasts only as long as its motion
    (glides, scrolls, ripples, page changes). Compose holds the screen until each `at`
    phrase, and holds the last frame for the rest of the narration.
-5. `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`
+5. Evaluate `expected_outcomes` with fresh evidence before the end marker. If they pass:
+   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`.
+   Record each result in `readiness.md`. With no declared checks, report “not declared,”
+   not “verified.”
 
 Each mark call prints the JSON line it wrote, such as
 `{"scene": "home", "event": "start", "t_ms": 1760900000000}`.
+
+If any condition fails or remains ambiguous, call `screencast_stop` immediately, retain
+the raw recording/timeline for diagnosis, and report the scene and condition. Do not
+compose or deliver this take; preserve diagnostics before a full retry after correction.
+If stopping itself fails, report that failure and try to stop through the same MCP session;
+never claim capture ended without confirmation.
 
 At the end: `screencast_stop({ pageId })`. It returns
 `The screencast recording has been stopped and saved to <path>`.
@@ -186,6 +205,6 @@ There is no scroll tool. Use a smooth scroll and wait for it to finish:
 ## Checking a frame
 
 `take_screenshot({ pageId })` returns the current viewport. Overlay effects are brief
-(ripple ~0.65 s, keycap ~1.5 s, badge ~1.5 s), so a screenshot taken a few calls later won't
+(ripple ~0.9 s, keycap ~1.5 s, badge ~1.5 s), so a screenshot taken a few calls later won't
 show them. To check the recording, pull frames from the video with ffmpeg instead.
 `take_snapshot` doesn't list overlay elements, because the overlay host is `aria-hidden`.
