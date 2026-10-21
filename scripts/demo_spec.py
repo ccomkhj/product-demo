@@ -5,6 +5,7 @@ import json
 import math
 import shutil
 
+from avatar import CORNERS, DEFAULT_CORNER, DEFAULT_SIZE, MAX_SIZE, MIN_SIZE
 from narration import Narration, PhraseError
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
@@ -44,6 +45,7 @@ def validate_spec(spec):
     """Return a validated copy of ``spec`` with defaults filled in."""
     result = copy.deepcopy(spec)
     _validate_metadata(result)
+    _validate_avatar(result)
     result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
     scenes = result.get("scenes")
     if not isinstance(scenes, list) or not scenes:
@@ -103,6 +105,24 @@ def _validate_metadata(spec):
             raise SpecError("outcome must be a non-empty string")
     if "target_duration_s" in spec and not positive_seconds(spec["target_duration_s"]):
         raise SpecError("target_duration_s must be a finite positive number")
+
+
+def _validate_avatar(spec):
+    if "avatar" not in spec:
+        return
+    avatar = spec["avatar"]
+    if not isinstance(avatar, dict):
+        raise SpecError("avatar must be a JSON object with an 'image'")
+    image = avatar.get("image")
+    if not isinstance(image, str) or not image.strip():
+        raise SpecError("avatar.image must be a non-empty path to a photo")
+    corner = avatar.setdefault("corner", DEFAULT_CORNER)
+    if corner not in CORNERS:
+        raise SpecError(f"avatar.corner must be one of {', '.join(CORNERS)}")
+    size = avatar.setdefault("size", DEFAULT_SIZE)
+    if not positive_seconds(size) or not MIN_SIZE <= size <= MAX_SIZE:
+        raise SpecError(f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
+                        "(the photo's diameter as a share of the video's height)")
 
 
 def _validate_checks(scene, where):

@@ -25,7 +25,8 @@ https://github.com/user-attachments/assets/0708be78-771b-4499-8c81-c5d854d2a679
 - **Free.** The voice is [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), which
   runs offline on your machine. No API key, no per-minute bill.
 - **Looks produced, not captured.** You see the cursor, click ripples and keycaps. Each
-  action lands as the voice names it, and the subtitles are burned in.
+  action lands as the voice names it, and the subtitles are burned in. Add your photo and
+  it sits in the corner as the presenter.
 
 ## Use it
 
@@ -94,6 +95,17 @@ The default is `af_heart`. Other options are `af_bella`, `bf_emma`, `bm_george` 
 </details>
 
 <details>
+<summary><b>Presenter bubble</b></summary>
+
+Add `"avatar": { "image": "me.png" }` to the demo spec to get a round photo in the
+bottom-left corner, like a Loom camera bubble. Its halo glows while the voice speaks. There
+is no lip-sync and no extra download. You can also set `"corner"` (for example
+`"bottom-right"`) and `"size"` (the photo's diameter as a share of the video height,
+default `0.2`). See [`references/demo-spec.md`](references/demo-spec.md).
+
+</details>
+
+<details>
 <summary><b>How it works</b></summary>
 
 - **Narration first.** The voice is generated before recording, so each scene's length is
@@ -125,6 +137,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/kokoro_tts.py` | Local Kokoro synthesis, run by `tts.py` through `uv run` |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
+| `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |
 | `assets/overlay.js` | The visible cursor, click ripples, keycaps, badges and sync flash |
 | `tests/` | `uv run pytest` (the overlay tests need node and Chrome) |
 

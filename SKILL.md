@@ -133,7 +133,9 @@ It prints one line per scene with its fit (hold, speed-up or pad) and lengths, t
 `total` line, and writes `final.mp4`, `final.srt` and `transcript.md` (output format in
 `references/verify.md`). The subtitles are burned into the video too, so the words show
 wherever it plays; pass `--no-burn-subs` only when the user wants a clean video with the
-`.srt` alongside.
+`.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble in
+its corner and prints an `avatar` line. Add one only when the user asks for a presenter
+or gives a photo (`references/demo-spec.md`).
 
 ## 7. Verify
 

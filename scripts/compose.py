@@ -12,6 +12,8 @@ sentence) and transcript.md (scene titles + narration). The subtitles are also
 drawn into the video, with libass when ffmpeg has the `subtitles` filter,
 otherwise as cue images rendered by rsvg-convert and overlaid; --no-burn-subs
 leaves them out, and --burn-subs fails instead of warning when neither is there.
+A spec with an ``avatar`` also gets the presenter bubble drawn in its corner (see
+avatar.py), and subtitles at the same edge keep clear of it.
 
 Each scene is cut from the raw recording into segments at its beat markers,
 their frozen frames are dropped with mpdecimate, each segment is held back until
@@ -23,6 +25,7 @@ run separately by ``run``; ``RawVideo`` is how the edit plan measures the raw vi
 """
 
 import argparse
+import math
 import shutil
 import sys
 import tempfile
@@ -32,6 +35,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 import proc
+from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
 from tts import SAMPLE_RATE
@@ -127,10 +131,19 @@ def concat_audio_cmd(wavs_and_lengths, out):
                    "-c:a", "pcm_s16le", str(out)]
 
 
-def subtitles_burn_cmd(video, srt_name, out):
-    """Burn an .srt with libass (the ``subtitles`` filter); run with cwd = the srt's folder."""
+# ffmpeg renders an .srt on a 384 x 288 libass canvas; side margins are in its units.
+LIBASS_WIDTH, LIBASS_MARGIN = 384, 10
+
+
+def subtitles_burn_cmd(video, srt_name, out, side_margin=LIBASS_MARGIN):
+    """Burn an .srt with libass (the ``subtitles`` filter); run with cwd = the srt's folder.
+
+    ``side_margin`` is the left and right margin in libass units, the same on both sides
+    so the lines stay centred.
+    """
     style = ("FontName=Helvetica,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-             "BorderStyle=1,Outline=1.5,Shadow=0,MarginV=18")
+             f"BorderStyle=1,Outline=1.5,Shadow=0,MarginV=18,"
+             f"MarginL={side_margin},MarginR={side_margin}")
     return ["ffmpeg", "-v", "error", "-y", "-i", str(video),
             "-vf", f"subtitles=filename={srt_name}:force_style='{style}'",
             "-an", "-r", str(FPS), *X264, str(out)]
@@ -201,14 +214,15 @@ def transcript_text(title, plan):
     return "\n".join(lines)
 
 
-def cue_svg(text, width, height):
+def cue_svg(text, width, height, reserve=0):
     """Render one cue as a transparent ``width``-wide SVG strip of centred, outlined text.
 
-    Returns (svg, strip_height). Used to burn subtitles when ffmpeg lacks libass.
+    Lines wrap to keep ``reserve`` pixels clear at both sides. Returns (svg, strip_height).
+    Used to burn subtitles when ffmpeg lacks libass.
     """
     font = max(14, round(height * 0.045))
     line_h = round(font * 1.3)
-    per_line = max(10, int(width * 0.85 / (font * 0.55)))
+    per_line = max(10, int(min(width * 0.85, width - 2 * reserve) / (font * 0.55)))
     lines = textwrap.wrap(text, per_line) or [""]
     strip_h = line_h * len(lines) + font
     tspans = "".join(
@@ -255,17 +269,21 @@ def burn_method(*, probe=None):
     return None
 
 
-def burn_subtitles(video, cues, viewport, method, out, work_dir):
-    """Burn ``cues`` into ``video`` with libass, or as pre-rendered images overlaid by ffmpeg."""
+def burn_subtitles(video, cues, viewport, method, out, work_dir, reserve=0):
+    """Burn ``cues`` into ``video`` with libass, or as pre-rendered images overlaid by ffmpeg.
+
+    The lines keep ``reserve`` pixels clear at both sides (where a bubble sits).
+    """
+    width, height = _frame(viewport)
     if method is BurnMethod.SUBTITLES:
         (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
-        run(subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve()),
+        margin = max(LIBASS_MARGIN, math.ceil(reserve * LIBASS_WIDTH / width))
+        run(subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve(), margin),
             cwd=work_dir)
         return
-    width, height = _even(viewport["width"]), _even(viewport["height"])
     overlays = []
     for index, cue in enumerate(cues):
-        svg, strip_h = cue_svg(cue.text, width, height)
+        svg, strip_h = cue_svg(cue.text, width, height, reserve)
         svg_path, png = work_dir / f"cue-{index:03d}.svg", work_dir / f"cue-{index:03d}.png"
         svg_path.write_text(svg, encoding="utf-8")
         run(svg_to_png_cmd(svg_path, png))
@@ -309,10 +327,11 @@ class RawVideo:
             raise ComposeError(f"raw recording not found: {self.path}")
 
 
-def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None):
+def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None, avatar=None):
     """Plan the edit against the raw recording and run the ffmpeg pipeline; return the plan.
 
-    With a BurnMethod ``method`` the plan's subtitle cues are drawn into the video.
+    With a BurnMethod ``method`` the plan's subtitle cues are drawn into the video; with
+    an Avatar ``avatar`` its bubble is drawn in its corner, glowing with the narration.
     """
     audio_dir, work_dir = Path(audio_dir), Path(work_dir)
     raw_video = RawVideo(raw, work_dir)
@@ -342,9 +361,14 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     run(concat_video_cmd(list_file, video))
     run(concat_audio_cmd(audio_parts, audio))
     if method is not None:
+        reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
         burned = work_dir / "burned.mp4"
-        burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir)
+        burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir, reserve)
         video = burned
+    if avatar is not None:
+        bubbled = work_dir / "bubbled.mp4"
+        burn_avatar(video, audio, avatar, spec["viewport"], FPS, bubbled, work_dir, run)
+        video = bubbled
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     run(mux_cmd(video, audio, out))
     return plan
@@ -374,6 +398,7 @@ def main(argv=None):
                                      "durations", ComposeError, hint="; run tts.py first",
                                      shape="a JSON object of scene id -> seconds")
         raw = args.raw or demo_dir / "raw.mp4"
+        avatar = spec_avatar(spec, demo_dir)
         method = burn_method() if args.burn_subs is not False else None
         if method is None and args.burn_subs:
             raise ComposeError("--burn-subs needs an ffmpeg with libass (the `subtitles` filter) "
@@ -385,7 +410,7 @@ def main(argv=None):
                   file=sys.stderr)
         with tempfile.TemporaryDirectory(prefix="compose-") as work_dir:
             plan = compose(spec, timeline, durations, raw, audio_dir, out, work_dir,
-                           method=method)
+                           method=method, avatar=avatar)
         srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
         transcript_path.write_text(transcript_text(spec.get("title") or demo_dir.name, plan),
                                    encoding="utf-8")
@@ -402,11 +427,28 @@ def main(argv=None):
     print(f"subtitles\t{len(plan.cues)} cues\t{srt_path}\t"
           f"{f'burned in ({method})' if method else 'not burned in'}")
     print(f"transcript\t{transcript_path}")
+    if avatar:
+        print(f"avatar\t{avatar.corner}\t{avatar.image}")
     return 0
+
+
+def spec_avatar(spec, demo_dir):
+    """The spec's ``avatar`` as an Avatar, its image relative to the demo folder; None without one."""
+    if "avatar" not in spec:
+        return None
+    fields = spec["avatar"]
+    image = Path(demo_dir) / Path(fields["image"]).expanduser()
+    if not image.is_file():
+        raise ComposeError(f"avatar image not found: {image}")
+    return Avatar(image, fields["corner"], fields["size"])
 
 
 def _even(value):
     return int(value) - int(value) % 2
+
+
+def _frame(viewport):
+    return _even(viewport["width"]), _even(viewport["height"])
 
 
 if __name__ == "__main__":

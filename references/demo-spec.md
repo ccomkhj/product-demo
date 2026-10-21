@@ -17,6 +17,7 @@ malformed spec fails before any audio or recording is made.
 | `target_duration_s` | no | Finite positive number (not a boolean). Editorial target, not a rendering limit. No automatic default for existing specs. |
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
 | `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai` or `elevenlabs`; leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. |
+| `avatar` | no | `{ "image", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
 
 ## Scene

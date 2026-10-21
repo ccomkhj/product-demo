@@ -214,3 +214,27 @@ def test_invalid_scene_checks(field, checks):
     spec['scenes'][0][field] = checks
     with pytest.raises(SpecError, match=f"scene 1.*home.*{field}"):
         validate_spec(spec)
+
+
+def test_avatar_gets_its_default_corner_and_size():
+    result = validate_spec(make_spec(avatar={"image": "me.png"}))
+
+    assert result["avatar"] == {"image": "me.png", "corner": "bottom-left", "size": 0.2}
+
+
+def test_spec_without_avatar_has_none():
+    assert "avatar" not in validate_spec(make_spec())
+
+
+@pytest.mark.parametrize("avatar, message", [
+    ("me.png", "avatar must be a JSON object"),
+    ({}, "avatar.image must be"),
+    ({"image": " "}, "avatar.image must be"),
+    ({"image": "me.png", "corner": "middle"}, "avatar.corner must be one of bottom-left"),
+    ({"image": "me.png", "size": 0.6}, "avatar.size must be a number from 0.05 to 0.5"),
+    ({"image": "me.png", "size": 0}, "avatar.size"),
+    ({"image": "me.png", "size": True}, "avatar.size"),
+])
+def test_malformed_avatar_is_rejected(avatar, message):
+    with pytest.raises(SpecError, match=message):
+        validate_spec(make_spec(avatar=avatar))

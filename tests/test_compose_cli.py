@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from compose import cue_svg, subtitles_burn_cmd
+
 COMPOSE = Path(__file__).resolve().parent.parent / "scripts" / "compose.py"
 
 needs_ffmpeg = pytest.mark.skipif(
@@ -321,3 +323,87 @@ def test_compose_reports_bad_durations_without_a_traceback(tmp_path, seconds):
     assert "compose: error:" in result.stderr
     assert "'brisk'" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+PHOTO = Path(__file__).resolve().parent.parent / "assets" / "avatars" / "huijo.png"
+
+
+def with_avatar(demo_dir, **fields):
+    path = demo_dir / "demo.json"
+    spec = json.loads(path.read_text())
+    spec["avatar"] = {"image": str(PHOTO), **fields}
+    path.write_text(json.dumps(spec))
+
+
+def corner_differences(a, b, width=320, height=240, at=1.0):
+    """Mean absolute luma difference between two videos' frames at ``at`` s, per quarter-corner."""
+    frames = [subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, check=True,
+    ).stdout for path in (a, b)]
+    def mean_diff(x0, y0):
+        pixels = [(y * width + x) for y in range(y0, y0 + height // 4)
+                  for x in range(x0, x0 + width // 4)]
+        return sum(abs(frames[0][p] - frames[1][p]) for p in pixels) / len(pixels)
+    right, bottom = width * 3 // 4, height * 3 // 4
+    return {"top-left": mean_diff(0, 0), "top-right": mean_diff(right, 0),
+            "bottom-left": mean_diff(0, bottom), "bottom-right": mean_diff(right, bottom)}
+
+
+@needs_ffmpeg
+def test_avatar_draws_the_bubble_in_its_corner_for_the_whole_video(tmp_path):
+    audio = write_demo(tmp_path)
+    make_media(tmp_path, audio)
+    plain = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+    with_avatar(tmp_path, corner="top-right", size=0.3)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs", "--out", tmp_path / "bubble.mp4")
+
+    assert plain.returncode == 0, plain.stderr
+    assert result.returncode == 0, result.stderr
+    assert f"avatar\ttop-right\t{PHOTO}" in result.stdout
+    info = probe(tmp_path / "bubble.mp4")
+    assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
+    assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
+    for at in (0.5, EXPECTED_TOTAL - 0.3):
+        diff = corner_differences(tmp_path / "final.mp4", tmp_path / "bubble.mp4", at=at)
+        assert diff["top-right"] > 20
+        # elsewhere only the extra encode's noise
+        assert max(diff["top-left"], diff["bottom-left"], diff["bottom-right"]) < 3
+
+
+@needs_ffmpeg
+def test_avatar_with_subtitles_composes(tmp_path):
+    audio = write_demo(tmp_path)
+    make_media(tmp_path, audio)
+    with_avatar(tmp_path)
+
+    result = run_compose(tmp_path / "demo.json")
+
+    assert result.returncode == 0, result.stderr
+    assert "burned in" in result.stdout and "avatar\tbottom-left" in result.stdout
+
+
+def test_compose_reports_a_missing_avatar_image_without_a_traceback(tmp_path):
+    write_demo(tmp_path)
+    with_avatar(tmp_path)
+    spec = json.loads((tmp_path / "demo.json").read_text())
+    spec["avatar"]["image"] = "nobody.png"
+    (tmp_path / "demo.json").write_text(json.dumps(spec))
+
+    result = run_compose(tmp_path / "demo.json")
+
+    assert result.returncode == 1
+    assert f"compose: error: avatar image not found: {tmp_path / 'nobody.png'}" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_subtitles_wrap_clear_of_a_bottom_bubble():
+    text = "A sentence long enough to need wrapping when the bubble takes room at the side."
+    wide, wide_h = cue_svg(text, 1920, 1080)
+    narrow, narrow_h = cue_svg(text, 1920, 1080, reserve=600)
+
+    assert wide.count("<tspan") < narrow.count("<tspan") and wide_h < narrow_h
+    assert "MarginL=10,MarginR=10'" in " ".join(subtitles_burn_cmd("v.mp4", "s.srt", "o.mp4"))
+    assert "MarginL=80,MarginR=80'" in " ".join(subtitles_burn_cmd("v.mp4", "s.srt", "o.mp4", 80))
