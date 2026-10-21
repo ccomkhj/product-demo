@@ -1,111 +1,54 @@
 {
-  "title": "From Wikipedia to Wikidata (sample)",
-  "product": "Wikidata",
-  "audience": "general audience curious how Wikipedia's structured data works",
-  "viewport": {
-    "width": 1920,
-    "height": 1080
-  },
-  "voice": {
-    "backend": "kokoro",
-    "voice": "af_heart"
-  },
+  "title": "A quick tour of Korea.net (sample)",
+  "product": "Korea.net",
+  "audience": "general audience curious about Korea",
+  "purpose": "custom",
+  "outcome": "Know where Korea.net introduces the country, three facts about Korea, and who its president is",
+  "viewport": { "width": 1920, "height": 1080 },
+  "voice": { "backend": "kokoro", "voice": "am_michael" },
+  "avatar": { "image": "../../assets/avatars/huijo.png", "corner": "bottom-left", "size": 0.2 },
   "scenes": [
     {
-      "id": "wikipedia",
-      "title": "Wikipedia: the free encyclopedia",
-      "url": "https://www.wikipedia.org",
+      "id": "home",
+      "title": "Korea.net: the official website of Korea",
+      "url": "https://www.korea.net",
+      "prerequisites": [{ "type": "visible_target", "target": "the ABOUT KOREA menu link" }],
+      "expected_outcomes": [{ "type": "visible_text", "text": "Overview of Korea" }],
       "actions": [
-        {
-          "type": "point",
-          "target": "the Wikipedia globe logo"
-        },
-        {
-          "type": "point",
-          "target": "the English language link",
-          "at": "hundreds of languages"
-        },
-        {
-          "type": "scroll",
-          "target": "the sister-project links in the footer",
-          "at": "At the bottom of the portal"
-        },
-        {
-          "type": "click",
-          "target": "the Wikidata link in the footer",
-          "at": "the Wikidata link"
-        }
+        { "type": "point", "target": "the Korea.net logo" },
+        { "type": "point", "target": "the top news headline in the list under the president banner", "at": "news on culture" },
+        { "type": "click", "target": "the ABOUT KOREA menu link", "at": "open About Korea" }
       ],
-      "narration": "This is wikipedia dot org, the doorway to the free encyclopedia in hundreds of languages. Behind those articles sits a shared store of facts. At the bottom of the portal, the Wikidata link takes us there."
+      "narration": "This is Korea dot net, the official website of the Republic of Korea, with news on culture, sports and technology. To learn the basics, let's open About Korea."
     },
     {
-      "id": "wikidata-main",
-      "title": "Wikidata: the free knowledge base",
-      "url": "https://www.wikidata.org/wiki/Wikidata:Main_Page",
+      "id": "overview",
+      "title": "Overview of Korea: three facts",
+      "url": "https://www.korea.net/AboutKorea/OverviewofKorea",
+      "prerequisites": [{ "type": "visible_text", "text": "Overview of Korea" }],
+      "expected_outcomes": [{ "type": "visible_text", "text": "Hangeul: A Writing System" }],
       "actions": [
-        {
-          "type": "point",
-          "target": "the Welcome to Wikidata heading"
-        },
-        {
-          "type": "point",
-          "target": "the data entity count link",
-          "at": "more than a hundred"
-        },
-        {
-          "type": "scroll",
-          "target": "the Related to current events section",
-          "at": "Under Related to current events"
-        },
-        {
-          "type": "click",
-          "target": "the Hexed (Q136027913) link",
-          "at": "open one item"
-        }
+        { "type": "point", "target": "the Overview of Korea page heading" },
+        { "type": "point", "target": "the Geography and Location of the Korean Peninsula heading", "at": "First, geography" },
+        { "type": "scroll", "target": "the A Land of Four Seasons heading", "at": "Second" },
+        { "type": "point", "target": "the A Land of Four Seasons heading", "at": "four distinct seasons" },
+        { "type": "scroll", "target": "the Hangeul: A Writing System Rooted in Scientific Principles heading", "at": "Third" },
+        { "type": "point", "target": "the Hangeul: A Writing System Rooted in Scientific Principles heading", "at": "the Korean alphabet" }
       ],
-      "narration": "Wikidata is the free knowledge base that anyone can edit, with more than a hundred and twenty million data entities. Both people and machines can read it, and it feeds structured data to Wikipedia and its sister projects. Under Related to current events, let's open one item."
+      "narration": "The Overview of Korea page covers the country's essentials. Here are three. First, geography: Korea sits on a peninsula about a thousand kilometers long, and roughly seventy-five percent of it is mountains. Second, it is a land of four distinct seasons, from spring cherry blossoms to snowy winters. Third, Hangeul, the Korean alphabet, was created in 1443 by King Sejong to make reading and writing accessible to everyone."
     },
     {
-      "id": "hexed",
-      "title": "An item: Hexed",
-      "url": "https://www.wikidata.org/wiki/Q136027913",
+      "id": "president",
+      "title": "President Lee Jae Myung",
+      "url": "https://www.korea.net/Government/Administration/President-Lee-Jae-Myung",
+      "prerequisites": [{ "type": "visible_text", "text": "Lee Jae Myung" }],
+      "expected_outcomes": [{ "type": "visible_text", "text": "President of the Republic of Korea" }],
       "actions": [
-        {
-          "type": "point",
-          "target": "the Hexed label and its description"
-        },
-        {
-          "type": "scroll",
-          "target": "the instance of statement",
-          "at": "Its facts are written"
-        },
-        {
-          "type": "point",
-          "target": "the instance of statement",
-          "at": "it is an animated film"
-        },
-        {
-          "type": "point",
-          "target": "the publication date statement",
-          "at": "released on"
-        },
-        {
-          "type": "point",
-          "target": "the director statement",
-          "at": "directed by"
-        },
-        {
-          "type": "scroll",
-          "target": "the IMDb ID identifier",
-          "at": "Further down"
-        },
-        {
-          "type": "point",
-          "target": "the IMDb ID identifier",
-          "at": "IMDb"
-        }
+        { "type": "point", "target": "the President Lee Jae Myung page heading" },
+        { "type": "point", "target": "the Lee Jae Myung name next to the portrait", "at": "Lee Jae Myung" },
+        { "type": "point", "target": "the President of the Republic of Korea subtitle", "at": "elected" }
       ],
-      "narration": "Every item has its own Q number. This one is Hexed, an upcoming Disney animated film. Its facts are written as statements: it is an animated film, released on the twenty-fifth of November, 2026, and directed by Fawn Veerasunthorn and Jason Hand. Further down, identifiers link it to IMDb, Rotten Tomatoes and dozens of other databases."
+      "narration": "And who leads the country? Under Government, the president's page introduces Lee Jae Myung. He was elected President of the Republic of Korea on June third, 2025."
     }
   ]
 }

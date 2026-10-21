@@ -8,12 +8,12 @@ the script, puts every click on the word that names it, and cuts the dead time.
 **An afternoon of recording and editing becomes two messages: the request and your
 approval.**
 
-https://github.com/user-attachments/assets/0708be78-771b-4499-8c81-c5d854d2a679
+https://github.com/user-attachments/assets/6b411193-4300-417b-8ec8-564527144894
 
-*53 s, made from this one line:*
+*54 s, with a presenter bubble in the corner, made from this one line:*
 
 ```
-/product-demo record a sample video for https://www.wikipedia.org -> https://www.wikidata.org/wiki/Wikidata:Main_Page -> https://www.wikidata.org/wiki/Q136027913
+/product-demo record a sample video for https://www.korea.net -> https://www.korea.net/AboutKorea/OverviewofKorea (explain only 3 bullet points about Korea) -> https://www.korea.net/Government/Administration/President-Lee-Jae-Myung (just tell who the president is and when he was elected). Use the presenter avatar assets/avatars/huijo.png.
 ```
 
 ## Why
@@ -139,6 +139,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
 | `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |
 | `assets/overlay.js` | The visible cursor, click ripples, keycaps, badges and sync flash |
+| `docs/sample/` | The README's sample demo (spec, video, subtitles), also the reference end-to-end test |
 | `tests/` | `uv run pytest` (the overlay tests need node and Chrome) |
 
 </details>
