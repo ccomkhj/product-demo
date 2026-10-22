@@ -101,7 +101,9 @@ Add `"avatar": { "image": "me.png" }` to the demo spec to get a round photo in t
 bottom-left corner, like a Loom camera bubble. Its halo glows while the voice speaks. There
 is no lip-sync and no extra download. You can also set `"corner"` (for example
 `"bottom-right"`) and `"size"` (the photo's diameter as a share of the video height,
-default `0.2`). See [`references/demo-spec.md`](references/demo-spec.md).
+default `0.2`). To reuse one photo in every demo, save it once with
+`python3 scripts/own_voice.py --photo me.png` and write `"avatar": { "profile": "own_photo" }`.
+See [`references/demo-spec.md`](references/demo-spec.md).
 
 </details>
 

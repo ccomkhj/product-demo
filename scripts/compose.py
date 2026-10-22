@@ -39,6 +39,7 @@ from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
 from tts import SAMPLE_RATE
+from voice_config import saved_photo
 
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
 
@@ -433,10 +434,16 @@ def main(argv=None):
 
 
 def spec_avatar(spec, demo_dir):
-    """The spec's ``avatar`` as an Avatar, its image relative to the demo folder; None without one."""
+    """The spec's ``avatar`` as an Avatar, its image relative to the demo folder or the saved
+    own_photo; None without one."""
     if "avatar" not in spec:
         return None
     fields = spec["avatar"]
+    if "profile" in fields:
+        try:
+            return Avatar(saved_photo(), fields["corner"], fields["size"])
+        except ValueError as exc:
+            raise ComposeError(str(exc)) from exc
     image = Path(demo_dir) / Path(fields["image"]).expanduser()
     if not image.is_file():
         raise ComposeError(f"avatar image not found: {image}")

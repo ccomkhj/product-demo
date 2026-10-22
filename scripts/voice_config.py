@@ -82,6 +82,22 @@ def resolve_voice_config(voice, backend, spec_dir):
     return config
 
 
+def saved_photo():
+    """The registered ``own_photo`` as an absolute path; ValueError when it is missing."""
+    try:
+        registry = json.loads(PROFILE_CONFIG.read_text())
+        entry = registry.get("own_photo") if isinstance(registry, dict) else None
+        name = entry.get("image") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("own_photo is not registered")
+        photo = (PROFILE_CONFIG.parent / Path(name).expanduser()).resolve()
+        if not photo.is_file():
+            raise ValueError(f"{photo} is missing")
+        return photo
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"own_photo needs setup: {exc}; run scripts/own_voice.py --photo <path>") from exc
+
+
 def check_platform():
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         raise ValueError("qwen3 requires native Apple Silicon macOS and arm64 Python (not Rosetta)")

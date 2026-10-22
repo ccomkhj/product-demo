@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 import struct
+import subprocess
 import threading
 import urllib.error
 import urllib.request
@@ -106,3 +107,34 @@ def test_profile_cannot_mix_new_audio_with_old_transcript(registry):
     with pytest.raises(ValueError, match='together'):
         voice_config.resolve_voice_config({'profile': 'own_voice', 'reference_audio': 'new.wav'},
                                           'qwen3', Path('/tmp'))
+
+
+PHOTO = Path(__file__).resolve().parent.parent / 'assets' / 'avatars' / 'huijo.png'
+
+
+def test_photo_is_saved_beside_the_registry_and_replaced(registry):
+    assert not own_voice.status()['photo']
+    own_voice.register(recording())
+    first = own_voice.register_photo(PHOTO)
+    assert own_voice.status() == {'ready': True, 'profile': 'own_voice', 'photo': True}
+    assert voice_config.saved_photo() == first.resolve()
+    assert first.parent == registry.parent and first.read_bytes() == PHOTO.read_bytes()
+    second = own_voice.register_photo(PHOTO)
+    assert voice_config.saved_photo() == second.resolve() and not first.exists()
+    config = voice_config.resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path('/tmp'))
+    assert config['reference_text'] == 'My exact words.'
+
+
+def test_photo_without_a_voice_and_a_non_image_is_rejected(registry, tmp_path):
+    assert own_voice.main(['--photo', str(PHOTO)]) == 0
+    assert own_voice.status()['photo'] and not own_voice.status()['ready']
+    text = tmp_path / 'notes.txt'
+    text.write_text('not a photo')
+    with pytest.raises((ValueError, subprocess.SubprocessError)):
+        own_voice.register_photo(text)
+    assert voice_config.saved_photo().suffix == '.png'
+
+
+def test_missing_photo_needs_setup(registry):
+    with pytest.raises(ValueError, match='own_photo needs setup'):
+        voice_config.saved_photo()

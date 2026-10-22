@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reuse a registered own_voice, or serve a local microphone recorder."""
+"""Reuse a registered own_voice, or serve a local microphone recorder; --photo saves own_photo."""
 
 import argparse
 import base64
@@ -8,12 +8,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import tempfile
 import uuid
 import webbrowser
 
-from voice_config import PROFILE_CONFIG, QWEN_MODEL, probe_reference, resolve_voice_config
+from voice_config import (PROFILE_CONFIG, QWEN_MODEL, probe_reference, resolve_voice_config,
+                          saved_photo)
 
 READING = ("Hello, this is my voice. I will use it to guide you through a short product "
            "demonstration. We will look at the main features together, one step at a time, "
@@ -27,11 +29,53 @@ def run(command):
 
 def status():
     try:
+        saved_photo()
+        photo = True
+    except ValueError:
+        photo = False
+    try:
         config = resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path.cwd())
         probe_reference(config['reference_audio'], run)
-        return {'ready': True, 'profile': 'own_voice'}
+        return {'ready': True, 'profile': 'own_voice', 'photo': photo}
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
-        return {'ready': False, 'profile': 'own_voice', 'reason': str(exc)}
+        return {'ready': False, 'profile': 'own_voice', 'photo': photo, 'reason': str(exc)}
+
+
+def read_registry():
+    if not PROFILE_CONFIG.exists():
+        return {}
+    data = json.loads(PROFILE_CONFIG.read_text())
+    if not isinstance(data, dict):
+        raise ValueError('The voice registry must be a JSON object; repair it before saving')
+    return data
+
+
+def write_registry(data, temporary):
+    pending = Path(temporary) / 'config.json'
+    pending.write_text(json.dumps(data, indent=2) + '\n')
+    pending.replace(PROFILE_CONFIG)
+
+
+def register_photo(source):
+    """Copy a decodable image beside the registry as own_photo, replacing an earlier one."""
+    source = Path(source).expanduser()
+    output = run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                  '-show_entries', 'stream=width,height', '-of', 'json', str(source)])
+    streams = json.loads(output).get('streams') or [{}]
+    if not streams[0].get('width') or not streams[0].get('height'):
+        raise ValueError(f'{source} is not an image')
+    directory = PROFILE_CONFIG.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    data = read_registry()
+    previous = data.get('own_photo', {}).get('image') if isinstance(data.get('own_photo'), dict) else None
+    name = f'own_photo-{uuid.uuid4().hex}{source.suffix.lower()}'
+    with tempfile.TemporaryDirectory(dir=directory) as temporary:
+        shutil.copyfile(source, directory / name)
+        data['own_photo'] = {'image': name}
+        write_registry(data, temporary)
+    if previous and (directory / previous).resolve().parent == directory.resolve():
+        (directory / previous).unlink(missing_ok=True)
+    return directory / name
 
 
 def register(payload):
@@ -70,19 +114,13 @@ def register(payload):
         rms = math.sqrt(sum(value * value for value in samples) / len(samples))
         if rms < 30:
             raise ValueError('The recording is too quiet. Check your microphone and try again')
-        data = {}
-        if PROFILE_CONFIG.exists():
-            data = json.loads(PROFILE_CONFIG.read_text())
-            if not isinstance(data, dict):
-                raise ValueError('The voice registry must be a JSON object; repair it before saving')
+        data = read_registry()
         name = f'own_voice-{uuid.uuid4().hex}.wav'
         target.replace(directory / name)
         data['own_voice'] = {'backend': 'qwen3', 'model': QWEN_MODEL,
                              'reference_audio': name, 'reference_text': transcript.strip(),
                              'language': 'English'}
-        pending = Path(temporary) / 'config.json'
-        pending.write_text(json.dumps(data, indent=2) + '\n')
-        pending.replace(PROFILE_CONFIG)
+        write_registry(data, temporary)
 
 
 def recorder_server():
@@ -142,7 +180,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--status', action='store_true', help='check registration without recording')
     parser.add_argument('--no-open', action='store_true', help='print the recorder URL without opening it')
+    parser.add_argument('--photo', metavar='PATH', help='save this photo as own_photo, the presenter bubble')
     args = parser.parse_args(argv)
+    if args.photo:
+        try:
+            register_photo(args.photo)
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            print(json.dumps({'photo': False, 'reason': str(exc)}), flush=True)
+            return 1
+        print(json.dumps(status()), flush=True)
+        return 0
     result = status()
     print(json.dumps(result), flush=True)
     if result['ready'] or args.status:

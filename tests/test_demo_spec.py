@@ -222,6 +222,11 @@ def test_avatar_gets_its_default_corner_and_size():
     assert result["avatar"] == {"image": "me.png", "corner": "bottom-left", "size": 0.2}
 
 
+def test_avatar_can_use_the_saved_photo():
+    result = validate_spec(make_spec(avatar={"profile": "own_photo", "corner": "top-right"}))
+    assert result["avatar"] == {"profile": "own_photo", "corner": "top-right", "size": 0.2}
+
+
 def test_spec_without_avatar_has_none():
     assert "avatar" not in validate_spec(make_spec())
 
@@ -230,6 +235,8 @@ def test_spec_without_avatar_has_none():
     ("me.png", "avatar must be a JSON object"),
     ({}, "avatar.image must be"),
     ({"image": " "}, "avatar.image must be"),
+    ({"profile": "own_voice"}, "avatar.profile must be own_photo"),
+    ({"profile": "own_photo", "image": "me.png"}, "without an image"),
     ({"image": "me.png", "corner": "middle"}, "avatar.corner must be one of bottom-left"),
     ({"image": "me.png", "size": 0.6}, "avatar.size must be a number from 0.05 to 0.5"),
     ({"image": "me.png", "size": 0}, "avatar.size"),

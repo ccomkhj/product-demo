@@ -17,7 +17,7 @@ malformed spec fails before any audio or recording is made.
 | `target_duration_s` | no | Finite positive number (not a boolean). Editorial target, not a rendering limit. No automatic default for existing specs. |
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
 | `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai`, `elevenlabs` or `qwen3` (see local cloning below); leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. |
-| `avatar` | no | `{ "image", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
+| `avatar` | no | `{ "image" or "profile", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `"profile": "own_photo"` uses the photo saved with `own_voice.py --photo` instead (see local voice cloning). `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
 
 ## Local voice cloning
@@ -37,6 +37,11 @@ A missing/broken profile requires setup rather than silently selecting another v
 Profile paths resolve relative to `.voices/config.json`; per-demo overrides resolve
 relative to the demo spec. Model and language overrides are allowed. To supply a different
 reference in a demo, omit the profile and supply both reference fields explicitly.
+
+`python3 scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
+`own_photo`, replacing any earlier one; `--status` reports it as `photo: true`. Use
+`"avatar": {"profile": "own_photo"}` in any demo to draw it. A missing photo fails compose
+with a setup hint rather than leaving the bubble out.
 
 
 Select `qwen3` explicitly to clone your voice on native Apple Silicon macOS:

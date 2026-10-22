@@ -118,10 +118,14 @@ def _validate_avatar(spec):
         return
     avatar = spec["avatar"]
     if not isinstance(avatar, dict):
-        raise SpecError("avatar must be a JSON object with an 'image'")
-    image = avatar.get("image")
-    if not isinstance(image, str) or not image.strip():
-        raise SpecError("avatar.image must be a non-empty path to a photo")
+        raise SpecError("avatar must be a JSON object with an 'image' or 'profile'")
+    if "profile" in avatar:
+        if avatar["profile"] != "own_photo" or "image" in avatar:
+            raise SpecError("avatar.profile must be own_photo, without an image")
+    else:
+        image = avatar.get("image")
+        if not isinstance(image, str) or not image.strip():
+            raise SpecError("avatar.image must be a non-empty path to a photo")
     corner = avatar.setdefault("corner", DEFAULT_CORNER)
     if corner not in CORNERS:
         raise SpecError(f"avatar.corner must be one of {', '.join(CORNERS)}")

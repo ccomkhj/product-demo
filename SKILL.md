@@ -138,8 +138,9 @@ It prints one line per scene with its fit (hold, speed-up or pad) and lengths, t
 `references/verify.md`). The subtitles are burned into the video too, so the words show
 wherever it plays; pass `--no-burn-subs` only when the user wants a clean video with the
 `.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble in
-its corner and prints an `avatar` line. Add one only when the user asks for a presenter
-or gives a photo (`references/demo-spec.md`).
+its corner and prints an `avatar` line. Add one when `own_voice.py --status` reports
+`photo: true` (see **Local cloned narration**), or when the user asks for a presenter or
+gives a photo (`references/demo-spec.md`).
 
 ## 7. Verify
 
@@ -179,6 +180,11 @@ in the demo spec and proceed. **Do not ask whether they have a recording, ask th
 record again, or ask permission to reuse the registered voice.** Preserve any explicit
 per-demo model or language preferences. Explicit per-demo reference recordings remain
 supported and do not require registering a profile.
+
+If it also reports `photo: true`, add `"avatar": {"profile": "own_photo"}` too, in the
+corner the scenes' actions don't use, unless the user asks for no presenter. When the user
+gives a photo to keep, save it once with `own_voice.py --photo <path>`; it replaces any
+earlier one.
 
 If the profile is missing or unusable, run `python3 <skill dir>/scripts/own_voice.py`.
 It opens a local recording page and waits. Tell the user to click Record, read the
