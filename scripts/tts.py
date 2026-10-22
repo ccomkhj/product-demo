@@ -2,7 +2,7 @@
 """Generate one narration WAV per scene of a demo spec, plus durations.json.
 
 Usage:
-    python3 scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
+    uv run python scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
                            [--out-dir DIR]
 
 Writes <out-dir>/<scene-id>.wav (48 kHz, mono, 16-bit PCM) for every scene and

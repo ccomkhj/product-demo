@@ -1,10 +1,10 @@
 """Stamp a scene marker into a demo timeline (stdlib only).
 
 Usage:
-    python3 scripts/mark.py TIMELINE rec_start [--sync-ms MS]
-    python3 scripts/mark.py TIMELINE start SCENE_ID
-    python3 scripts/mark.py TIMELINE beat SCENE_ID
-    python3 scripts/mark.py TIMELINE end SCENE_ID
+    uv run python scripts/mark.py TIMELINE rec_start [--sync-ms MS]
+    uv run python scripts/mark.py TIMELINE start SCENE_ID
+    uv run python scripts/mark.py TIMELINE beat SCENE_ID
+    uv run python scripts/mark.py TIMELINE end SCENE_ID
 
 Each call appends one JSON line ``{"scene": ..., "event": ..., "t_ms": ...}``
 with the current wall-clock time in milliseconds. ``rec_start`` marks the moment

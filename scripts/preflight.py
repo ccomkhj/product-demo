@@ -13,12 +13,14 @@ import sys
 import tempfile
 
 if __name__ == "__main__" and sys.version_info < (3, 11):
-    message = "Python 3.11+ is required; use uv run python scripts/preflight.py with the same arguments."
+    skill_dir = Path(__file__).resolve().parents[1]
+    command = f"uv run --project {skill_dir} python {skill_dir / 'scripts' / 'preflight.py'}"
+    message = f"Python 3.11+ is required; rerun with the same arguments as: {command}"
     if "--json" in sys.argv:
         print(json.dumps({"schema_version": 1, "scope": "local", "ready": False,
                           "selected_backend": None, "checks": [
                               {"id": "python", "status": "fail", "message": message,
-                               "remedy": "Run with Python 3.11+ or uv run python."}]}))
+                               "remedy": f"Run: {command}"}]}))
     else:
         print(message)
     raise SystemExit(1)

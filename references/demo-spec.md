@@ -22,7 +22,7 @@ malformed spec fails before any audio or recording is made.
 
 ## Local voice cloning
 
-For a reusable personal voice, run `python3 scripts/own_voice.py`. It checks the local
+For a reusable personal voice, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`. It checks the local
 registry first and exits immediately when a usable voice exists. Otherwise it opens a
 local Record / Stop / Preview / Save page. Read the displayed passage, correct the
 transcript if needed, and save. The recording is validated and converted to WAV.
@@ -38,7 +38,7 @@ Profile paths resolve relative to `.voices/config.json`; per-demo overrides reso
 relative to the demo spec. Model and language overrides are allowed. To supply a different
 reference in a demo, omit the profile and supply both reference fields explicitly.
 
-`python3 scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
+`uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
 `own_photo`, replacing any earlier one; `--status` reports it as `photo: true`. Use
 `"avatar": {"profile": "own_photo"}` in any demo to draw it. A missing photo fails compose
 with a setup hint rather than leaving the bubble out.

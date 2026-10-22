@@ -100,7 +100,7 @@ checking the current session. Capability discovery does not prove capture succee
    which the flash was painted, such as `1760900000123`.
 7. Mark the recording start with that number. It appends to the timeline; compose uses
    only the events after the last `rec_start`, so a re-recording needs no cleanup:
-   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start --sync-ms <ms>`
+   `uv run --project <skill dir> python <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl rec_start --sync-ms <ms>`
 
    Chrome starts the recording on its own clock and never says when, and the agent takes
    seconds between tool calls, so the time of this mark says nothing about where the video
@@ -115,17 +115,17 @@ Then, for each scene in spec order:
    scenes, which compose drops.
 2. Evaluate this scene's `prerequisites` using the checks in `readiness.md`, with fresh
    snapshots and at most 10 seconds per condition. On failure or ambiguity, stop the take.
-   Only after they pass: `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
+   Only after they pass: `uv run --project <skill dir> python <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
 3. Run the scene's actions with the recipes below. Right before each action that has an
    `at`, mark a beat, after any snapshot that action needs but before its first visible
    step (the `point` of a click):
-   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl beat <scene-id>`
+   `uv run --project <skill dir> python <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl beat <scene-id>`
 4. Don't wait to fill out the narration. Compose drops every frame where nothing moves, so a
    pause on a still page never reaches the video: a scene lasts only as long as its motion
    (glides, scrolls, ripples, page changes). Compose holds the screen until each `at`
    phrase, and holds the last frame for the rest of the narration.
 5. Evaluate `expected_outcomes` with fresh evidence before the end marker. If they pass:
-   `python3 <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`.
+   `uv run --project <skill dir> python <skill dir>/scripts/mark.py demos/<slug>/timeline.jsonl end <scene-id>`.
    Record each result in `readiness.md`. With no declared checks, report “not declared,”
    not “verified.”
 

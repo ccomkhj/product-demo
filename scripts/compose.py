@@ -1,7 +1,7 @@
 """Compose a fitted, narrated demo video from a raw screencast (stdlib + ffmpeg).
 
 Usage:
-    python3 scripts/compose.py demos/<slug>/demo.json [--raw RAW] [--timeline TIMELINE]
+    uv run python scripts/compose.py demos/<slug>/demo.json [--raw RAW] [--timeline TIMELINE]
         [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--no-burn-subs]
 
 Defaults are relative to the demo spec's folder: raw.mp4, timeline.jsonl,

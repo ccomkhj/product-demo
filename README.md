@@ -55,9 +55,9 @@ the script; it does not invent product behavior or sales claims.
 Run local checks separately from the skill directory:
 
 ```bash
-python3 scripts/preflight.py /path/to/demos/export/demo.json
-python3 scripts/preflight.py /path/to/demos/export/demo.json --json
-python3 scripts/preflight.py /path/to/demos/export/demo.json --durations /path/to/demos/export/audio/durations.json
+uv run python scripts/preflight.py /path/to/demos/export/demo.json
+uv run python scripts/preflight.py /path/to/demos/export/demo.json --json
+uv run python scripts/preflight.py /path/to/demos/export/demo.json --durations /path/to/demos/export/audio/durations.json
 ```
 
 Use `--backend` to override voice selection and `--burn-subs` / `--no-burn-subs` to choose
@@ -79,8 +79,8 @@ git clone https://github.com/ccomkhj/product-demo ~/.claude/skills/product-demo
 claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
 ```
 
-Needs `python3` (3.11+; use `uv run python` if your system Python is older), `ffmpeg` and [`uv`](https://docs.astral.sh/uv/). uv runs the free
-Kokoro voice, which downloads once (~340 MB). Without uv, narration falls back to macOS `say`.
+Needs Python 3.11+ (run the scripts with `uv run python`; stock macOS `python3` is 3.9), `ffmpeg` and [`uv`](https://docs.astral.sh/uv/). uv runs the free
+Kokoro voice, which downloads once (~340 MB). With your own Python 3.11+ but no uv, narration falls back to macOS `say`.
 
 Demos are written to `demos/<slug>/` in the project you run it from.
 
@@ -102,7 +102,7 @@ bottom-left corner, like a Loom camera bubble. Its halo glows while the voice sp
 is no lip-sync and no extra download. You can also set `"corner"` (for example
 `"bottom-right"`) and `"size"` (the photo's diameter as a share of the video height,
 default `0.2`). To reuse one photo in every demo, save it once with
-`python3 scripts/own_voice.py --photo me.png` and write `"avatar": { "profile": "own_photo" }`.
+`uv run python scripts/own_voice.py --photo me.png` and write `"avatar": { "profile": "own_photo" }`.
 See [`references/demo-spec.md`](references/demo-spec.md).
 
 </details>
@@ -160,7 +160,7 @@ Model and language are configurable; see [the configuration example](references/
 Initial setup downloads dependencies and weights; cached generation works offline.
 Kokoro remains the default when no explicit backend or API key is configured.
 
-To set up your reusable voice, run `python3 scripts/own_voice.py`. If `own_voice` is
+To set up your reusable voice, run `uv run python scripts/own_voice.py`. If `own_voice` is
 already registered and valid, it returns immediately. Otherwise a local browser page
 lets you record and save it. Future demos can use
 `"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.

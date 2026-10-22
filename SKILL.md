@@ -13,8 +13,9 @@ scene out, drops the frozen frames and fits the rest to its narration.
 
 `<skill dir>` below is the directory of this file. Each demo lives in `demos/<slug>/`
 under the current working directory: the MCP can only write files (the screencast) inside
-its workspace roots, which is normally that directory. The scripts need `python3` and
-`ffmpeg`. `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
+its workspace roots, which is normally that directory. The scripts need Python 3.11+ and
+`ffmpeg`; stock macOS `python3` is 3.9, so run them through `uv` exactly as written below
+(`uv run --project <skill dir>` picks a 3.11+ interpreter from any working directory). `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
 ffmpeg without libass (see `docs/adr/0001-burn-subs-rsvg-fallback.md`).
 
 ## 1. Interview
@@ -62,7 +63,7 @@ after recording, it can only be changed if the new narration still fits the visu
 Run the local preflight before generating narration:
 
 ```
-python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3] [--burn-subs|--no-burn-subs]
+uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3] [--burn-subs|--no-burn-subs]
 ```
 
 Resolve failures before continuing. Carry the same explicit backend to TTS and subtitle
@@ -79,7 +80,7 @@ alone does not prove authentication. Record brief evidence in `demos/<slug>/read
 ## 4. Narration audio first
 
 ```
-python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
+uv run --project <skill dir> python <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
 ```
 
 It validates the spec, writes `audio/<scene-id>.wav` and `audio/durations.json`, and prints
@@ -91,7 +92,7 @@ key if one is set, then the free local Kokoro model if `uv` is on PATH, then mac
 After TTS, always check each scene's measured length, with or without a target:
 
 ```
-python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
+uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
 ```
 
 Carry the same backend/subtitle overrides here too. A `pace` failure means a scene's audio
@@ -133,7 +134,7 @@ scene, and every declared prerequisite and expected outcome passed for this take
 ## 6. Compose
 
 ```
-python3 <skill dir>/scripts/compose.py demos/<slug>/demo.json [--no-burn-subs]
+uv run --project <skill dir> python <skill dir>/scripts/compose.py demos/<slug>/demo.json [--no-burn-subs]
 ```
 
 It prints one line per scene with its fit (hold, speed-up or pad) and lengths, then a
@@ -175,7 +176,7 @@ the actions keep pace with the voice.
 For the default personal-voice workflow (or an explicit request for their own voice), first run:
 
 ```bash
-python3 <skill dir>/scripts/own_voice.py --status
+uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --status
 ```
 
 If it reports `ready: true`, set `"voice": {"backend": "qwen3", "profile": "own_voice"}`
@@ -189,7 +190,7 @@ corner the scenes' actions don't use, unless the user asks for no presenter. Whe
 gives a photo to keep, save it once with `own_voice.py --photo <path>`; it replaces any
 earlier one.
 
-If the profile is missing or unusable, run `python3 <skill dir>/scripts/own_voice.py`.
+If the profile is missing or unusable, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`.
 It opens a local recording page and waits. Tell the user to click Record, read the
 passage, stop, check the transcript, and click Save my voice. The user controls microphone
 permission and recording; never press Record on their behalf. The command registers the
