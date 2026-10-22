@@ -34,7 +34,12 @@ announcement stays 60 seconds). If purpose is unclear, ask one concise purpose q
 alongside other missing details; allow custom. Do not add a separate template approval.
 Ask only for missing product, audience, viewer outcome, and ordered pages. For each page:
 the URL, what to do there, the key message, and whether it needs a login. Never invent
-URLs, UI controls, or sales metrics. Pick a short slug. Done when those details are known.
+URLs, UI controls, or sales metrics. Pick a short slug. If `demos/<slug>/` already exists,
+it holds an earlier take that git cannot restore (`demos/` is ignored) and later steps
+overwrite its spec, audio and videos: ask whether to replace it or use a new slug (for
+example `<slug>-<YYYY-MM-DD>`) before writing anything there. Re-running an existing demo
+(see **Re-running**) is the exception. Done when those details and a free or approved slug
+are known.
 
 ## 2. Spec and transcript approval
 
