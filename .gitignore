@@ -13,3 +13,6 @@ __pycache__/
 .venv/
 .pytest_cache/
 .benchmarks/
+
+# Personal voice recordings and local registry
+.voices/

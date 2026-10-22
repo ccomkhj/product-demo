@@ -16,9 +16,60 @@ malformed spec fails before any audio or recording is made.
 | `outcome` | no | Non-empty description of what the viewer should understand or accomplish. |
 | `target_duration_s` | no | Finite positive number (not a boolean). Editorial target, not a rendering limit. No automatic default for existing specs. |
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
-| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai` or `elevenlabs`; leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. |
+| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai`, `elevenlabs` or `qwen3` (see local cloning below); leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. |
 | `avatar` | no | `{ "image", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
+
+## Local voice cloning
+
+For a reusable personal voice, run `python3 scripts/own_voice.py`. It checks the local
+registry first and exits immediately when a usable voice exists. Otherwise it opens a
+local Record / Stop / Preview / Save page. Read the displayed passage, correct the
+transcript if needed, and save. The recording is validated and converted to WAV.
+No recording starts until you click Record and allow microphone access.
+
+The ignored `.voices/config.json` registers `own_voice`; recordings live beside it.
+Use `"voice": {"backend": "qwen3", "profile": "own_voice"}` in any demo to reuse it
+without another recording prompt. `profile: own_voice` also selects Qwen when backend
+is omitted; an explicit CLI or spec backend still wins. `--status` reports readiness
+without opening the recorder, and `--no-open` prints the local URL instead of opening it.
+A missing/broken profile requires setup rather than silently selecting another voice.
+Profile paths resolve relative to `.voices/config.json`; per-demo overrides resolve
+relative to the demo spec. Model and language overrides are allowed. To supply a different
+reference in a demo, omit the profile and supply both reference fields explicitly.
+
+
+Select `qwen3` explicitly to clone your voice on native Apple Silicon macOS:
+
+```json
+{
+"voice": {
+  "backend": "qwen3",
+  "model": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16",
+  "reference_audio": "voice/reference.wav",
+  "reference_text": "The exact words spoken in this recording.",
+  "language": "English"
+}
+}
+```
+
+The model defaults to the 0.6B Base identifier above; language defaults to English.
+Record roughly 10–20 seconds of clean speech and supply its exact transcript.
+Reference paths are relative to `demo.json` (absolute paths also work). Keep recordings
+inside the ignored `demos/` directory. `model` also accepts a local snapshot directory
+of the same 0.6B Base model, resolved relative to the spec. Other model IDs and preset
+`voice.voice` values are rejected for this backend. Supported languages are English,
+Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian, and auto.
+
+Install uv and ffmpeg first. Initial synthesis installs MLX Audio and downloads the pinned
+weights into the standard uv and Hugging Face caches. Warm runs prefer the cached snapshot;
+`HF_HUB_OFFLINE=1` prevents model downloads. An incomplete cache fails locally. No voice
+recording is uploaded and no paid voice API is called. Use native arm64 Python, not Rosetta.
+Preflight checks configuration and audio but does not download or load the model.
+Listen to a short generated scene before rendering a full demo; resemblance is subjective.
+
+CLI `--backend` overrides the spec; explicit Qwen selection overrides API keys and never
+falls back to a remote service. Without explicit selection, auto-detection stays unchanged.
 
 ## Scene
 

@@ -13,7 +13,7 @@ python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json
 python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json --json
 ```
 
-Use `--backend say|kokoro|openai|elevenlabs` when overriding the spec, and carry that choice
+Use `--backend say|kokoro|openai|elevenlabs|qwen3` when overriding the spec, and carry that choice
 to TTS. Use `--burn-subs` or `--no-burn-subs` when explicitly selecting a subtitle policy,
 and carry it to compose. Defaults match the existing scripts.
 

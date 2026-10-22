@@ -148,3 +148,18 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 
 [Apache-2.0](LICENSE). You may use, change, republish and sell it; copies and derivative
 works must keep the [`NOTICE`](NOTICE) file, which credits this repository.
+
+### Narrate in your own voice locally
+
+On an Apple Silicon Mac, select `"backend": "qwen3"` in the demo's `voice` configuration
+and provide `reference_audio` plus its exact `reference_text`. The default model is
+Qwen3-TTS 0.6B Base, run locally through MLX Audio with one model load per demo.
+Model and language are configurable; see [the configuration example](references/demo-spec.md#local-voice-cloning).
+Initial setup downloads dependencies and weights; cached generation works offline.
+Kokoro remains the default when no explicit backend or API key is configured.
+
+To set up your reusable voice, run `python3 scripts/own_voice.py`. If `own_voice` is
+already registered and valid, it returns immediately. Otherwise a local browser page
+lets you record and save it. Future demos can use
+`"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.
+The recording and registry stay in the ignored `.voices/` directory.

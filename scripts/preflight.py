@@ -23,6 +23,8 @@ if __name__ == "__main__" and sys.version_info < (3, 11):
         print(message)
     raise SystemExit(1)
 
+from voice_config import check_platform, probe_reference, resolve_voice_config
+
 from compose import ComposeError, burn_method
 from demo_spec import BACKENDS, SpecError, choose_backend, load_spec, positive_seconds, read_json_object
 
@@ -113,6 +115,18 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
                                   f"{key} is configured; remote validity and credits are not checked"
                                   if present else f"{key} is missing or blank",
                                   "" if present else f"Set {key} or choose an available local backend."))
+    elif selected == "qwen3":
+        checks.append(_executable("uv", ["--version"]))
+        try:
+            check_platform()
+            config = resolve_voice_config(spec.get("voice"), selected, Path(spec_path).resolve().parent)
+            probe_reference(config["reference_audio"], probe)
+            checks.append(CheckResult("voice", "pass", "Local cloning configuration and reference audio are valid"))
+        except (ValueError, OSError, ComposeError) as exc:
+            checks.append(CheckResult("voice", "fail", str(exc),
+                                      "Use native arm64 Python and configure a readable reference recording and exact transcript."))
+        checks.append(CheckResult("qwen3", "warning",
+                                  "First synthesis may download dependencies and model weights; cache completeness is checked during synthesis."))
     elif selected == "kokoro":
         checks.append(_executable("uv", ["--version"]))
         checks.append(CheckResult("kokoro", "warning",

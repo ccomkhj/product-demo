@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Record your voice</title>
+<style>
+body {font: 18px/1.6 system-ui; max-width: 680px; margin: 60px auto; padding: 0 24px; color: #172536; background: #f5f7fa}
+button {font: inherit; padding: 10px 20px; margin: 8px 8px 8px 0; cursor: pointer}
+textarea {box-sizing: border-box; width: 100%; min-height: 160px; font: inherit; padding: 16px}
+audio {display: block; width: 100%; margin: 20px 0} #status {min-height: 32px}
+</style>
+<h1>Record your voice once</h1>
+<p>Your recording stays on this Mac and will be reused for future demos. Read this passage naturally in a quiet room. Aim for 10–20 seconds.</p>
+<label for="transcript">Words to read (edit afterward if you say something different)</label>
+<textarea id="transcript">__READING__</textarea>
+<p><button id="record">Record</button><button id="stop" disabled>Stop</button></p>
+<p id="status" role="status" aria-live="polite">Ready when you are.</p>
+<audio id="preview" controls hidden></audio>
+<button id="save" disabled>Save my voice</button>
+<script>
+const record = document.querySelector('#record'), stop = document.querySelector('#stop');
+const save = document.querySelector('#save'), status = document.querySelector('#status');
+const preview = document.querySelector('#preview'), transcript = document.querySelector('#transcript');
+let recorder, stream, blob, timer, objectURL;
+function release() { clearTimeout(timer); stream?.getTracks().forEach(track => track.stop()); }
+record.onclick = async () => {
+  record.disabled = true; save.disabled = true; blob = null; preview.hidden = true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    recorder = new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    recorder.onerror = () => { release(); record.disabled = false; stop.disabled = true; status.textContent = 'Recording failed. Please try again.'; };
+    recorder.onstop = () => {
+      release(); blob = new Blob(chunks, {type: recorder.mimeType});
+      if (objectURL) URL.revokeObjectURL(objectURL);
+      objectURL = URL.createObjectURL(blob); preview.src = objectURL; preview.hidden = false;
+      record.disabled = false; stop.disabled = true; save.disabled = !blob.size;
+      status.textContent = 'Listen to the preview and check the transcript, then save.';
+    };
+    recorder.start(); stop.disabled = false;
+    status.textContent = 'Recording… Read the passage, then press Stop.';
+    timer = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 29000);
+  } catch (error) { release(); record.disabled = false; status.textContent = 'Microphone unavailable: ' + error.message; }
+};
+stop.onclick = () => { if (recorder?.state === 'recording') recorder.stop(); };
+save.onclick = async () => {
+  save.disabled = true; record.disabled = true; status.textContent = 'Saving your voice…';
+  try {
+    if (!transcript.value.trim()) throw new Error('Enter the exact words you spoke.');
+    const audio = await new Promise((resolve, reject) => {
+      const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject; reader.readAsDataURL(blob);
+    });
+    const response = await fetch('/__TOKEN__/save', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({audio, transcript: transcript.value})});
+    const result = await response.json(); if (!response.ok) throw new Error(result.error);
+    status.textContent = 'Your voice is saved. Future demos will reuse it automatically. You can close this tab.';
+    transcript.disabled = true;
+  } catch (error) { status.textContent = error.message; save.disabled = false; record.disabled = false; }
+};
+window.addEventListener('pagehide', release);
+</script>
+</html>

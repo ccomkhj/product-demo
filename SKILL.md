@@ -1,6 +1,6 @@
 ---
 name: product-demo
-description: Narrated product-demo video from a short interview, recorded live in the Chrome DevTools MCP browser with a visible cursor, clicks and key presses, voiced and subtitled. Use when the user wants a product demo, walkthrough or screen-recorded tour of a web app, or wants to re-narrate or re-compose a demo in demos/<slug>/.
+description: Narrated product-demo video from a short interview, recorded live in the Chrome DevTools MCP browser with a visible cursor, clicks and key presses, voiced and subtitled. Use when the user wants a product demo, walkthrough or screen-recorded tour of a web app, or wants to re-narrate or re-compose an existing demo folder.
 ---
 
 # Product demo
@@ -37,6 +37,10 @@ URLs, UI controls, or sales metrics. Pick a short slug. Done when those details 
 
 ## 2. Spec and transcript approval
 
+Unless the user explicitly chooses another voice, follow **Local cloned narration** below
+before writing the spec: reuse registered `own_voice`, or complete its one-time recording
+setup if missing. Do not ask which voice to use when `own_voice` is ready.
+
 Write `demos/<slug>/demo.json` following `references/demo-spec.md`. Narration is plain
 spoken sentences, pitched at the audience and carrying each page's key message. Describe
 targets in words ("the Save button"), because element uids change between runs and are
@@ -58,7 +62,7 @@ after recording, it can only be changed if the new narration still fits the visu
 Run the local preflight before generating narration:
 
 ```
-python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs] [--burn-subs|--no-burn-subs]
+python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3] [--burn-subs|--no-burn-subs]
 ```
 
 Resolve failures before continuing. Carry the same explicit backend to TTS and subtitle
@@ -75,7 +79,7 @@ alone does not prove authentication. Record brief evidence in `demos/<slug>/read
 ## 4. Narration audio first
 
 ```
-python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs]
+python3 <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
 ```
 
 It validates the spec, writes `audio/<scene-id>.wav` and `audio/durations.json`, and prints
@@ -161,3 +165,30 @@ the actions keep pace with the voice.
 - **Narration edit:** edit `narration` in `demo.json`, then run step 4 and step 6. This
   works as long as the visuals still show what the new words describe and every `at`
   phrase is still in the narration; otherwise repeat readiness from step 3 and record again from step 5.
+
+## Local cloned narration
+
+For the default personal-voice workflow (or an explicit request for their own voice), first run:
+
+```bash
+python3 <skill dir>/scripts/own_voice.py --status
+```
+
+If it reports `ready: true`, set `"voice": {"backend": "qwen3", "profile": "own_voice"}`
+in the demo spec and proceed. **Do not ask whether they have a recording, ask them to
+record again, or ask permission to reuse the registered voice.** Preserve any explicit
+per-demo model or language preferences. Explicit per-demo reference recordings remain
+supported and do not require registering a profile.
+
+If the profile is missing or unusable, run `python3 <skill dir>/scripts/own_voice.py`.
+It opens a local recording page and waits. Tell the user to click Record, read the
+passage, stop, check the transcript, and click Save my voice. The user controls microphone
+permission and recording; never press Record on their behalf. The command registers the
+validated audio and transcript in the ignored `.voices/config.json` and exits after save.
+Use `--no-open` and share the printed URL when opening a browser is unavailable.
+Wait for successful registration before generating narration; do not fall back to a paid
+backend. Recheck `--status` after a cancelled or failed recording.
+
+This setup is only needed once. Future demos reuse the registered profile automatically.
+Do not ask for a new reference or a separate voice approval on each demo. The ordinary
+script approval still applies. See `references/demo-spec.md#local-voice-cloning`.

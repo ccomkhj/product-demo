@@ -5,11 +5,13 @@ import json
 import math
 import shutil
 
+from voice_config import validate_voice
+
 from avatar import CORNERS, DEFAULT_CORNER, DEFAULT_SIZE, MAX_SIZE, MIN_SIZE
 from narration import Narration, PhraseError
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
-BACKENDS = ("say", "kokoro", "openai", "elevenlabs")
+BACKENDS = ("say", "kokoro", "openai", "elevenlabs", "qwen3")
 ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
 PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
@@ -44,6 +46,10 @@ def load_spec(path):
 def validate_spec(spec):
     """Return a validated copy of ``spec`` with defaults filled in."""
     result = copy.deepcopy(spec)
+    try:
+        validate_voice(result.get("voice"))
+    except ValueError as exc:
+        raise SpecError(str(exc)) from exc
     _validate_metadata(result)
     _validate_avatar(result)
     result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
@@ -154,6 +160,8 @@ def choose_backend(flag, spec, env):
                     f"(allowed: {', '.join(BACKENDS)})"
                 )
             return name
+    if (spec.get("voice") or {}).get("profile") == "own_voice":
+        return "qwen3"
     if env.get("ELEVENLABS_API_KEY"):
         return "elevenlabs"
     if env.get("OPENAI_API_KEY"):

@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Reuse a registered own_voice, or serve a local microphone recorder."""
+
+import argparse
+import base64
+import binascii
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+from pathlib import Path
+import secrets
+import subprocess
+import tempfile
+import uuid
+import webbrowser
+
+from voice_config import PROFILE_CONFIG, QWEN_MODEL, probe_reference, resolve_voice_config
+
+READING = ("Hello, this is my voice. I will use it to guide you through a short product "
+           "demonstration. We will look at the main features together, one step at a time, "
+           "and explain how they work in everyday use.")
+MAX_UPLOAD = 16 * 1024 * 1024
+
+
+def run(command):
+    return subprocess.run(command, capture_output=True, text=True, check=True, timeout=30).stdout
+
+
+def status():
+    try:
+        config = resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path.cwd())
+        probe_reference(config['reference_audio'], run)
+        return {'ready': True, 'profile': 'own_voice'}
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        return {'ready': False, 'profile': 'own_voice', 'reason': str(exc)}
+
+
+def register(payload):
+    """Validate audio before atomically registering it. Never replace a usable profile."""
+    if status()['ready']:
+        raise ValueError('own_voice is already registered; the existing recording was kept')
+    if not isinstance(payload, dict):
+        raise ValueError('Expected a recording and transcript')
+    transcript = payload.get('transcript')
+    if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 5000:
+        raise ValueError('Enter the exact words you spoke (up to 5000 characters)')
+    try:
+        audio = base64.b64decode(payload.get('audio', ''), validate=True)
+    except (ValueError, TypeError, binascii.Error) as exc:
+        raise ValueError('Invalid audio upload') from exc
+    if not audio or len(audio) > MAX_UPLOAD:
+        raise ValueError('Empty or oversized recording')
+    directory = PROFILE_CONFIG.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=directory) as temporary:
+        source = Path(temporary) / 'recording'
+        target = Path(temporary) / 'reference.wav'
+        source.write_bytes(audio)
+        # No remote inputs or playlists: only decode the uploaded local recording.
+        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
+             '-protocol_whitelist', 'file,pipe', '-i', str(source), '-t', '31',
+             '-vn', '-ac', '1', '-ar', '24000', '-c:a', 'pcm_s16le', str(target)])
+        import array
+        import math
+        import wave
+        with wave.open(str(target)) as wav:
+            duration = wav.getnframes() / wav.getframerate()
+            samples = array.array('h', wav.readframes(wav.getnframes()))
+        if not 3 <= duration <= 30:
+            raise ValueError('Record between 3 and 30 seconds, then try again')
+        rms = math.sqrt(sum(value * value for value in samples) / len(samples))
+        if rms < 30:
+            raise ValueError('The recording is too quiet. Check your microphone and try again')
+        data = {}
+        if PROFILE_CONFIG.exists():
+            data = json.loads(PROFILE_CONFIG.read_text())
+            if not isinstance(data, dict):
+                raise ValueError('The voice registry must be a JSON object; repair it before saving')
+        name = f'own_voice-{uuid.uuid4().hex}.wav'
+        target.replace(directory / name)
+        data['own_voice'] = {'backend': 'qwen3', 'model': QWEN_MODEL,
+                             'reference_audio': name, 'reference_text': transcript.strip(),
+                             'language': 'English'}
+        pending = Path(temporary) / 'config.json'
+        pending.write_text(json.dumps(data, indent=2) + '\n')
+        pending.replace(PROFILE_CONFIG)
+
+
+def recorder_server():
+    token = secrets.token_urlsafe(32)
+    page = Path(__file__).with_name('own_voice.html').read_text()
+    page = page.replace('__TOKEN__', token).replace('__READING__', READING)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def respond(self, code, body, mime='application/json'):
+            data = body.encode()
+            self.send_response(code)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; connect-src 'self'; frame-ancestors 'none'")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def valid_host(self):
+            return self.headers.get('Host') == f'127.0.0.1:{self.server.server_port}'
+
+        def do_GET(self):
+            if not self.valid_host() or self.path != f'/{token}':
+                self.respond(404, '{}')
+                return
+            self.respond(200, page, 'text/html; charset=utf-8')
+
+        def do_POST(self):
+            origin = f'http://127.0.0.1:{self.server.server_port}'
+            if (not self.valid_host() or self.path != f'/{token}/save'
+                    or self.headers.get('Origin') != origin):
+                self.respond(403, json.dumps({'error': 'Invalid recording request'}))
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= MAX_UPLOAD:
+                    raise ValueError('Empty or oversized recording')
+                self.connection.settimeout(15)
+                register(json.loads(self.rfile.read(length)))
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                self.respond(400, json.dumps({'error': str(exc)}))
+                return
+            self.respond(200, json.dumps({'ready': True, 'profile': 'own_voice'}))
+            self.server.saved = True
+
+    server = HTTPServer(('127.0.0.1', 0), Handler)
+    server.timeout = 1
+    server.saved = False
+    return server, f'http://127.0.0.1:{server.server_port}/{token}'
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--status', action='store_true', help='check registration without recording')
+    parser.add_argument('--no-open', action='store_true', help='print the recorder URL without opening it')
+    args = parser.parse_args(argv)
+    result = status()
+    print(json.dumps(result), flush=True)
+    if result['ready'] or args.status:
+        return 0 if result['ready'] else 1
+    server, url = recorder_server()
+    print(f'Record your voice: {url}', flush=True)
+    if not args.no_open:
+        webbrowser.open(url)
+    try:
+        with server:
+            while not server.saved:
+                server.handle_request()
+    except KeyboardInterrupt:
+        return 1
+    print(json.dumps({'ready': True, 'profile': 'own_voice'}), flush=True)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

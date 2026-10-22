@@ -2,7 +2,7 @@
 """Generate one narration WAV per scene of a demo spec, plus durations.json.
 
 Usage:
-    python3 scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs]
+    python3 scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
                            [--out-dir DIR]
 
 Writes <out-dir>/<scene-id>.wav (48 kHz, mono, 16-bit PCM) for every scene and
@@ -11,7 +11,8 @@ out-dir is the `audio/` folder next to the demo spec.
 
 Backends: `say` (macOS), `kokoro` (the free, local Kokoro-82M model, needs uv),
 `openai` (gpt-4o-mini-tts, needs OPENAI_API_KEY) and `elevenlabs` (needs
-ELEVENLABS_API_KEY). `voice.voice` in the spec picks the voice: a `say -v` name, a
+ELEVENLABS_API_KEY). `qwen3` clones a local reference voice on Apple Silicon via MLX.
+`voice.voice` in the spec picks the voice: a `say -v` name, a
 Kokoro voice (default af_heart), an OpenAI voice name (default alloy) or an ElevenLabs
 voice ID.
 
@@ -20,6 +21,7 @@ the say backend, uv for the kokoro backend, which runs scripts/kokoro_tts.py).
 """
 
 import argparse
+import functools
 import json
 import os
 import sys
@@ -31,6 +33,7 @@ from pathlib import Path
 
 import proc
 from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
+from voice_config import check_platform, probe_reference, resolve_voice_config
 
 SAMPLE_RATE = 48000  # every narration WAV is 48 kHz mono 16-bit PCM; compose resamples to it
 
@@ -145,13 +148,42 @@ def urllib_transport(url, headers, body, timeout=120):
         raise TtsError(f"could not reach {urllib.parse.urlsplit(url).netloc}: {reason}") from exc
 
 
-# Backend name -> synthesize(text, voice, out_base: Path, env, transport) -> Path of raw audio.
-# ``transport(url, headers, body) -> (status, bytes)`` is only used by the HTTP backends.
+def synth_scenes(synthesize, scenes, config, directory, env, transport):
+    for index, scene in enumerate(scenes):
+        try:
+            raw = synthesize(scene["narration"].strip(), config.get("voice"),
+                             directory / str(index), env, transport)
+        except TtsError as exc:
+            raise TtsError(f"scene {scene['id']!r}: {exc}") from exc
+        yield scene["id"], raw
+
+
+def synth_qwen3(scenes, config, directory, _env, _transport):
+    check_platform()
+    probe_reference(config["reference_audio"], _run)
+    reference = directory / "reference.wav"
+    normalise_to_wav(config["reference_audio"], reference)
+    config = {**config, "reference_audio": str(reference)}
+    request = directory / "request.json"
+    request.write_text(json.dumps({"voice": config, "scenes": scenes}))
+    output = directory / "raw"
+    _run(["uv", "run", "--quiet", "--script",
+          str(Path(__file__).with_name("qwen3_tts.py")),
+          "--request", str(request), "--out-dir", str(output)])
+    manifest = json.loads((output / "manifest.json").read_text())
+    for index, scene in enumerate(scenes):
+        name = manifest.get(scene["id"])
+        if name != f"{index}.wav" or not (output / name).is_file():
+            raise TtsError(f"scene {scene['id']!r}: invalid qwen3 output manifest")
+        yield scene["id"], output / name
+
+
 SYNTHESIZERS = {
-    "say": synth_say,
-    "kokoro": synth_kokoro,
-    "openai": synth_openai,
-    "elevenlabs": synth_elevenlabs,
+    "say": functools.partial(synth_scenes, synth_say),
+    "kokoro": functools.partial(synth_scenes, synth_kokoro),
+    "openai": functools.partial(synth_scenes, synth_openai),
+    "elevenlabs": functools.partial(synth_scenes, synth_elevenlabs),
+    "qwen3": synth_qwen3,
 }
 
 # Backend name -> environment variable holding its API key, checked before any request.
@@ -161,24 +193,21 @@ API_KEYS = {
 }
 
 
-def generate(spec, backend, out_dir, env, transport=urllib_transport):
+def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=None):
     """Write one normalised WAV per scene and durations.json; return the durations."""
     synthesize = SYNTHESIZERS[backend]
     key_name = API_KEYS.get(backend)
     if key_name and not (env.get(key_name) or "").strip():
         raise TtsError(f"{key_name} is not set; the {backend} backend needs it "
                        f"(set it, or pick another backend with --backend)")
-    voice = (spec.get("voice") or {}).get("voice")
+    try:
+        config = resolve_voice_config(spec.get("voice"), backend, spec_dir or Path.cwd())
+    except (ValueError, OSError) as exc:
+        raise TtsError(str(exc)) from exc
     out_dir.mkdir(parents=True, exist_ok=True)
     durations = {}
     with tempfile.TemporaryDirectory(prefix="tts-") as tmp:
-        for scene in spec["scenes"]:
-            scene_id = scene["id"]
-            try:
-                raw = synthesize(scene["narration"].strip(), voice, Path(tmp) / scene_id, env,
-                                 transport)
-            except TtsError as exc:
-                raise TtsError(f"scene {scene_id!r}: {exc}") from exc
+        for scene_id, raw in synthesize(spec["scenes"], config, Path(tmp), env, transport):
             wav = out_dir / f"{scene_id}.wav"
             normalise_to_wav(raw, wav)
             durations[scene_id] = round(measure_seconds(wav), 3)
@@ -220,8 +249,8 @@ def main(argv=None):
         spec = load_spec(args.spec)
         backend = choose_backend(args.backend, spec, os.environ)
         out_dir = args.out_dir or args.spec.parent / "audio"
-        durations = generate(spec, backend, out_dir, os.environ)
-    except (SpecError, TtsError) as exc:
+        durations = generate(spec, backend, out_dir, os.environ, spec_dir=args.spec.resolve().parent)
+    except (SpecError, TtsError, ValueError, OSError) as exc:
         print(f"tts: error: {exc}", file=sys.stderr)
         return 1
     for scene_id, seconds in durations.items():
