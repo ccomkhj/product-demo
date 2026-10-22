@@ -101,7 +101,8 @@ def test_say_voice(local):
 
 @pytest.mark.parametrize('seconds,status', [(30, 'pass'), (33, 'pass'), (33.01, 'warning'), (45, 'warning')])
 def test_duration_target(local, seconds, status):
-    spec = json.loads(local.read_text()); spec['target_duration_s'] = 30; local.write_text(json.dumps(spec))
+    spec = json.loads(local.read_text()); spec['target_duration_s'] = 30
+    spec['scenes'][0]['narration'] = ' '.join(['word'] * 100); local.write_text(json.dumps(spec))
     durations = local.parent / 'durations.json'
     durations.write_text(json.dumps({'export': seconds, 'unrelated': 'ignored'}))
     report = preflight.run_checks(local, durations=durations)
@@ -131,3 +132,14 @@ def test_duration_without_target(local):
     result = check(preflight.run_checks(local, durations=durations), 'duration')
     assert result['status'] == 'pass' and '45' in result['message']
     assert 'no target' in result['message']
+
+
+@pytest.mark.parametrize('seconds,status', [(1.2, 'pass'), (6, 'pass'), (6.01, 'fail'), (655, 'fail')])
+def test_pace_flags_runaway_scene_without_target(local, seconds, status):
+    durations = local.parent / 'durations.json'; durations.write_text(json.dumps({'export': seconds}))
+    report = preflight.run_checks(local, durations=durations)
+    result = check(report, 'pace')
+    assert result['status'] == status and report['ready'] == (status == 'pass')
+    if status == 'fail':
+        assert 'export' in result['message'] and '3 words' in result['message']
+        assert 'resynthesize' in result['remedy']

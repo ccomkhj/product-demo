@@ -88,13 +88,16 @@ scene needs: compose holds the screen until each `at` phrase, and holds the last
 when the motion runs out before the narration. Without `--backend` it uses `voice.backend`, then an ElevenLabs or OpenAI
 key if one is set, then the free local Kokoro model if `uv` is on PATH, then macOS `say`.
 
-After TTS, check measured narration against the optional target:
+After TTS, always check each scene's measured length, with or without a target:
 
 ```
 python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
 ```
 
-Carry the same backend/subtitle overrides here too. A warning means narration exceeds the
+Carry the same backend/subtitle overrides here too. A `pace` failure means a scene's audio
+is far longer than its words can take to say (a runaway synthesis, common with `qwen3`):
+rerun `tts.py` with the same wording and recheck, since compose would otherwise hold a frozen
+frame for the whole runaway. A `duration` warning means narration exceeds the
 target by more than 10%; final video can be longer because scenes may be padded. Propose
 shorter wording, get the existing script approval for changes, then regenerate audio and
 rerun the check. Never truncate or accelerate speech automatically. If the user keeps the

@@ -59,6 +59,11 @@ def _executable(name, args):
     return CheckResult(name, "pass", f"{name} is available")
 
 
+# Spoken narration runs about 0.3-0.5 s per word; well past this bound the synthesis ran away.
+MAX_SECONDS_PER_WORD = 1.0
+PACE_SLACK_S = 3.0
+
+
 def _duration(spec, path):
     try:
         values = read_json_object(path, "narration durations", SpecError)
@@ -71,17 +76,33 @@ def _duration(spec, path):
         total = sum(seconds)
         if not math.isfinite(total):
             raise SpecError("total narration duration must be finite")
-        target = spec.get("target_duration_s")
-        message = f"Measured narration duration: {total:g}s"
-        if target is None:
-            return CheckResult("duration", "pass", message + " (no target set)")
-        message += f"; target: {target:g}s. Final video may be longer because scenes can be padded."
-        if total > target * 1.1:
-            return CheckResult("duration", "warning", message,
-                               "Propose a shorter script; approve changed wording and regenerate audio before recording.")
-        return CheckResult("duration", "pass", message)
     except (SpecError, OverflowError, UnicodeError) as exc:
-        return CheckResult("duration", "fail", str(exc), "Regenerate audio/durations.json with tts.py for this spec.")
+        return [CheckResult("duration", "fail", str(exc), "Regenerate audio/durations.json with tts.py for this spec.")]
+    return [_pace(spec["scenes"], seconds), _target(spec.get("target_duration_s"), total)]
+
+
+def _pace(scenes, seconds):
+    """Fail scenes whose audio is far longer than their words can take to say."""
+    outliers = []
+    for scene, value in zip(scenes, seconds):
+        words = len(scene["narration"].split())
+        if value > words * MAX_SECONDS_PER_WORD + PACE_SLACK_S:
+            outliers.append(f"{scene['id']} ({value:g}s for {words} words)")
+    if outliers:
+        return CheckResult("pace", "fail", "Narration audio far longer than its words: " + ", ".join(outliers),
+                           "Rerun tts.py to resynthesize, then recheck; keep the wording.")
+    return CheckResult("pace", "pass", "Every scene's audio length fits its word count")
+
+
+def _target(target, total):
+    message = f"Measured narration duration: {total:g}s"
+    if target is None:
+        return CheckResult("duration", "pass", message + " (no target set)")
+    message += f"; target: {target:g}s. Final video may be longer because scenes can be padded."
+    if total > target * 1.1:
+        return CheckResult("duration", "warning", message,
+                           "Propose a shorter script; approve changed wording and regenerate audio before recording.")
+    return CheckResult("duration", "pass", message)
 
 
 def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
@@ -157,7 +178,7 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
                                       "No subtitle renderer; default composition will still write SRT",
                                       "Install ffmpeg with libass or rsvg-convert, or use --no-burn-subs."))
     if durations is not None:
-        checks.append(_duration(spec, durations))
+        checks.extend(_duration(spec, durations))
     checks.append(CheckResult("browser", "warning",
                               "Browser access, login, viewport and capture are not checked here",
                               "Complete the Chrome MCP workflow in references/readiness.md before recording."))
@@ -176,7 +197,7 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="print a machine-readable local report")
     parser.add_argument("--backend", choices=BACKENDS)
     parser.add_argument("--burn-subs", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--durations", type=Path, help="check measured TTS durations against the optional target")
+    parser.add_argument("--durations", type=Path, help="check measured TTS durations per scene and against the optional target")
     args = parser.parse_args(argv)
     report = run_checks(args.spec, args.backend, args.burn_subs, args.durations)
     if args.json:

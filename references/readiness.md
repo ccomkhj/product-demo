@@ -36,6 +36,8 @@ python3 <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demo
 ```
 
 Every current scene needs a positive finite duration; extra scene entries are ignored.
+A scene longer than 1 s per narration word plus 3 s fails `pace` (normal speech is about
+0.3–0.5 s per word): resynthesize with the same wording rather than shortening it.
 Narration exceeding `target_duration_s` by more than 10% warns without blocking. No target
 means report the measurement without inventing one. The final video can be longer because
 compose pads scenes. Propose a shorter script when needed; get approval for changed wording

@@ -70,7 +70,8 @@ def test_cli_never_prints_credentials(cli):
 
 def test_cli_duration_warning_and_missing_file(cli):
     spec, binaries, run = cli
-    data = json.loads(spec.read_text()); data['target_duration_s'] = 30; spec.write_text(json.dumps(data))
+    data = json.loads(spec.read_text()); data['target_duration_s'] = 30
+    data['scenes'][0]['narration'] = ' '.join(['word'] * 100); spec.write_text(json.dumps(data))
     durations = spec.parent / 'durations.json'; durations.write_text('{"export":45}')
     result = run('--json', '--durations', str(durations))
     assert result.returncode == 0
