@@ -172,9 +172,13 @@ the actions keep pace with the voice.
 
 - **Compose only** (different subtitle or fitting options): run step 6 again. It reads the
   existing recording, timeline and audio.
-- **Narration edit:** edit `narration` in `demo.json`, then run step 4 and step 6. This
-  works as long as the visuals still show what the new words describe and every `at`
-  phrase is still in the narration; otherwise repeat readiness from step 3 and record again from step 5.
+- **Narration edit:** edit `narration` in `demo.json`, then run step 4 (including its
+  `pace` check) and step 6. This works as long as the visuals still show what the new
+  words describe and every `at` phrase is still in the narration; otherwise repeat
+  readiness from step 3 and record again from step 5.
+
+Either way, finish with step 7 and meet its Done-when before handing the new video over:
+new audio or new fitting can break length, overlay effects or sync just like a new take.
 
 ## Local cloned narration
 
