@@ -2,9 +2,9 @@
 
 The post recipe (``post.json`` in the demo folder) has one optional key per operation;
 an absent key means the operation is off. ``build_post_plan`` validates it, builds the
-time map (source time -> output time: trim and cuts, then speed), retimes the cues and
-lists the steps in the fixed step order (see ``STEPS``), each with its run output line
-and its ffmpeg arguments.
+time map (source time -> output time: trim and cuts, then speed, then the title card),
+retimes the cues and lists the steps in the fixed step order (see ``STEPS``), each with
+its run output line and its ffmpeg arguments.
 
 Every time in the recipe is seconds in the source video, or a scene anchor
 ``{"scene": id, "at": phrase, "offset_s": s}`` (``at`` and ``offset_s`` optional)
@@ -17,6 +17,7 @@ runner in postprocess.py.
 
 import math
 import re
+import textwrap
 from dataclasses import dataclass, field, replace
 from xml.sax.saxutils import escape as xml_escape
 
@@ -24,6 +25,9 @@ from avatar import CORNERS, Avatar, geometry
 from edit_plan import FPS
 
 MIN_SPEED, MAX_SPEED = 0.5, 2.0
+CARD_S, MIN_CARD_S, MAX_CARD_S = 3.0, 1.0, 10.0  # card length: default, range
+CARD_FADE_S = 0.5  # fade at each side of a card and of the demo next to it
+CARD_BACKGROUND, CARD_COLOR = "#111111", "#ffffff"
 FADE_S = 0.03  # audio fade at each side of every cut, against clicks and pops
 CONTACT_FRAMES, MAX_CONTACT_FRAMES, MAX_COLUMNS = 12, 60, 8
 GIF_WIDTH, MIN_GIF_WIDTH, MAX_GIF_WIDTH = 640, 16, 1920
@@ -37,14 +41,15 @@ SIZE_HEIGHTS = (1080, 720, 540, 360)
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
 AAC = ["-c:a", "aac", "-b:a", "192k"]
 EDGES = ("bottom", "top")
-BAR_COLOUR, BAR_THICKNESS = "#4da3ff", 6
+BAR_COLOR, BAR_THICKNESS = "#4da3ff", 6
 WATERMARK_SIZE, WATERMARK_OPACITY = 0.06, 0.8  # share of the video's height; 0-1
 MIN_WATERMARK, MAX_WATERMARK = 0.02, 0.3
 CALLOUT_TYPES = ("arrow", "text")
-CALLOUT_COLOUR = "#ff3b30"
+CALLOUT_COLOR = "#ff3b30"
 CALLOUT_FADE_S = 0.25
 FONT = "Helvetica, Arial, sans-serif"
 SUBTITLE_BAND = 0.2  # burned-in subtitles sit in the bottom 20% of the frame
+AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
 
 
 class RecipeError(ValueError):
@@ -107,16 +112,22 @@ class Layer:
 @dataclass(frozen=True)
 class TimeMap:
     """Source time -> output time: the kept ranges laid end to end, then the speed,
-    then ``lead_s`` (room for a title card) in front."""
+    then ``lead_s`` (the title card) in front and ``tail_s`` (the closing card) after."""
 
     kept: tuple  # ((start_s, end_s), ...) in source seconds, in order
     source_s: float  # the source's length
     speed: float = 1.0
     lead_s: float = 0.0
+    tail_s: float = 0.0
+
+    @property
+    def demo_span(self):
+        """(start, end) of the demo itself in the output: the cards excluded."""
+        return self.lead_s, self.lead_s + sum(end - start for start, end in self.kept) / self.speed
 
     @property
     def total_s(self):
-        return self.lead_s + sum(end - start for start, end in self.kept) / self.speed
+        return self.demo_span[1] + self.tail_s
 
     @property
     def removed(self):
@@ -160,13 +171,9 @@ class PostPlan:
     warnings: tuple
     steps: tuple
     edit_map: dict | None = None
+    cards: dict = field(default_factory=dict)  # resolve_cards: "title" / "closing", if on
     frame: tuple | None = None  # (width, height) of the source video
     bubble: tuple | None = None  # (corner, size) of the demo's presenter bubble
-
-    @property
-    def demo_s(self):
-        """Length of the demo itself (cards left out): the kept ranges at the speed."""
-        return sum(end - start for start, end in self.time_map.kept) / self.time_map.speed
 
     @property
     def source_s(self):
@@ -175,6 +182,10 @@ class PostPlan:
     @property
     def total_s(self):
         return self.time_map.total_s
+
+    @property
+    def demo_span(self):
+        return self.time_map.demo_span
 
     def output_s(self, value, where="time"):
         """Output seconds of a recipe time (source seconds or a scene anchor)."""
@@ -185,16 +196,23 @@ class PostPlan:
             raise RecipeError(f"{where}: {exc}") from None
 
 
-def build_post_plan(recipe, source_s, cues, edit_map, frame=None, bubble=None):
+def build_post_plan(recipe, source_s, cues, edit_map, demo=None, frame=None, bubble=None):
     """Validate ``recipe`` and build the plan; raise RecipeError before any ffmpeg work.
 
     source_s: the source video's length. cues: its subtitle cues (Cue). edit_map: the
-    parsed ``<slug>.editmap.json``, or None (then scene anchors are an error). frame: the
+    parsed ``<slug>.editmap.json``, or None (then scene anchors are an error). demo: the
+    card defaults ``{"title", "url"}`` (see ``card_defaults``), or None. frame: the
     source's (width, height), needed by overlays. bubble: the presenter bubble's
     (corner, size) from the demo spec, or None without one.
     """
     validate_recipe(recipe)
     time_map = _time_map(recipe, source_s, edit_map)
+    cards = resolve_cards(recipe.get("cards"), demo)
+    time_map = replace(
+        time_map,
+        lead_s=cards["title"]["seconds"] if "title" in cards else 0.0,
+        tail_s=cards["closing"]["seconds"] if "closing" in cards else 0.0,
+    )
     warnings, retimed = [], []
     for number, cue in enumerate(cues, start=1):
         placed = time_map.range(cue.start_s, cue.end_s)
@@ -209,7 +227,7 @@ def build_post_plan(recipe, source_s, cues, edit_map, frame=None, bubble=None):
             )
             warnings.append(f'cut at {cuts} splits cue {number} "{cue.text}"')
         retimed.append(Cue(round(start, 3), round(end, 3), cue.text))
-    plan = PostPlan(time_map, tuple(retimed), tuple(warnings), (), edit_map, frame, bubble)
+    plan = PostPlan(time_map, tuple(retimed), tuple(warnings), (), edit_map, cards, frame, bubble)
     steps = tuple(step for build in STEPS.values() if (step := build(recipe, plan)))
     return replace(
         plan,
@@ -346,11 +364,11 @@ def _check_contact_sheet(value, where):
 
 
 def _check_progress_bar(value, where):
-    _check_keys(value, where, ("edge", "colour", "thickness"))
+    _check_keys(value, where, ("edge", "color", "thickness"))
     if value.get("edge", "bottom") not in EDGES:
         raise RecipeError(f"{where}.edge must be one of {', '.join(EDGES)}")
-    if "colour" in value:
-        _check_colour(value["colour"], f"{where}.colour")
+    if "color" in value:
+        _check_color(value["color"], f"{where}.color")
     thickness = value.get("thickness", BAR_THICKNESS)
     if isinstance(thickness, bool) or not isinstance(thickness, int) or not 1 <= thickness <= 40:
         raise RecipeError(f"{where}.thickness must be a whole number of pixels from 1 to 40")
@@ -388,7 +406,7 @@ def _check_callouts(value, where):
             raise RecipeError(f"{here}.type must be one of {', '.join(CALLOUT_TYPES)}")
         points = ("from", "to") if kind == "arrow" else ("position",)
         needed = (*points, "start", "end") + (("text",) if kind == "text" else ())
-        _check_keys(callout, here, ("type", *needed, "colour"))
+        _check_keys(callout, here, ("type", *needed, "color"))
         for key in needed:
             if key not in callout:
                 raise RecipeError(f"{here} needs '{key}'")
@@ -396,8 +414,8 @@ def _check_callouts(value, where):
             _check_point(callout[key], f"{here}.{key}")
         if kind == "text" and (not isinstance(callout["text"], str) or not callout["text"].strip()):
             raise RecipeError(f"{here} needs a short 'text'")
-        if "colour" in callout:
-            _check_colour(callout["colour"], f"{here}.colour")
+        if "color" in callout:
+            _check_color(callout["color"], f"{here}.color")
         check_time(callout["start"], f"{here}.start")
         check_time(callout["end"], f"{here}.end")
 
@@ -411,9 +429,35 @@ def _check_point(value, where):
         raise RecipeError(f"{where} must be [x, y] in video pixels")
 
 
-def _check_colour(value, where):
+def _check_color(value, where):
     if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
         raise RecipeError(f'{where} must be a colour like "#4da3ff", got {value!r}')
+
+
+CARD_KEYS = {"title": ("title", "subtitle", "logo"), "closing": ("text", "url")}
+
+
+def _check_cards(value, where):
+    _check_keys(value, where, tuple(CARD_KEYS))
+    for name, card in value.items():
+        here = f"{where}.{name}"
+        _check_keys(card, here, (*CARD_KEYS[name], "seconds", "background", "color"))
+        for key in CARD_KEYS[name]:
+            if key in card and (not isinstance(card[key], str) or not card[key].strip()):
+                raise RecipeError(f"{here}.{key} must be non-empty text")
+        seconds = card.get("seconds", CARD_S)
+        if not _is_number(seconds) or not MIN_CARD_S <= seconds <= MAX_CARD_S:
+            raise RecipeError(
+                f"{here}.seconds must be a number from {MIN_CARD_S:g} to "
+                f"{MAX_CARD_S:g}, got {seconds!r}"
+            )
+        for key in ("background", "color"):
+            if key in card and not (
+                isinstance(card[key], str) and re.fullmatch(r"#(?:[0-9a-fA-F]{3}){1,2}", card[key])
+            ):
+                raise RecipeError(
+                    f'{here}.{key} must be a hex colour like "#1a2b3c", got {card[key]!r}'
+                )
 
 
 def _check_size_cap(value, where):
@@ -475,7 +519,7 @@ VALIDATORS = {
     "watermark": _check_watermark,
     "callouts": _check_callouts,
     "progress_bar": _check_progress_bar,
-    # cards (#19)
+    "cards": _check_cards,
     # translations, chapters (#21)
     # click_sounds, music (#20)
     "exports": _check_exports,
@@ -607,15 +651,16 @@ def _progress_bar_step(recipe, plan):
     bar = recipe["progress_bar"]
     edge, thickness = bar.get("edge", "bottom"), bar.get("thickness", BAR_THICKNESS)
     # Overlays run before the cards are added, so the bar spans the demo, never a card.
+    start, end = plan.demo_span
     return Step(
         "progress_bar",
-        f"progress_bar\t{edge} {thickness}px\t0.000s-{plan.demo_s:.3f}s",
+        f"progress_bar\t{edge} {thickness}px\t{start:.3f}s-{end:.3f}s",
         {
             "edge": edge,
-            "colour": bar.get("colour", BAR_COLOUR),
+            "color": bar.get("color", BAR_COLOR),
             "thickness": thickness,
             "width": _frame_of(plan, "progress_bar")[0],
-            "demo_s": plan.demo_s,
+            "demo_s": end - start,
         },
     )
 
@@ -624,6 +669,14 @@ def _frame_of(plan, where):
     if plan.frame is None:
         raise RecipeError(f"{where} needs the video's size")
     return plan.frame
+
+
+def _cards_step(recipe, plan):
+    if not plan.cards:
+        return None
+    start, end = plan.demo_span
+    line = "".join(f"\t{name} {card['seconds']:.3f}s" for name, card in plan.cards.items())
+    return Step("cards", f"cards{line}", {"cards": plan.cards, "demo_s": end - start})
 
 
 def _size_cap_step(recipe, plan):
@@ -705,7 +758,7 @@ STEPS = {
     "watermark": _watermark_step,
     "callouts": _callouts_step,
     "progress_bar": _progress_bar_step,
-    # cards (#19)
+    "cards": _cards_step,
     # subtitle_tracks, chapters (#21)
     # click_sounds, music (#20)
     "size_cap": _size_cap_step,
@@ -713,6 +766,88 @@ STEPS = {
     "poster": _poster_step,
     "contact_sheet": _contact_sheet_step,
 }
+
+
+# --- cards ---------------------------------------------------------------------------
+
+
+def card_defaults(spec, slug):
+    """The cards' default text from the demo spec (demo.json, may be {}): its title (else
+    the slug) and its last scene's URL (else none)."""
+    scenes = spec.get("scenes") or [{}]
+    return {"title": spec.get("title") or slug, "url": scenes[-1].get("url")}
+
+
+def resolve_cards(cards, demo):
+    """The recipe's cards with every default filled in, title card first; {} when off.
+
+    Each card: {"seconds", "background", "color", "lines": ((text, role), ...)}, plus
+    "logo" on a title card that has one. role: "title", "subtitle", "text" or "url".
+    """
+    resolved = {}
+    for name in CARD_KEYS:
+        if name not in (cards or {}):
+            continue
+        card = cards[name]
+        texts = {**(demo or {}), **card}
+        lines = tuple(
+            (texts[key], key) for key in CARD_KEYS[name] if key != "logo" and texts.get(key)
+        )
+        if not lines:
+            raise RecipeError(
+                f"cards.{name} needs its text: there is no default to take it "
+                f"from (demo title / last scene URL)"
+            )
+        resolved[name] = {
+            "seconds": card.get("seconds", CARD_S),
+            "background": card.get("background", CARD_BACKGROUND),
+            "color": card.get("color", CARD_COLOR),
+            "lines": lines,
+            **({"logo": card["logo"]} if "logo" in card else {}),
+        }
+    return resolved
+
+
+def card_svg(card, width, height, logo_href=None):
+    """One card as an SVG: its background and its lines centred, the logo above them."""
+    sizes = {"title": 0.08, "subtitle": 0.045, "text": 0.065, "url": 0.045}
+    blocks = []  # (height, svg drawn from y=0)
+    if logo_href:
+        logo_h = round(height * 0.2)
+        blocks.append(
+            (
+                logo_h,
+                f'<image x="{width * 0.2:.0f}" y="0" width="{width * 0.6:.0f}" '
+                f'height="{logo_h}" href="{xml_escape(logo_href)}" '
+                f'preserveAspectRatio="xMidYMid meet"/>',
+            )
+        )
+    for text, role in card["lines"]:
+        font = max(12, round(height * sizes[role]))
+        rows = textwrap.wrap(text, max(10, int(width * 0.85 / (font * 0.55)))) or [""]
+        weight = ' font-weight="700"' if role in ("title", "text") else ""
+        tspans = "".join(
+            f'<tspan x="{width / 2:.0f}" y="{font + row * font * 1.25:.0f}">'
+            f"{xml_escape(line)}</tspan>"
+            for row, line in enumerate(rows)
+        )
+        blocks.append(
+            (
+                round(font * (1.25 * len(rows) + 0.25)),
+                f'<text font-family="{FONT}" font-size="{font}"'
+                f'{weight} text-anchor="middle" fill="{card["color"]}">{tspans}</text>',
+            )
+        )
+    gap = round(height * 0.03)
+    y = (height - sum(h for h, _ in blocks) - gap * (len(blocks) - 1)) / 2
+    body = []
+    for block_h, block in blocks:
+        body.append(f'<g transform="translate(0 {y:.0f})">{block}</g>')
+        y += block_h + gap
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+        f'<rect width="100%" height="100%" fill="{card["background"]}"/>{"".join(body)}</svg>'
+    )
 
 
 # --- command builders (pure: arguments in, argument list out) ------------------------
@@ -775,7 +910,7 @@ def callout_svg(callout, width, height):
 
     Returns (svg, box): box is (x0, y0, x1, y1), the pixels it covers.
     """
-    colour = callout.get("colour", CALLOUT_COLOUR)
+    color = callout.get("color", CALLOUT_COLOR)
     if callout["type"] == "arrow":
         (x0, y0), (x1, y1) = callout["from"], callout["to"]
         stroke = max(4, round(height * 0.008))
@@ -793,8 +928,8 @@ def callout_svg(callout, width, height):
             f'<line x1="{x0}" y1="{y0}" x2="{bx:.1f}" y2="{by:.1f}" stroke="white" '
             f'stroke-width="{stroke + 4}"/><polygon points="{points}" fill="white" '
             f'stroke="white" stroke-width="4"/>'
-            f'<line x1="{x0}" y1="{y0}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{colour}" '
-            f'stroke-width="{stroke}"/><polygon points="{points}" fill="{colour}"/></g>'
+            f'<line x1="{x0}" y1="{y0}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{color}" '
+            f'stroke-width="{stroke}"/><polygon points="{points}" fill="{color}"/></g>'
         )
         box = (min(x0, x1) - head, min(y0, y1) - head, max(x0, x1) + head, max(y0, y1) + head)
     else:
@@ -807,7 +942,7 @@ def callout_svg(callout, width, height):
         )
         body = (
             f'<rect x="{x}" y="{y}" width="{box_w}" height="{box_h}" rx="6" '
-            f'fill="#141418" fill-opacity="0.88" stroke="{colour}" stroke-width="3"/>'
+            f'fill="#141418" fill-opacity="0.88" stroke="{color}" stroke-width="3"/>'
             f'<text x="{x + pad}" y="{y + pad + font}" font-family="{FONT}" '
             f'font-size="{font}" font-weight="600" fill="white">'
             f"{xml_escape(callout['text'])}</text>"
@@ -820,14 +955,61 @@ def _svg(body, width, height):
     return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">{body}</svg>'
 
 
-def progress_bar_cmd(src, out, edge, colour, thickness, width, demo_s):
+def progress_bar_cmd(src, out, edge, color, thickness, width, demo_s):
     """A ``thickness``-pixel bar along ``edge`` that fills from left to right over ``demo_s``."""
     y = "0" if edge == "top" else "H-h"
     graph = (
-        f"color=c=0x{colour[1:]}:s={width}x{thickness}:r={FPS}:d={demo_s:.3f}[bar];"
+        f"color=c=0x{color[1:]}:s={width}x{thickness}:r={FPS}:d={demo_s:.3f}[bar];"
         f"[0:v][bar]overlay=x='-w+w*t/{demo_s:.3f}':y={y}[v]"
     )
     return _overlay_encode(src, [], graph, out)
+
+
+def cards_cmd(src, out, cards, demo_s, pngs):
+    """The title card, the demo, the closing card, joined: each card a still (``pngs``:
+    card name -> image) with silence, faded in and out, and the demo faded where it meets
+    a card. Audio is 48 kHz stereo so the parts join."""
+    inputs, chain, parts = [], [], []
+    for name in ("title", "demo", "closing"):
+        if name == "demo":
+            video = _faded(
+                f"[0:v]fps={FPS},format=yuv420p,setsar=1",
+                demo_s,
+                "title" in cards,
+                "closing" in cards,
+            )
+            chain += [f"{video}[demov]", f"[0:a]{AUDIO_FORMAT}[demoa]"]
+        elif name in cards:
+            seconds = cards[name]["seconds"]
+            inputs += [
+                "-loop",
+                "1",
+                "-framerate",
+                str(FPS),
+                "-t",
+                f"{seconds:.3f}",
+                "-i",
+                str(pngs[name]),
+            ]
+            video = _faded(f"[{len(inputs) // 8}:v]format=yuv420p,setsar=1", seconds, True, True)
+            chain += [
+                f"{video}[{name}v]",
+                f"anullsrc=r=48000:cl=stereo,atrim=duration={seconds:.3f}[{name}a]",
+            ]
+        else:
+            continue
+        parts.append(f"[{name}v][{name}a]")
+    chain.append(f"{''.join(parts)}concat=n={len(parts)}:v=1:a=1[v][a]")
+    return _encode(src, ";".join(chain), out, inputs)
+
+
+def _faded(chain, length, fade_in, fade_out):
+    fade_s = min(CARD_FADE_S, length / 4)
+    if fade_in:
+        chain += f",fade=t=in:st=0:d={fade_s:.3f}"
+    if fade_out:
+        chain += f",fade=t=out:st={length - fade_s:.3f}:d={fade_s:.3f}"
+    return chain
 
 
 def frame_cmd(src, at_s, width, out):
@@ -961,7 +1143,7 @@ def contact_sheet_svg(frames, columns, width, height):
         parts.append(
             f'<image x="{x}" y="{y}" width="{width}" height="{height}" href="{href}"/>'
             f'<text x="{x + 4}" y="{y + height + label_h * 0.8:.0f}" '
-            f'font-family="Helvetica, Arial, sans-serif" font-size="{label_h * 0.8:.0f}" '
+            f'font-family="{FONT}" font-size="{label_h * 0.8:.0f}" '
             f'fill="white">{time_s:.2f}s</text>'
         )
     return (
@@ -971,7 +1153,8 @@ def contact_sheet_svg(frames, columns, width, height):
     )
 
 
-def _encode(src, graph, out):
+def _encode(src, graph, out, inputs=()):
+    """``src`` (input 0), then the extra ``inputs`` arguments, through ``graph`` to ``out``."""
     return [
         "ffmpeg",
         "-v",
@@ -979,6 +1162,7 @@ def _encode(src, graph, out):
         "-y",
         "-i",
         str(src),
+        *inputs,
         "-filter_complex",
         graph,
         "-map",
@@ -1040,6 +1224,7 @@ COMMANDS = {
     "watermark": overlay_cmd,
     "callouts": overlay_cmd,
     "progress_bar": progress_bar_cmd,
+    "cards": cards_cmd,
 }
 
 

@@ -69,7 +69,7 @@ A list of arrows and text labels, each shown in its own window and faded in and 
 - `{"type": "arrow", "from": [x, y], "to": [x, y], "start": t, "end": t}`: the head is at `to`.
 - `{"type": "text", "text": "Click Export", "position": [x, y], "start": t, "end": t}`:
   a dark box whose top-left corner is at `position`. Keep the text short (one line).
-- `colour`: optional, `"#rrggbb"` (default `#ff3b30`): the arrow, or the box's border.
+- `color`: optional, `"#rrggbb"` (default `#ff3b30`): the arrow, or the box's border.
 
 `start` and `end` are recipe times (scene anchors stay put across cuts and speed). A
 window edge inside a cut is an error. Warns when a callout reaches into the burned-in
@@ -82,10 +82,25 @@ A thin bar along an edge that fills from left to right over the demo. It covers 
 demo: overlays are drawn before the cards are added, so cards have no bar.
 
 - `edge`: `bottom` (default) or `top`.
-- `colour`: `"#rrggbb"`, default `#4da3ff`.
+- `color`: `"#rrggbb"`, default `#4da3ff`.
 - `thickness`: pixels, `1` to `40`, default `6`.
 
-<!-- cards (#19) -->
+## `cards`
+
+A title card before the demo and/or a closing card after it, each a still with silence
+(music, if any, plays under it). Each card fades in and out, and the demo fades where it
+meets a card. `"cards": {"title": {}, "closing": {}}` is enough: text defaults come from
+`demo.json` in the demo folder. Needs `rsvg-convert`.
+
+- `title`: `title` (default: the demo's title, else the slug), `subtitle`, `logo` (image
+  file in the demo folder, drawn above the title).
+- `closing`: `text` (call to action, no default), `url` (default: the last scene's `url`).
+- Both: `seconds` 1 to 10 (default 3), `background` (default `"#111111"`), `color` (text,
+  default `"#ffffff"`), hex colours.
+
+The title card's length shifts everything after it: subtitles, and every recipe time
+(still given in source seconds) lands that much later in the output. The progress bar
+covers only the demo, not the cards.
 
 <!-- translations, chapters (#21) -->
 

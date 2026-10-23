@@ -1,6 +1,16 @@
 import pytest
 
-from post_plan import Cue, RecipeError, build_post_plan, gif_cmd, gif_warning, size_cap_encoding
+from post_plan import (
+    Cue,
+    RecipeError,
+    build_post_plan,
+    card_defaults,
+    card_svg,
+    cards_cmd,
+    gif_cmd,
+    gif_warning,
+    size_cap_encoding,
+)
 
 SOURCE_S = 12.0
 EDIT_MAP = {
@@ -33,8 +43,8 @@ CUES = (
 )
 
 
-def plan(recipe, source_s=SOURCE_S, cues=CUES, edit_map=EDIT_MAP):
-    return build_post_plan(recipe, source_s, cues, edit_map)
+def plan(recipe, source_s=SOURCE_S, cues=CUES, edit_map=EDIT_MAP, demo=None):
+    return build_post_plan(recipe, source_s, cues, edit_map, demo)
 
 
 def scene(name, at=None, offset_s=None):
@@ -390,7 +400,7 @@ def test_an_unreachable_size_cap_names_the_smallest_reachable_size():
             r"callouts\[0\].position must be \[x, y\]",
         ),
         ({"progress_bar": {"edge": "left"}}, "progress_bar.edge must be one of bottom, top"),
-        ({"progress_bar": {"colour": "blue"}}, "progress_bar.colour must be a colour"),
+        ({"progress_bar": {"color": "blue"}}, "progress_bar.color must be a colour"),
         ({"progress_bar": {"thickness": 0}}, "progress_bar.thickness must be a whole number"),
     ],
 )
@@ -415,7 +425,7 @@ def graph_of(step):
 
 def test_progress_bar_spans_the_demo_on_its_edge():
     _, step = overlay_plan(
-        {"speed": 2.0, "progress_bar": {"edge": "top", "colour": "#ff0000", "thickness": 4}}
+        {"speed": 2.0, "progress_bar": {"edge": "top", "color": "#ff0000", "thickness": 4}}
     ).steps
 
     assert step.line == "progress_bar\ttop 4px\t0.000s-6.000s"
@@ -558,3 +568,159 @@ def test_bad_callouts_are_clear_errors(callout, message):
 def test_a_callout_window_inside_a_cut_is_an_error():
     with pytest.raises(RecipeError, match=r"callouts\[0\].start.*inside a cut"):
         overlay_plan({"trim": {"cuts": [{"from": 1.0, "to": 3.0}]}, "callouts": [label(2.0, 4.0)]})
+
+
+# --- cards -----------------------------------------------------------------------------
+
+DEMO = {"title": "Weekly report", "url": "https://example.com/reports"}
+
+
+def test_overlays_are_drawn_on_the_demo_before_the_cards_are_added():
+    result = overlay_plan(
+        {
+            "cards": {"title": {"seconds": 2}, "closing": {}},
+            "progress_bar": {},
+            "callouts": [label(4.0, 6.0)],
+        },
+        demo=DEMO,
+    )
+    callouts, bar, _ = result.steps
+
+    # the run lines give output times; the layers and the bar are timed on the card-less demo
+    assert callouts.line == "callouts\t1\ttext 6.000s-8.000s"
+    assert (callouts.params["layers"][0].start_s, callouts.params["layers"][0].end_s) == (4.0, 6.0)
+    assert bar.line == "progress_bar\tbottom 6px\t2.000s-14.000s"
+    assert bar.params["demo_s"] == pytest.approx(SOURCE_S)
+
+
+def test_a_title_card_shifts_the_demo_and_its_cues_by_its_length():
+    result = plan({"cards": {"title": {"seconds": 2.5}}}, demo=DEMO)
+
+    assert result.total_s == pytest.approx(SOURCE_S + 2.5)
+    assert result.output_s(5.0) == pytest.approx(7.5)
+    assert result.cues[0] == Cue(2.5, 4.5, "Welcome.")
+    assert result.demo_span == pytest.approx((2.5, 14.5))
+
+
+def test_a_closing_card_adds_to_the_total_but_moves_nothing():
+    result = plan({"cards": {"closing": {"seconds": 4}}}, demo=DEMO)
+
+    assert result.total_s == pytest.approx(SOURCE_S + 4)
+    assert result.output_s(5.0) == pytest.approx(5.0)
+    assert result.demo_span == pytest.approx((0.0, SOURCE_S))
+
+
+def test_cards_with_no_text_default_to_the_demo_title_and_last_scene_url():
+    [step] = plan({"cards": {"closing": {}, "title": {}}}, demo=DEMO).steps
+
+    assert step.line == "cards\ttitle 3.000s\tclosing 3.000s"
+    title, closing = step.params["cards"]["title"], step.params["cards"]["closing"]
+    assert title["lines"] == (("Weekly report", "title"),)
+    assert closing["lines"] == (("https://example.com/reports", "url"),)
+    assert (title["background"], title["color"]) == ("#111111", "#ffffff")
+    assert step.params["demo_s"] == pytest.approx(SOURCE_S)
+
+
+def test_card_text_and_style_override_the_defaults():
+    [step] = plan(
+        {
+            "cards": {
+                "title": {
+                    "title": "Reports",
+                    "subtitle": "in 30 seconds",
+                    "logo": "logo.png",
+                    "background": "#fff",
+                    "color": "#000000",
+                    "seconds": 2,
+                },
+                "closing": {"text": "Try it today"},
+            }
+        },
+        demo=DEMO,
+    ).steps
+
+    title, closing = step.params["cards"]["title"], step.params["cards"]["closing"]
+    assert title == {
+        "seconds": 2,
+        "background": "#fff",
+        "color": "#000000",
+        "logo": "logo.png",
+        "lines": (("Reports", "title"), ("in 30 seconds", "subtitle")),
+    }
+    assert closing["lines"] == (("Try it today", "text"), ("https://example.com/reports", "url"))
+
+
+def test_card_defaults_come_from_the_demo_spec_or_the_slug():
+
+    spec = {"title": "Weekly report", "scenes": [{"url": "https://a"}, {"url": "https://b"}]}
+    assert card_defaults(spec, "weekly") == {"title": "Weekly report", "url": "https://b"}
+    assert card_defaults({}, "weekly") == {"title": "weekly", "url": None}
+
+
+def test_a_closing_card_without_text_or_default_url_is_an_error():
+    with pytest.raises(RecipeError, match="cards.closing needs its text"):
+        plan({"cards": {"closing": {}}}, demo={"title": "x", "url": None})
+
+
+def test_cards_step_joins_cards_and_demo_with_fades():
+    [step] = plan({"cards": {"title": {"seconds": 2}, "closing": {}}}, demo=DEMO).steps
+
+    args = cards_cmd(
+        "in.mp4", "out.mp4", pngs={"title": "t.png", "closing": "c.png"}, **step.params
+    )
+    assert args[args.index("t.png") - 2] == "2.000" and args[args.index("c.png") - 2] == "3.000"
+    graph = args[args.index("-filter_complex") + 1]
+    assert (
+        "[1:v]format=yuv420p,setsar=1,fade=t=in:st=0:d=0.500,fade=t=out:st=1.500:d=0.500[titlev]"
+        in graph
+    )
+    assert (
+        "[0:v]fps=30,format=yuv420p,setsar=1,fade=t=in:st=0:d=0.500,"
+        "fade=t=out:st=11.500:d=0.500[demov]"
+    ) in graph
+    assert "anullsrc=r=48000:cl=stereo,atrim=duration=3.000[closinga]" in graph
+    assert "[titlev][titlea][demov][demoa][closingv][closinga]concat=n=3:v=1:a=1[v][a]" in graph
+
+
+def test_the_default_poster_and_the_contact_sheet_account_for_the_cards():
+    steps = plan(
+        {
+            "cards": {"title": {"seconds": 2}, "closing": {}},
+            "exports": {"poster": {}, "contact_sheet": {"interval_s": 4}},
+        },
+        demo=DEMO,
+    ).steps
+
+    assert [step.op for step in steps] == ["cards", "poster", "contact_sheet"]
+    assert steps[1].params["at_s"] == pytest.approx(4.0)  # middle of scene intro, after 2 s
+    assert steps[2].params["times"] == (0.0, 4.0, 8.0, 12.0, 16.0)  # 17 s in all
+
+
+def test_card_svg_draws_its_colours_and_escaped_text():
+
+    svg = card_svg(
+        {"background": "#123456", "color": "#abcdef", "lines": (("Q&A <live>", "title"),)},
+        640,
+        360,
+        logo_href="logo.png",
+    )
+
+    assert 'width="640" height="360"' in svg
+    assert 'fill="#123456"' in svg and 'fill="#abcdef"' in svg
+    assert "Q&amp;A &lt;live&gt;" in svg
+    assert 'href="logo.png"' in svg
+
+
+@pytest.mark.parametrize(
+    "cards, message",
+    [
+        ({"intro": {}}, "unknown key 'intro' in cards"),
+        ({"title": {"url": "x"}}, "unknown key 'url' in cards.title"),
+        ({"title": {"title": ""}}, "cards.title.title must be non-empty text"),
+        ({"closing": {"seconds": 0.5}}, "cards.closing.seconds must be a number from 1 to 10"),
+        ({"title": {"background": "red"}}, "cards.title.background must be a hex colour"),
+    ],
+)
+def test_invalid_cards_fail_with_clear_messages(cards, message):
+    with pytest.raises(RecipeError, match=message):
+        plan({"cards": cards}, demo=DEMO)

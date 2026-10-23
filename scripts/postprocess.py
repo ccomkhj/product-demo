@@ -28,6 +28,9 @@ from demo_spec import read_json_object
 from post_plan import (
     RecipeError,
     build_post_plan,
+    card_defaults,
+    card_svg,
+    cards_cmd,
     contact_sheet_svg,
     frame_cmd,
     gif_cmd,
@@ -91,11 +94,11 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
         run(frame_cmd(video, at_s, frame_w, png))
         frames.append((png.name, at_s))
     out = Path(f"{out_prefix}-contact.png")
-    render_svg(
+    _render_svg(
         contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h),
         work_dir / "contact.svg",
         out,
-        "the contact sheet's frame times",
+        "the contact sheet needs rsvg-convert for its frame times",
     )
     return out
 
@@ -105,22 +108,45 @@ def _run_overlay_step(step, video, out_prefix, work_dir):
     layers = []
     for layer in step.params["layers"]:
         if layer.svg is None:
-            image = Path(out_prefix).parent / layer.image
-            if not image.is_file():
-                raise PostError(f"{step.op} image not found: {image}")
+            image = Path(out_prefix).parent / layer.image  # checked by _plan
         else:
             image = work_dir / layer.image
-            render_svg(layer.svg, image.with_suffix(".svg"), image, f"the {step.op}")
+            _render_svg(
+                layer.svg,
+                image.with_suffix(".svg"),
+                image,
+                f"the {step.op} need rsvg-convert to draw text",
+            )
         layers.append(replace(layer, image=image))
     out = work_dir / f"{step.op}.mp4"
     run(overlay_cmd(video, out, layers))
     return out
 
 
-def render_svg(svg, svg_path, png, what):
-    """Write ``svg`` and convert it to ``png`` with rsvg-convert (ADR-0001)."""
+def _run_cards(step, video, out_prefix, work_dir):
+    _, width, height = probe(video)
+    pngs = {}
+    for name, card in step.params["cards"].items():
+        logo = None
+        if "logo" in card:  # rsvg-convert only loads images next to the SVG
+            logo = f"logo-{name}{Path(card['logo']).suffix}"
+            shutil.copyfile(Path(out_prefix).parent / card["logo"], work_dir / logo)
+        pngs[name] = work_dir / f"card-{name}.png"
+        _render_svg(
+            card_svg(card, width, height, logo),
+            work_dir / f"card-{name}.svg",
+            pngs[name],
+            "cards need rsvg-convert for their text",
+        )
+    out = work_dir / "cards.mp4"
+    run(cards_cmd(video, out, pngs=pngs, **step.params))
+    return out
+
+
+def _render_svg(svg, svg_path, png, need):
+    """Write ``svg`` to ``svg_path`` and convert it to ``png``; ``need``: why rsvg-convert."""
     if not shutil.which("rsvg-convert"):
-        raise PostError(f"{what} needs rsvg-convert to draw text (`brew install librsvg`)")
+        raise PostError(f"{need} (`brew install librsvg`)")
     svg_path.write_text(svg, encoding="utf-8")
     run(svg_to_png_cmd(svg_path, png))
 
@@ -163,7 +189,7 @@ RUNNERS = {
     "watermark": _run_overlay_step,
     "callouts": _run_overlay_step,
     "progress_bar": _run_video_step,
-    # cards (#19)
+    "cards": _run_cards,
     # subtitle_tracks, chapters (#21)
     # click_sounds, music (#20)
     "size_cap": _run_size_cap,
@@ -240,24 +266,31 @@ def _plan(recipe, demo_dir, slug):
             f"no edit map ({edit_map_path.name}), so scene-anchored times are "
             f"unavailable; re-run compose to write it"
         )
+    images = {
+        "cards.title.logo": recipe.get("cards", {}).get("title", {}).get("logo"),
+        "watermark.image": recipe.get("watermark", {}).get("image"),
+    }
+    for where, image in images.items():
+        if image and not (demo_dir / image).is_file():
+            raise PostError(f"{where} not found: {demo_dir / image}")
+    spec_path = demo_dir / "demo.json"
+    spec = read_json_object(spec_path, "demo spec", PostError) if spec_path.is_file() else {}
     source_s, width, height = probe(source)
     plan = build_post_plan(
         recipe,
         source_s,
         parse_srt(srt.read_text(encoding="utf-8")),
         edit_map,
+        card_defaults(spec, slug),
         frame=(width, height),
-        bubble=_bubble(demo_dir),
+        bubble=_bubble(spec),
     )
     return plan, source, [*warnings, *plan.warnings]
 
 
-def _bubble(demo_dir):
+def _bubble(spec):
     """(corner, size) of the presenter bubble in the demo spec, or None without one."""
-    spec_path = demo_dir / "demo.json"
-    if not spec_path.is_file():
-        return None
-    avatar = read_json_object(spec_path, "demo spec", PostError).get("avatar")
+    avatar = spec.get("avatar")
     if not isinstance(avatar, dict):
         return None
     return avatar.get("corner", DEFAULT_CORNER), avatar.get("size", DEFAULT_SIZE)
