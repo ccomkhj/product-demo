@@ -5,12 +5,11 @@
 """Transcribe each scene's narration WAV and compare it with what the voice should say.
 
 Usage:
-    uv run --script scripts/check_audio.py demos/<slug>/demo.json [--audio-dir DIR]
+    uv run --script scripts/check_audio.py demos/<slug>/demo.json
 
-Reads <audio-dir>/<scene-id>.wav (default: the `audio/` folder next to the spec), as
-written by tts.py. Prints one line per scene: id, ok|check, word-match ratio, and the
-differences (`+ "heard but not in the narration"`, `- "in the narration but not heard"`,
-`"expected" -> "heard"`). Exits 1 when any scene is `check`. Runs whisper locally on
+Reads audio/<scene-id>.wav next to the spec, as written by tts.py. Prints one line per
+scene: id, ok|check, word-match ratio, and the differences (`+ "heard but not in the
+narration"`, `- "in the narration but not heard"`, `"expected" -> "heard"`). Exits 1 when any scene is `check`. Runs whisper locally on
 Apple Silicon via MLX; the first run downloads the pinned model.
 """
 
@@ -22,7 +21,7 @@ import sys
 
 from demo_spec import load_spec
 from narration import spoken
-from voice_config import check_platform, resolve_voice_config
+from voice_config import check_platform, pinned_snapshot, resolve_voice_config
 
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 WHISPER_REVISION = "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
@@ -75,29 +74,18 @@ def compare(expected, heard):
     return ("ok" if ratio >= THRESHOLD else "check"), ratio, diff
 
 
-def load_whisper():
-    """The pinned whisper snapshot's local path; never checks the network on a warm run."""
-    from huggingface_hub import snapshot_download
-
-    try:
-        return snapshot_download(WHISPER_MODEL, revision=WHISPER_REVISION, local_files_only=True)
-    except FileNotFoundError:
-        return snapshot_download(WHISPER_MODEL, revision=WHISPER_REVISION)
-
-
 def check(spec, audio_dir, language):
     """Print each scene's verdict; return True when every scene is ok."""
     import mlx_whisper
 
-    model = load_whisper()
-    pronounce = (spec.get("voice") or {}).get("pronounce")
+    model = pinned_snapshot(WHISPER_MODEL, WHISPER_REVISION)
     all_ok = True
     for scene in spec["scenes"]:
         wav = audio_dir / f"{scene['id']}.wav"
         if not wav.is_file():
             raise FileNotFoundError(f"{wav} is missing; run tts.py first")
         heard = mlx_whisper.transcribe(str(wav), path_or_hf_repo=model, language=language)["text"]
-        verdict, ratio, diff = compare(spoken(scene["narration"], pronounce), heard)
+        verdict, ratio, diff = compare(spoken(scene["narration"], spec.get("voice")), heard)
         print(f"{scene['id']}\t{verdict}\t{ratio:.2f}\t{'; '.join(diff)}")
         all_ok = all_ok and verdict == "ok"
     return all_ok
@@ -106,15 +94,13 @@ def check(spec, audio_dir, language):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("spec", type=Path, help="path to the demo spec (demo.json)")
-    parser.add_argument("--audio-dir", type=Path,
-                        help="where tts.py wrote the scene WAVs (default: <spec dir>/audio)")
     args = parser.parse_args()
     try:
         check_platform("check_audio")
         spec = load_spec(args.spec)
         voice = resolve_voice_config(spec.get("voice"), "qwen3", args.spec.resolve().parent)
         language = None if voice["language"] == "auto" else voice["language"]
-        ok = check(spec, args.audio_dir or args.spec.parent / "audio", language)
+        ok = check(spec, args.spec.parent / "audio", language)
     except Exception as exc:
         print(f"check_audio: {exc}", file=sys.stderr)
         return 1

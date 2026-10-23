@@ -138,6 +138,15 @@ def test_profile_cannot_mix_new_audio_with_old_transcript(registry):
                                           'qwen3', Path('/tmp'))
 
 
+
+def test_saved_profile_cannot_carry_pronunciations(registry):
+    own_voice.register(recording())
+    saved = json.loads(registry.read_text())
+    saved['own_voice']['pronounce'] = {'OOS': 'out-of-stock'}
+    registry.write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match='pronounce belongs in the demo spec'):
+        voice_config.resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path('/tmp'))
+
 PHOTO = Path(__file__).resolve().parent.parent / 'assets' / 'avatars' / 'huijo.png'
 
 

@@ -87,10 +87,11 @@ class Narration:
         return done / self._chars
 
 
-def spoken(narration, pronounce):
-    """The narration as the voice should say it: each ``pronounce`` key, as a whole word
-    (case-sensitive), becomes its value in one pass, so a replacement is never replaced again.
-    Longer keys win where keys overlap."""
+def spoken(narration, voice):
+    """The narration as the voice should say it: each key of ``voice["pronounce"]`` (``voice``
+    is the spec's voice object, or None), as a whole word (case-sensitive), becomes its value
+    in one pass, so a replacement is never replaced again. Longer keys win where keys overlap."""
+    pronounce = (voice or {}).get("pronounce")
     if not pronounce:
         return narration
     keys = sorted(pronounce, key=len, reverse=True)

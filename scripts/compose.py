@@ -246,7 +246,7 @@ def cue_svg(text, width, height, reserve=0):
 def action_line(action):
     """One ``at`` action's line of compose output: where it starts, and how late if it is."""
     late = f"\tlate {action.late_s:.3f}s" if action.late_s else ""
-    return f'at\t{action.scene_id}\t{action.n}\t{action.start_s:.3f}s\t"{action.phrase}"{late}'
+    return f'at\t{action.scene_id}\t{action.index}\t{action.start_s:.3f}s\t"{action.phrase}"{late}'
 
 
 def _srt_time(seconds):
@@ -426,12 +426,14 @@ def main(argv=None):
         print(f"compose: error: {exc}", file=sys.stderr)
         return 1
 
+    actions = {}
+    for action in plan.actions:
+        actions.setdefault(action.scene_id, []).append(action)
     for scene in plan.scenes:
         print(f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
               f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s")
-        for action in plan.actions:
-            if action.scene_id == scene.id:
-                print(action_line(action))
+        for action in actions.get(scene.id, ()):
+            print(action_line(action))
     if plan.flash_s is not None:
         print(f"sync\tflash at {plan.flash_s:.3f}s in the raw video")
     print(f"total\t{plan.total_s:.3f}s\t{out}")
