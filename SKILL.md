@@ -75,6 +75,8 @@ Resolve failures before continuing. Carry the same explicit backend to TTS and s
 policy to compose. A successful local report does not verify browser access or login.
 Follow `references/readiness.md` to check MCP capabilities, entry pages, authentication,
 and actual viewport in the recording browser. Do not rehearse state-changing actions.
+If the chrome-devtools tools are missing or failed to connect, check the Node version
+first (Browser entry check 1 in `references/readiness.md`).
 Defer state-dependent scenes until reached naturally, then check them before their start
 markers. Restore the first scene's entry state before capture.
 

@@ -48,6 +48,9 @@ and regenerate TTS. Do not silently cut text or accelerate speech.
 1. Discover the Chrome MCP tools in `mcp-recipes.md`. Confirm navigation, snapshots, input,
    evaluation, resizing, and screencast start/stop are available. Tool availability is not
    proof that recording will succeed. Missing tools block the browser workflow.
+   If the chrome-devtools tools are missing or failed to connect (e.g. `CONNECTION_CLOSED`),
+   compare `node --version` with `npm view chrome-devtools-mcp engines`; upgrade Node, make
+   it the default (`nvm alias default …`), and restart Claude Code.
 2. Use `list_pages` to select the single recording tab. Check independently accessible
    scene entry pages with navigation and fresh snapshots. Do not submit forms or rehearse
    actions that change state. A browser error page, login redirect, or ambiguous page does
