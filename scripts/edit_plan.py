@@ -62,9 +62,10 @@ class Segment:
 
     trim_start/trim_end: its window in raw-video seconds. anchor_s: when, from the
     scene start, the narration reaches its action's ``at`` phrase (0 for the first
-    segment). frames: its length once frozen frames are dropped.
-    lead_frames: how long its first frame is held before it plays, so that it
-    starts on its anchor (or right after the previous segment, if that runs late).
+    segment), and phrase that phrase ("" for the first segment). frames: its length
+    once frozen frames are dropped. lead_frames: how long its first frame is held
+    before it plays, so that it starts on its anchor (or right after the previous
+    segment, if that runs late).
     """
 
     trim_start: float
@@ -72,6 +73,7 @@ class Segment:
     anchor_s: float
     frames: int
     lead_frames: int = 0
+    phrase: str = ""
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,22 @@ class Cue:
 
 
 @dataclass(frozen=True)
+class ActionTime:
+    """Where compose places one ``at`` action in the final video.
+
+    n: its place among the scene's ``at`` actions, from 1. start_s: when it starts,
+    after the holds and the scene's speed. late_s: how far past its phrase that is,
+    when an earlier segment ran long (0 otherwise).
+    """
+
+    scene_id: str
+    n: int
+    start_s: float
+    phrase: str
+    late_s: float
+
+
+@dataclass(frozen=True)
 class Plan:
     """The scenes in spec order, laid end to end.
 
@@ -153,6 +171,22 @@ class Plan:
                                 min(scene.offset_s + scene.audio_s * end, scene.end_s),
                                 sentence))
         return tuple(cues)
+
+    @property
+    def actions(self):
+        """Every ``at`` action with its start in final-video time, in plan order."""
+        actions = []
+        for scene in self.scenes:
+            frames = 0
+            for n, segment in enumerate(scene.segments):
+                start_s = (frames + segment.lead_frames) / FPS / scene.fit.speed
+                frames += segment.lead_frames + segment.frames
+                if n:
+                    late_s = start_s - segment.anchor_s
+                    actions.append(ActionTime(scene.id, n, scene.offset_s + start_s,
+                                              segment.phrase,
+                                              late_s if late_s > 0.5 / FPS else 0.0))
+        return tuple(actions)
 
 
 def build_plan(spec, timeline, durations, video):
@@ -186,8 +220,9 @@ def build_plan(spec, timeline, durations, video):
                             f"{len(anchors)} actions with an 'at' phrase; mark a beat right "
                             f"before each such action")
         bounds = [trim_start, *beats, trim_end]
-        segments = tuple(Segment(start, end, anchor, _frames(end - start))
-                         for start, end, anchor in zip(bounds, bounds[1:], [0.0, *anchors]))
+        segments = tuple(Segment(start, end, anchor, _frames(end - start), phrase=phrase)
+                         for start, end, anchor, phrase
+                         in zip(bounds, bounds[1:], [0.0, *anchors], ["", *phrases]))
         scenes.append(ScenePlan(
             id=scene_id, title=scene.get("title") or scene_id, narration=scene["narration"],
             trim_start=trim_start, trim_end=trim_end, audio_s=audio_s, video_s=0.0,

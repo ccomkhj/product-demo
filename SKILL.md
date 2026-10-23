@@ -162,8 +162,9 @@ scene, and every declared prerequisite and expected outcome passed for this take
 uv run --project <skill dir> python <skill dir>/scripts/compose.py demos/<slug>/demo.json [--no-burn-subs]
 ```
 
-It prints one line per scene with its fit (hold, speed-up or pad) and lengths, then a
-`total` line, and writes `<slug>.mp4`, `<slug>.srt` and `transcript.md` (output format in
+It prints one line per scene with its fit (hold, speed-up or pad) and lengths, an `at`
+line per synced action with its start time, then a `total` line, and writes `<slug>.mp4`,
+`<slug>.srt` and `transcript.md` (output format in
 `references/verify.md`). The subtitles are burned into the video too, so the words show
 wherever it plays; pass `--no-burn-subs` only when the user wants a clean video with the
 `.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble in
@@ -182,8 +183,8 @@ handing it over; a fitting bug or a missing overlay is invisible in the compose 
   pointed target, a ripple per click, a keycap per key press, a badge per Back, and the
   burned-in subtitle. Effects are short (a ripple lasts about 0.9 s), so tile every frame
   of the moment before calling one missing.
-- **Sync:** at the start of the subtitle cue holding each `at` phrase (from `<slug>.srt`),
-  its action must be starting, not already over.
+- **Sync:** 0.3 s after the time on each `at` line of the compose output, its action must
+  be under way, not already over.
 
 Done when the length matches, every scene's expected overlay effect has been seen, and
 the actions keep pace with the voice.

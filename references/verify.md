@@ -4,10 +4,12 @@ Recipes for step 7 of SKILL.md. Run them from the directory holding `demos/`.
 
 ## Compose output
 
-`compose.py` prints one tab-separated line per scene, then the totals:
+`compose.py` prints one tab-separated line per scene, each followed by one line per `at`
+action in it, then the totals:
 
 ```
 <id>  <hold|speedup|pad>  <speed>x  video <s>s  audio <s>s  scene <s>s
+at  <id>  <n>  <s>s  "<phrase>"  [late <s>s]
 sync  flash at <s>s in the raw video
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>  <burned in (subtitles|overlay)|not burned in>
@@ -18,6 +20,11 @@ transcript  <transcript.md path>
   `at` phrases are added.
 - `scene`: its length in the final video, a whole number of frames at 30 fps. A padded
   scene is longer than its `audio`.
+- `at`: the scene's `n`th action with an `at` phrase, and when it starts in the final video
+  (the scene's offset plus its place after the holds and the scene's speed). The phrase
+  sits where it falls inside its sentence, so this is often seconds after its cue starts.
+  `late` means an earlier segment ran past the phrase and pushed the action back by that
+  much; mark the beats closer to their actions or move the phrase later.
 - `sync`: present when `rec_start` has a `sync_ms`; where compose found the flash.
 - A scene's `offset` (where it starts in `<slug>.mp4`) is the sum of the earlier scenes'
   `scene` values.
@@ -50,17 +57,16 @@ line up across a bare tile seam and look like one torn frame.
 
 ## Sync
 
-For each action with an `at`, find the cue holding its phrase in `<slug>.srt` and grab a
-frame half a second after the cue starts:
+For each `at` line of the compose output, grab a frame 0.3 s after its time:
 
 ```
-ffmpeg -v error -y -ss <cue start + 0.5> -i demos/<slug>/<slug>.mp4 -frames:v 1 \
+ffmpeg -v error -y -ss <at time + 0.3> -i demos/<slug>/<slug>.mp4 -frames:v 1 \
   -vf scale=960:-1 demos/<slug>/frames/<scene-id>-sync-<n>.png
 ```
 
 The action must be under way there: the cursor gliding to or resting on its target, the
-scroll moving, the ripple playing. If it already played before the cue, its beat was
-marked after the action had started.
+scroll moving, the ripple playing. If it is already over, its beat was marked after the
+action had started.
 
 ## Frames: dense tile around one moment
 
