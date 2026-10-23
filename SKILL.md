@@ -112,6 +112,23 @@ rerun the check. Never truncate or accelerate speech automatically. If the user 
 longer script, note the accepted duration in the readiness report. When the user says the
 voice is too slow or too fast, set `voice.speed` (0.5 to 2, keeps pitch) and rerun `tts.py`.
 
+When the backend is `qwen3`, always run the audio check after the pace check (you can't
+listen, and leaked or misspoken words are the worst defect a customer video can have):
+
+```
+uv run --script <skill dir>/scripts/check_audio.py demos/<slug>/demo.json
+```
+
+It transcribes each scene locally with whisper, compares it with the narration as the voice
+should say it (after `voice.pronounce`), and prints `ok` or `check`, the match ratio and the
+differences per scene; it exits 1 on any `check`. On `check`:
+
+- Extra words at a scene's start or end (leaked reference text): rerun `tts.py`, then the pace
+  and audio checks, at most twice.
+- The same word wrong on every run (a mispronunciation): propose a `voice.pronounce` entry.
+- A product name, acronym or number: likely whisper's error, not the voice's. List the scene
+  and words for the user to listen to; don't rerun.
+
 ## 5. Record
 
 Follow `references/mcp-recipes.md` literally: its "Recording start and stop" section, then
@@ -177,7 +194,7 @@ the actions keep pace with the voice.
 - **Compose only** (different subtitle or fitting options): run step 6 again. It reads the
   existing recording, timeline and audio.
 - **Narration edit:** edit `narration` in `demo.json`, then run step 4 (including its
-  `pace` check) and step 6. This works as long as the visuals still show what the new
+  pace and audio check) and step 6. This works as long as the visuals still show what the new
   words describe and every `at` phrase is still in the narration; otherwise repeat
   readiness from step 3 and record again from step 5.
 - **Mispronounced word:** add `voice.pronounce`, rerun TTS and compose.

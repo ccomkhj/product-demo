@@ -106,9 +106,9 @@ def saved_photo():
         raise ValueError(f"own_photo needs setup: {exc}; run scripts/own_voice.py --photo <path>") from exc
 
 
-def check_platform():
+def check_platform(caller="qwen3"):
     if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise ValueError("qwen3 requires native Apple Silicon macOS and arm64 Python (not Rosetta)")
+        raise ValueError(f"{caller} requires native Apple Silicon macOS and arm64 Python (not Rosetta)")
 
 
 def probe_reference(path, run):

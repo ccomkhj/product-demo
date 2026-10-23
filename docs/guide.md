@@ -132,6 +132,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/preflight.py` | Local readiness and measured narration duration checks |
 | `scripts/tts.py` | Narration audio (Kokoro, `say`, OpenAI or ElevenLabs) |
 | `scripts/kokoro_tts.py` | Local Kokoro synthesis, run by `tts.py` through `uv run` |
+| `scripts/check_audio.py` | Transcribes `qwen3` narration with local whisper to catch leaked or misspoken words |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
 | `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |
