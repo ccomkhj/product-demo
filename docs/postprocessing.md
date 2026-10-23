@@ -20,10 +20,12 @@ languages, or export a GIF. To change the script, the voice or what was clicked,
 ## Trigger it
 
 ```
-/product-demo:postprocessing <demo slug or folder> <what to change>
+/product-demo:postprocessing
 ```
 
-For example:
+On its own, it finds your demos (asking which one if there are several), shows every option
+below with a one-line example, and you answer in plain words ("1.25x and a title card"). If
+you already know what you want, say it straight away:
 
 ```
 /product-demo:postprocessing csv-export: make it 1.25x and cut the first two seconds

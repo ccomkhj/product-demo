@@ -61,6 +61,7 @@ More ways to start:
 ### Post-processing
 
 ```text
+/product-demo:postprocessing
 /product-demo:postprocessing csv-export: make it 1.25x and cut the first two seconds
 /product-demo:postprocessing csv-export: add a title card and a closing card with our URL
 /product-demo:postprocessing csv-export: add logo.png as a watermark and a progress bar
@@ -68,7 +69,8 @@ More ways to start:
 /product-demo:postprocessing csv-export: a GIF of the export scene and a version under 10 MB
 ```
 
-Edits a composed demo without touching `<slug>.mp4`, `<slug>.srt` or `transcript.md`. The agent
+Run it alone to see every option and pick in plain words. Edits a composed demo without touching
+`<slug>.mp4`, `<slug>.srt` or `transcript.md`. The agent
 writes the edits as a post recipe, `demos/<slug>/post.json`, runs `scripts/postprocess.py` and
 hands over `<slug>-post.mp4` and `<slug>-post.srt`. Change one value later and re-run: the rest
 comes out the same. Every operation, with examples: [post-processing](postprocessing.md).

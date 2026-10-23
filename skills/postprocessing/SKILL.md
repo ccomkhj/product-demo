@@ -1,7 +1,7 @@
 ---
 name: postprocessing
 description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, title and closing cards, translated subtitle tracks and chapters, click sounds and background music, and export a size-capped mp4, a GIF, a poster frame or a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
-argument-hint: "<demo slug or folder> <what to change>"
+argument-hint: "[demo slug] [what to change]"
 ---
 
 # Post-processing
@@ -20,9 +20,29 @@ the contact sheet).
 ## 1. Find the demo and its recipe
 
 Find the demo folder from the request: `demos/<slug>/` under the current working directory,
-holding `<slug>.mp4`. If several could match, ask which. If `post.json` exists, read it and
-**edit it**: change only what the user asked for and keep every other key, so a re-run
-reproduces the rest exactly. Otherwise start from `{}`.
+holding `<slug>.mp4`. With no slug given, list the demos that have one: use the only one,
+otherwise ask which (newest first). If `post.json` exists, read it and **edit it**: change
+only what the user asked for and keep every other key, so a re-run reproduces the rest
+exactly. Otherwise start from `{}`.
+
+### No edit asked for: show the options
+
+When the user ran `/product-demo:postprocessing` with no edit (or asks what it can do), show
+this menu, with the demo's current recipe (if any) summarised above it in one line, then
+let them answer in plain words ("2 and 5, closing card with our URL") and continue at step 2:
+
+```text
+Timing     1 Speed        "1.25x"                   2 Trim / cut   "cut the first 2 s", "remove the slow load"
+Branding   3 Title card   "add a title card"        4 Closing card "end with our URL"
+           5 Watermark    "logo.png top-right"      6 Progress bar "thin bar at the bottom"
+Overlays   7 Callouts     "arrow at the Export button when I say export"
+Sound      8 Music        "music.mp3 under the voice"  9 Click sounds
+Subtitles 10 Translations "Korean and German"      11 Chapters     "for YouTube"
+Exports   12 Under N MB   "under 10 MB for Slack"  13 GIF          "of the export scene"
+          14 Poster       15 Contact sheet
+```
+
+Show it as written, not as a question with fixed choices: one answer can pick several.
 
 ## 2. Write the recipe
 
