@@ -93,7 +93,30 @@ belongs to the last chapter. Written as mp4 chapter metadata and as
 Warns when YouTube would ignore them: the first not at 0:00, fewer than 3, or one shorter
 than 10 s.
 
-<!-- click_sounds, music (#20) -->
+## `click_sounds`
+
+A short click one cursor glide (600 ms) after the start of each click, double-click and
+field click (`type`) whose start is in `<slug>.editmap.json`: each scene's first action and
+every `at` action. Times go through the trim, cuts and speed. Needs the edit map.
+
+- `level`: 0 to 1, default 0.5.
+- `file`: a custom sound next to the recipe; default the bundled
+  `${CLAUDE_PLUGIN_ROOT}/assets/click.wav`.
+
+Clicks it cannot place get no sound and a warning each (`no click sound for scene '<id>'
+action <n> ...`): a start inside a cut, or a start compose does not know. Giving that
+action an `at` phrase and re-composing gives it a sound.
+
+## `music`
+
+Background music under the whole video, cards included: looped when shorter, faded out at
+the end, ducked by sidechain compression while the narration speaks. Never download music:
+ask the user for a file they have the rights to.
+
+- `file` (required): an audio file next to the recipe; a URL is rejected.
+- `level`: 0 to 1, default 0.2.
+- `duck`: compression ratio under the narration, 1 (no ducking) to 20, default 8.
+- `fade_out_s`: fade at the end, default 2.
 
 ## `exports`
 

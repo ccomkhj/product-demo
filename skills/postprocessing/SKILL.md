@@ -53,6 +53,8 @@ service), next to `<slug>.srt`:
 
 If the source has burned-in subtitles (the run warns), the translated tracks show on top
 of them: say so once and suggest re-composing with `--no-burn-subs` first.
+Music: never download or generate it. Ask the user for an audio file they have the rights
+to, and put its name (next to the recipe) in `music.file`.
 
 ## 3. Run
 
@@ -68,13 +70,16 @@ trim  removed <s>s in <n> ranges  kept <s>s
 speed  <x>x
 subtitle_tracks  original, <lang>, ...
 chapters  <n> chapters  <YouTube list path>
+click_sounds  <n> clicks  [<n> unplaceable]
+music  <file>  level <l>  duck <r>:1  fade out <s>s
 contact_sheet  <n> frames  <png path>
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>
 ```
 
 Warnings go to stderr (`postprocess: warning: ...`): a cut that splits a subtitle cue (a cut
-mid-sentence; offer to move it to a cue boundary), a missing edit map, translations over
+mid-sentence; offer to move it to a cue boundary), a click that gets no sound (list them
+to the user with the reason), a missing edit map, translations over
 burned-in subtitles, or chapters YouTube would ignore (fewer than 3, or one under 10 s;
 mention it, the mp4 chapters still work). On
 `postprocess: error: ...` nothing was written: fix the recipe and re-run. A demo without
