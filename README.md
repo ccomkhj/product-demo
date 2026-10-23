@@ -7,7 +7,7 @@ shipped into a **narrated, subtitled demo video**. It drives a real Chrome brows
 the script for free with local [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), puts
 every click on the word that names it, and cuts the dead time.
 
-https://github.com/user-attachments/assets/6b411193-4300-417b-8ec8-564527144894
+https://github.com/user-attachments/assets/67ef85ed-2ec2-44a9-9a49-263a4400f107
 
 *54 s, with a presenter bubble in the corner, made from this one line:*
 
