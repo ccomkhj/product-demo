@@ -1,5 +1,5 @@
 ---
-name: product-demo
+name: run
 description: Narrated product-demo video from a short interview, recorded live in the Chrome DevTools MCP browser with a visible cursor, clicks and key presses, voiced and subtitled. Use when the user wants a product demo, walkthrough or screen-recorded tour of a web app, or wants to re-narrate or re-compose an existing demo folder, or to configure its voice, presenter or subtitles.
 argument-hint: "[--configure] <what to demo>"
 ---
@@ -12,21 +12,23 @@ of it driving the browser is full of frozen stretches with pacing unrelated to a
 So the narration is made first, the recording carries scene markers, and compose cuts each
 scene out, drops the frozen frames and fits the rest to its narration.
 
-`<skill dir>` below is the directory of this file. Each demo lives in `demos/<slug>/`
+The plugin root is `${CLAUDE_PLUGIN_ROOT}`: scripts, references and assets live there. In the
+reference files, the plugin-root variable (`CLAUDE_PLUGIN_ROOT`) stands for this same
+directory. Each demo lives in `demos/<slug>/`
 under the current working directory: the MCP can only write files (the screencast) inside
 its workspace roots, which is normally that directory. The scripts need Python 3.11+ and
 `ffmpeg`; stock macOS `python3` is 3.9, so run them through `uv` exactly as written below
-(`uv run --project <skill dir>` picks a 3.11+ interpreter from any working directory). `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
-ffmpeg without libass (see `docs/adr/0001-burn-subs-rsvg-fallback.md`).
+(`uv run --project ${CLAUDE_PLUGIN_ROOT}` picks a 3.11+ interpreter from any working directory). `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
+ffmpeg without libass (see `${CLAUDE_PLUGIN_ROOT}/docs/adr/0001-burn-subs-rsvg-fallback.md`).
 
 ## Modes
 
-- **Default** (`/product-demo <request>`): ask no setting questions. Settings come from the
+- **Default** (`/product-demo:run <request>`): ask no setting questions. Settings come from the
   request, then the saved defaults, then the built-in defaults (see **Settings**). The
   gates still apply: missing pages or URLs (step 1), script approval (step 2), manual
   sign-in (step 3), and a missing own voice (see **Settings**).
 - **Configure** (`--configure` in the arguments, or the user asks to change the saved
-  settings): follow `references/configure.md` before step 1. It asks every setting,
+  settings): follow `${CLAUDE_PLUGIN_ROOT}/references/configure.md` before step 1. It asks every setting,
   records the voice if chosen, and saves the answers as the new defaults.
 
 ## 1. Interview
@@ -35,9 +37,9 @@ Infer the purpose from the request and read only the selected template:
 
 | Purpose | Template | Suggested target |
 |---------|----------|------------------|
-| Feature announcement | `references/templates/feature-announcement.md` | 30 s |
-| Customer tutorial | `references/templates/customer-tutorial.md` | 90 s |
-| Sales walkthrough | `references/templates/sales-walkthrough.md` | 120 s |
+| Feature announcement | `${CLAUDE_PLUGIN_ROOT}/references/templates/feature-announcement.md` | 30 s |
+| Customer tutorial | `${CLAUDE_PLUGIN_ROOT}/references/templates/customer-tutorial.md` | 90 s |
+| Sales walkthrough | `${CLAUDE_PLUGIN_ROOT}/references/templates/sales-walkthrough.md` | 120 s |
 | Custom | No template required | User's choice |
 
 Explicit user structure and duration override template suggestions (a 60-second
@@ -57,7 +59,7 @@ are known.
 Resolve the voice, presenter, viewport and subtitle policy with **Settings** below before
 writing the spec.
 
-Write `demos/<slug>/demo.json` following `references/demo-spec.md`. Narration is spoken
+Write `demos/<slug>/demo.json` following `${CLAUDE_PLUGIN_ROOT}/references/demo-spec.md`. Narration is spoken
 sentences, pitched at the audience and carrying each page's key message. Hook the viewer,
 don't introduce the site. Talk to "you" about what they gain, not what the screen shows.
 Vary the rhythm, end on a payoff. Every page needs one dry line that would make a
@@ -72,7 +74,7 @@ what the words describe instead of racing ahead of them.
 Write optional `purpose`, `outcome`, and `target_duration_s` metadata. Copy a template's
 suggested target only when the user has not supplied one; custom specs need no target.
 Add `prerequisites` and `expected_outcomes` for observable entry and success states using
-`references/readiness.md`. Keep targets in words and intermediate states in separate scenes.
+`${CLAUDE_PLUGIN_ROOT}/references/readiness.md`. Keep targets in words and intermediate states in separate scenes.
 
 Show the purpose, audience, outcome, duration target (if any), and every scene's title and
 narration. Get explicit script approval before going on. Wording is cheap to change now;
@@ -83,15 +85,15 @@ after recording, it can only be changed if the new narration still fits the visu
 Run the local preflight before generating narration:
 
 ```
-uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3] [--burn-subs|--no-burn-subs]
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/preflight.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3] [--burn-subs|--no-burn-subs]
 ```
 
 Resolve failures before continuing. Carry the same explicit backend to TTS and subtitle
 policy to compose. A successful local report does not verify browser access or login.
-Follow `references/readiness.md` to check MCP capabilities, entry pages, authentication,
+Follow `${CLAUDE_PLUGIN_ROOT}/references/readiness.md` to check MCP capabilities, entry pages, authentication,
 and actual viewport in the recording browser. Do not rehearse state-changing actions.
 If the chrome-devtools tools are missing or failed to connect, check the Node version
-first (Browser entry check 1 in `references/readiness.md`).
+first (Browser entry check 1 in `${CLAUDE_PLUGIN_ROOT}/references/readiness.md`).
 Defer state-dependent scenes until reached naturally, then check them before their start
 markers. Restore the first scene's entry state before capture.
 
@@ -102,7 +104,7 @@ alone does not prove authentication. Record brief evidence in `demos/<slug>/read
 ## 4. Narration audio first
 
 ```
-uv run --project <skill dir> python <skill dir>/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/tts.py demos/<slug>/demo.json [--backend say|kokoro|openai|elevenlabs|qwen3]
 ```
 
 It validates the spec, writes `audio/<scene-id>.wav` and `audio/durations.json`, and prints
@@ -114,7 +116,7 @@ key if one is set, then the free local Kokoro model if `uv` is on PATH, then mac
 After TTS, always check each scene's measured length, with or without a target:
 
 ```
-uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
 ```
 
 Carry the same backend/subtitle overrides here too. A `pace` failure means a scene's audio
@@ -131,7 +133,7 @@ When the backend is `qwen3`, always run the audio check after the pace check (yo
 listen, and leaked or misspoken words are the worst defect a customer video can have):
 
 ```
-uv run --script <skill dir>/scripts/check_audio.py demos/<slug>/demo.json
+uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/check_audio.py demos/<slug>/demo.json
 ```
 
 It transcribes each scene locally with whisper, compares it with the narration as the voice
@@ -146,12 +148,12 @@ differences per scene; it exits 1 on any `check`. On `check`:
 
 ## 5. Record
 
-Follow `references/mcp-recipes.md` literally: its "Recording start and stop" section, then
+Follow `${CLAUDE_PLUGIN_ROOT}/references/mcp-recipes.md` literally: its "Recording start and stop" section, then
 one action recipe per spec action. The rules that matter, and why:
 
 - **Check scene states.** Evaluate prerequisites immediately before each scene's start
   marker and expected outcomes after its actions, before its end marker. Follow the bounded
-  checks in `references/readiness.md`. On failure or ambiguity, stop capture, keep diagnostics,
+  checks in `${CLAUDE_PLUGIN_ROOT}/references/readiness.md`. On failure or ambiguity, stop capture, keep diagnostics,
   and report the condition. Do not compose or deliver the failed take.
 - **One tab.** The screencast is tied to one page; anything in another tab is not recorded.
 - **Re-inject the overlay after every navigation.** A new document has no overlay, and an
@@ -174,13 +176,13 @@ scene, and every declared prerequisite and expected outcome passed for this take
 ## 6. Compose
 
 ```
-uv run --project <skill dir> python <skill dir>/scripts/compose.py demos/<slug>/demo.json [--no-burn-subs]
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/compose.py demos/<slug>/demo.json [--no-burn-subs]
 ```
 
 It prints one line per scene with its fit (hold, speed-up or pad) and lengths, an `at`
 line per synced action with its start time, then a `total` line, and writes `<slug>.mp4`,
 `<slug>.srt` and `transcript.md` (output format in
-`references/verify.md`). The subtitles are burned into the video too, so the words show
+`${CLAUDE_PLUGIN_ROOT}/references/verify.md`). The subtitles are burned into the video too, so the words show
 wherever it plays; pass `--no-burn-subs` when **Settings** resolved to a clean video with
 the `.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble
 in its corner and prints an `avatar` line.
@@ -188,7 +190,7 @@ in its corner and prints an `avatar` line.
 ## 7. Verify
 
 Confirm this take passed its scene checks in `readiness.md`. Check the result before
-handing it over; a fitting bug or a missing overlay is invisible in the compose output. Use the recipes in `references/verify.md`:
+handing it over; a fitting bug or a missing overlay is invisible in the compose output. Use the recipes in `${CLAUDE_PLUGIN_ROOT}/references/verify.md`:
 
 - **Length:** ffprobe's duration of `<slug>.mp4` must match compose's `total` line, not the
   sum of the narration lengths, because padded scenes run longer than their narration.
@@ -220,11 +222,11 @@ new audio or new fitting can break length, overlay effects or sync just like a n
 Run once per demo, before writing the spec:
 
 ```bash
-uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --status
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --status
 ```
 
 It prints `ready` (own voice registered), `photo` (presenter photo saved) and `defaults`
-(saved by `references/configure.md`). For each setting, the user's request wins, then
+(saved by `${CLAUDE_PLUGIN_ROOT}/references/configure.md`). For each setting, the user's request wins, then
 `defaults`, then the fallback:
 
 | Setting | `defaults` field | Fallback |
@@ -243,7 +245,7 @@ save the choice so later demos skip the question:
 `own_voice.py --save-defaults '{"voice": {"backend": "kokoro"}}'`. On record, run the
 recorder below.
 
-**Recorder**: `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`
+**Recorder**: `uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py`
 (`--replace` to record over a registered voice). It opens a local recording page and waits.
 Tell the user to click Record, read the passage, pause a moment, stop, check the transcript
 matches word-for-word, and click Save my voice. A recording that ends mid-speech is
@@ -258,4 +260,4 @@ A registered voice is reused silently on every demo: no reuse, re-record or voic
 question (the script approval still applies). Preserve explicit per-demo model or language
 preferences; explicit per-demo reference recordings need no registered profile. When the
 user gives a photo to keep, save it with `own_voice.py --photo <path>`; it replaces any
-earlier one. See `references/demo-spec.md#local-voice-cloning`.
+earlier one. See `${CLAUDE_PLUGIN_ROOT}/references/demo-spec.md#local-voice-cloning`.

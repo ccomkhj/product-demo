@@ -1,0 +1,12 @@
+{
+  "name": "product-demo",
+  "description": "Marketplace for the product-demo Claude Code plugin.",
+  "owner": { "name": "Huijo Kim" },
+  "plugins": [
+    {
+      "name": "product-demo",
+      "source": "./",
+      "description": "Narrated product-demo videos recorded live in the Chrome DevTools MCP browser, voiced and subtitled."
+    }
+  ]
+}

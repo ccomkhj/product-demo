@@ -42,7 +42,7 @@ length (`{"OOS": "O-O-S"}`); for a long expansion, rewrite the narration instead
 
 ## Local voice cloning
 
-For a reusable personal voice, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`. It checks the local
+For a reusable personal voice, run `uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py`. It checks the local
 registry first and exits immediately when a usable voice exists (`--replace` records a new
 one over it). Otherwise it opens a
 local Record / Stop / Preview / Save page. Read the displayed passage, correct the
@@ -59,7 +59,7 @@ Profile paths resolve relative to `.voices/config.json`; per-demo overrides reso
 relative to the demo spec. Model and language overrides are allowed. To supply a different
 reference in a demo, omit the profile and supply both reference fields explicitly.
 
-`uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
+`uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
 `own_photo`, replacing any earlier one; `--status` reports it as `photo: true`. Use
 `"avatar": {"profile": "own_photo"}` in any demo to draw it. A missing photo fails compose
 with a setup hint rather than leaving the bubble out.
