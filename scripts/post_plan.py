@@ -4,15 +4,15 @@ The post recipe (``post.json`` in the demo folder) has one optional key per oper
 an absent key means the operation is off. ``build_post_plan`` validates it, builds the
 time map (source time -> output time: trim and cuts, then speed, then the title card),
 retimes the cues and lists the steps in the fixed step order (see ``STEPS``), each with
-its run output line and its ffmpeg arguments.
+its run output line and, for a video step, its ffmpeg command builder.
 
 Every time in the recipe is seconds in the source video, or a scene anchor
 ``{"scene": id, "at": phrase, "offset_s": s}`` (``at`` and ``offset_s`` optional)
 resolved through the edit map.
 
-Adding an operation: a validator in ``VALIDATORS`` (or ``EXPORT_VALIDATORS``), a step
-builder in its ``STEPS`` slot, its command builder in ``COMMANDS`` (video steps), and a
-runner in postprocess.py. The SVGs it draws (cards, callouts, watermark text, contact
+Adding an operation: a validator in ``VALIDATORS`` (or ``EXPORT_VALIDATORS``) and a step
+builder in its ``STEPS`` slot; a video step names its command builder (``Step.builder``),
+any other step needs a runner in postprocess.py. The SVGs it draws (cards, callouts, watermark text, contact
 sheet) live in post_draw.py; .srt reading and writing in subtitles.py.
 """
 
@@ -89,9 +89,9 @@ class Step:
     """One operation of the plan.
 
     op: its name (a ``STEPS`` key). line: its line of the run output. params: what its
-    command builder (``COMMANDS[op]``) or runner needs. export: True when it writes an
-    extra file from the finished video instead of changing the video. warnings: its
-    warnings, added to the plan's.
+    command builder or runner needs. export: True when it writes an extra file from the
+    finished video instead of changing the video. warnings: its warnings, added to the
+    plan's. builder: a video step's ffmpeg command builder, ``(src, out, **params)``.
     """
 
     op: str
@@ -99,10 +99,11 @@ class Step:
     params: dict = field(default_factory=dict)
     export: bool = False
     warnings: tuple = ()
+    builder: object = None
 
-    def cmd(self, src, out):
-        """The ffmpeg arguments of a video step: read ``src``, write ``out``."""
-        return COMMANDS[self.op](src, out, **self.params)
+    def cmd(self, src, out, **more):
+        """So the runner can add what only it knows (rendered images) to the planned params."""
+        return self.builder(src, out, **{**self.params, **more})
 
 
 @dataclass(frozen=True)
@@ -459,6 +460,7 @@ def _click_sounds_step(recipe, plan):
             "level": clicks.get("level", CLICK_LEVEL),
         },
         warnings=tuple(f"no click sound for {item}" for item in unplaced),
+        builder=click_sounds_cmd,
     )
 
 
@@ -497,6 +499,7 @@ def _music_step(recipe, plan):
         f"music\t{Path(params['file']).name}\tlevel {params['level']:.2f}\t"
         f"duck {params['duck']:g}:1\tfade out {params['fade_out_s']:.2f}s",
         params,
+        builder=music_cmd,
     )
 
 
@@ -769,13 +772,16 @@ def _trim_step(recipe, plan):
         "trim",
         f"trim\tremoved {plan.source_s - kept_s:.3f}s in {ranges} ranges\tkept {kept_s:.3f}s",
         {"kept": kept, "source_s": plan.source_s},
+        builder=trim_cmd,
     )
 
 
 def _speed_step(recipe, plan):
     if recipe.get("speed", 1.0) == 1.0:
         return None
-    return Step("speed", f"speed\t{recipe['speed']:.2f}x", {"speed": recipe["speed"]})
+    return Step(
+        "speed", f"speed\t{recipe['speed']:.2f}x", {"speed": recipe["speed"]}, builder=speed_cmd
+    )
 
 
 def _watermark_step(recipe, plan):
@@ -800,7 +806,7 @@ def _watermark_step(recipe, plan):
         )
         layer = Layer("watermark.png", svg)
         line = f'watermark\ttext "{mark["text"]}"\t{corner}'
-    return Step("watermark", line, {"layers": (layer,)})
+    return Step("watermark", line, {"layers": (layer,)}, builder=overlay_cmd)
 
 
 def _callouts_step(recipe, plan):
@@ -849,6 +855,7 @@ def _callouts_step(recipe, plan):
         f"callouts\t{len(layers)}\t{', '.join(parts)}",
         {"layers": tuple(layers)},
         warnings=tuple(warnings),
+        builder=overlay_cmd,
     )
 
 
@@ -878,6 +885,7 @@ def _progress_bar_step(recipe, plan):
             "width": _frame_of(plan, "progress_bar")[0],
             "demo_s": end - start,
         },
+        builder=progress_bar_cmd,
     )
 
 
@@ -892,7 +900,9 @@ def _cards_step(recipe, plan):
         return None
     start, end = plan.demo_span
     line = "".join(f"\t{name} {card['seconds']:.3f}s" for name, card in plan.cards.items())
-    return Step("cards", f"cards{line}", {"cards": plan.cards, "demo_s": end - start})
+    return Step(
+        "cards", f"cards{line}", {"cards": plan.cards, "demo_s": end - start}, builder=cards_cmd
+    )
 
 
 def _subtitle_tracks_step(recipe, plan):
@@ -1410,16 +1420,3 @@ def _looped(images):
 
 def _fade(start, end):
     return min(FADE_S, (end - start) / 2)
-
-
-# The ffmpeg command builder of each video step, by op.
-COMMANDS = {
-    "trim": trim_cmd,
-    "speed": speed_cmd,
-    "watermark": overlay_cmd,
-    "callouts": overlay_cmd,
-    "progress_bar": progress_bar_cmd,
-    "cards": cards_cmd,
-    "click_sounds": click_sounds_cmd,
-    "music": music_cmd,
-}

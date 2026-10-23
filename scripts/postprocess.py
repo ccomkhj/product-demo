@@ -31,13 +31,11 @@ from post_plan import (
     RecipeError,
     build_post_plan,
     card_defaults,
-    cards_cmd,
     chapters_cmd,
     chapters_metadata,
     frame_cmd,
     gif_cmd,
     gif_warning,
-    overlay_cmd,
     size_cap_cmds,
     size_cap_encoding,
     subtitle_tracks_cmd,
@@ -108,7 +106,7 @@ def _run_overlay_step(step, video, out_prefix, work_dir):
             )
         layers.append(replace(layer, image=image))
     out = work_dir / f"{step.op}.mp4"
-    run(overlay_cmd(video, out, layers))
+    run(step.cmd(video, out, layers=tuple(layers)))
     return out
 
 
@@ -128,7 +126,7 @@ def _run_cards(step, video, out_prefix, work_dir):
             "cards need rsvg-convert for their text",
         )
     out = work_dir / "cards.mp4"
-    run(cards_cmd(video, out, pngs=pngs, **step.params))
+    run(step.cmd(video, out, pngs=pngs))
     return out
 
 
@@ -201,18 +199,14 @@ def _run_poster(step, video, out_prefix, work_dir):
     return out
 
 
-# How each step op is run: (step, video, out_prefix, work_dir) -> the step's file.
+# How a step op is run, unless it is a plain video step (_run_video_step):
+# (step, video, out_prefix, work_dir) -> the step's file.
 RUNNERS = {
-    "trim": _run_video_step,
-    "speed": _run_video_step,
     "watermark": _run_overlay_step,
     "callouts": _run_overlay_step,
-    "progress_bar": _run_video_step,
     "cards": _run_cards,
     "subtitle_tracks": _run_subtitle_tracks,
     "chapters": _run_chapters,
-    "click_sounds": _run_video_step,
-    "music": _run_video_step,
     "size_cap": _run_size_cap,
     "gif": _run_gif,
     "poster": _run_poster,
@@ -227,13 +221,15 @@ def postprocess(plan, source, out_prefix, work_dir):
     """
     video, done = Path(source), []
     for step in (s for s in plan.steps if not s.export):
-        video = RUNNERS[step.op](step, video, out_prefix, work_dir)
+        video = RUNNERS.get(step.op, _run_video_step)(step, video, out_prefix, work_dir)
         done.append((step, None))
     final = Path(f"{out_prefix}.mp4")
     shutil.copyfile(video, final)
     Path(f"{out_prefix}.srt").write_text(srt_text(plan.cues), encoding="utf-8")
     for step in (s for s in plan.steps if s.export):
-        done.append((step, RUNNERS[step.op](step, final, out_prefix, work_dir)))
+        done.append(
+            (step, RUNNERS.get(step.op, _run_video_step)(step, final, out_prefix, work_dir))
+        )
     return done
 
 
