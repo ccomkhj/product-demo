@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import math
+import re
 import shutil
 import struct
 import subprocess
@@ -132,6 +133,23 @@ def test_invalid_recordings_are_not_registered(registry, payload):
 def test_status_does_not_start_recording(registry, monkeypatch):
     monkeypatch.setattr(own_voice, "recorder_server", lambda: pytest.fail("unexpected recorder"))
     assert own_voice.main(["--status"]) == 1
+
+
+def test_recorder_page_disables_voice_processing(registry):
+    server, url = own_voice.recorder_server()
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(url) as response:
+            html = response.read().decode()
+        audio_options = re.search(r"getUserMedia\(\{\s*audio:\s*(.*?)\}\)", html, re.S)
+        assert audio_options is not None
+        for constraint in ("echoCancellation", "noiseSuppression", "autoGainControl"):
+            assert re.search(rf"\b{constraint}\s*:\s*false\b", audio_options[1]), constraint
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_recorder_page_and_save_require_same_origin(registry):
