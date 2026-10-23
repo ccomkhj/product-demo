@@ -46,7 +46,44 @@ warning.
 One factor for the whole video, `0.5` to `2`. Video is retimed by timestamps, audio by a
 tempo change that keeps the pitch; subtitles are retimed with it.
 
-<!-- watermark, callouts, progress_bar (#18) -->
+## `watermark`
+
+A logo image or a short text, in a corner for the whole video.
+
+- `image`: a PNG next to the recipe, or `text`: a short string (one of the two).
+- `corner`: `top-right` (default), `top-left`, `bottom-left`, `bottom-right`. The default
+  keeps clear of the overlay's keycaps (bottom-right), its Back badge (top-left) and the
+  presenter bubble (`bottom-left` by default; with the bubble at `top-right`, the default
+  is `bottom-left`).
+- `size`: the image's height or the text's font size, as a share of the video's height,
+  `0.02` to `0.3`, default `0.06`.
+- `opacity`: `0.1` to `1`, default `0.8`.
+
+A `text` watermark needs `rsvg-convert`; an `image` one does not.
+
+## `callouts`
+
+A list of arrows and text labels, each shown in its own window and faded in and out
+(0.25 s). Positions are pixels of the source video (`[x, y]`, from the top-left).
+
+- `{"type": "arrow", "from": [x, y], "to": [x, y], "start": t, "end": t}`: the head is at `to`.
+- `{"type": "text", "text": "Click Export", "position": [x, y], "start": t, "end": t}`:
+  a dark box whose top-left corner is at `position`. Keep the text short (one line).
+- `color`: optional, `"#rrggbb"` (default `#ff3b30`): the arrow, or the box's border.
+
+`start` and `end` are recipe times (scene anchors stay put across cuts and speed). A
+window edge inside a cut is an error. Warns when a callout reaches into the burned-in
+subtitle band (the bottom 20%) while a cue is showing, or covers the presenter bubble
+(from `demo.json`'s `avatar`). Needs `rsvg-convert`.
+
+## `progress_bar`
+
+A thin bar along an edge that fills from left to right over the demo. It covers only the
+demo: overlays are drawn before the cards are added, so cards have no bar.
+
+- `edge`: `bottom` (default) or `top`.
+- `color`: `"#rrggbb"`, default `#4da3ff`.
+- `thickness`: pixels, `1` to `40`, default `6`.
 
 ## `cards`
 
@@ -92,6 +129,9 @@ belongs to the last chapter. Written as mp4 chapter metadata and as
 
 Warns when YouTube would ignore them: the first not at 0:00, fewer than 3, or one shorter
 than 10 s.
+
+Subtitle tracks and chapters are muxed into the finished video (stream copy, no
+re-encode), after click sounds and music, so no audio step drops them.
 
 ## `click_sounds`
 
