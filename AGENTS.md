@@ -22,3 +22,4 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 - DRY (Don't Repeat Yourself)
 - KISS (Keep It Stupid and Simple)
+- One line for docstring. Explain WHY the function is needed. Don't explain What it does. (You write the code which explains itself, consider readability.)
