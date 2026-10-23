@@ -226,7 +226,154 @@ def test_contact_sheet_defaults_to_twelve_frames_in_four_columns():
     ({"exports": {"contact_sheet": {"columns": 0}}}, "columns must be a whole number from 1 to 8"),
     ({"exports": {"contact_sheet": {"interval_s": 0}}}, "interval_s must be a positive number"),
     ({"exports": {"contact_sheet": {"interval_s": 0.01}}}, "more than 60 frames"),
+    ({"watermark": {}}, "watermark needs either an 'image' or a 'text'"),
+    ({"watermark": {"text": "x", "corner": "middle"}}, "watermark.corner must be one of"),
+    ({"watermark": {"text": "x", "size": 0.5}}, "watermark.size must be a share"),
+    ({"watermark": {"text": "x", "opacity": 0}}, "watermark.opacity must be a number"),
+    ({"callouts": {}}, "callouts must be a list"),
+    ({"callouts": [{"type": "circle"}]}, r"callouts\[0\].type must be one of arrow, text"),
+    ({"callouts": [{"type": "arrow", "from": [1, 1], "start": 1, "end": 2}]},
+     r"callouts\[0\] needs 'to'"),
+    ({"callouts": [{"type": "text", "text": "x", "position": [1], "start": 1, "end": 2}]},
+     r"callouts\[0\].position must be \[x, y\]"),
+    ({"progress_bar": {"edge": "left"}}, "progress_bar.edge must be one of bottom, top"),
+    ({"progress_bar": {"colour": "blue"}}, "progress_bar.colour must be a colour"),
+    ({"progress_bar": {"thickness": 0}}, "progress_bar.thickness must be a whole number"),
 ])
 def test_invalid_recipes_fail_with_clear_messages(recipe, message):
     with pytest.raises(RecipeError, match=message):
         plan(recipe)
+
+
+# --- watermark, callouts, progress bar ------------------------------------------------
+
+FRAME = (1280, 720)
+
+
+def overlay_plan(recipe, cues=CUES, **kwargs):
+    return build_post_plan(recipe, SOURCE_S, cues, EDIT_MAP, frame=FRAME, **kwargs)
+
+
+def graph_of(step):
+    args = step.cmd("in.mp4", "out.mp4")
+    return args[args.index("-filter_complex") + 1]
+
+
+def test_progress_bar_spans_the_demo_on_its_edge():
+    _, step = overlay_plan({"speed": 2.0, "progress_bar": {
+        "edge": "top", "colour": "#ff0000", "thickness": 4}}).steps
+
+    assert step.line == "progress_bar\ttop 4px\t0.000s-6.000s"
+    assert "color=c=0xff0000:s=1280x4:r=30:d=6.000[bar]" in graph_of(step)
+    assert "overlay=x='-w+w*t/6.000':y=0" in graph_of(step)
+    args = step.cmd("in.mp4", "out.mp4")
+    assert args[args.index("-c:a") + 1] == "copy"
+
+
+def test_overlays_run_after_speed_and_before_exports():
+    result = overlay_plan({"exports": {"contact_sheet": {}}, "progress_bar": {},
+                           "callouts": [label(1.0, 2.0)], "watermark": {"text": "x"},
+                           "speed": 1.5})
+
+    assert [step.op for step in result.steps] == [
+        "speed", "watermark", "callouts", "progress_bar", "contact_sheet"]
+
+
+def test_progress_bar_defaults_to_a_thin_bar_at_the_bottom():
+    [step] = overlay_plan({"progress_bar": {}}).steps
+
+    assert "s=1280x6:" in graph_of(step)
+    assert "y=H-h" in graph_of(step)
+
+
+def arrow(start, end, frm=(100, 100), to=(300, 200)):
+    return {"type": "arrow", "from": list(frm), "to": list(to), "start": start, "end": end}
+
+
+def label(start, end, text="Click here", position=(100, 100)):
+    return {"type": "text", "text": text, "position": list(position), "start": start, "end": end}
+
+
+def test_callout_windows_follow_anchors_through_cuts_and_speed():
+    result = overlay_plan({"trim": {"cuts": [{"from": 1.0, "to": 3.0}]}, "speed": 2.0,
+                           "callouts": [arrow(scene("report"), scene("report", at="Export")),
+                                        label(8.0, 10.0)]})
+    step = result.steps[-1]
+
+    assert [(layer.start_s, layer.end_s) for layer in step.params["layers"]] == [
+        (pytest.approx(1.0), pytest.approx(2.75)), (pytest.approx(3.0), pytest.approx(4.0))]
+    assert step.line == "callouts\t2\tarrow 1.000s-2.750s, text 3.000s-4.000s"
+
+
+def test_callouts_fade_in_and_out_only_inside_their_window():
+    [step] = overlay_plan({"callouts": [label(2.0, 4.0)]}).steps
+
+    graph = graph_of(step)
+    assert "fade=t=in:st=2.000:d=0.250:alpha=1,fade=t=out:st=3.750:d=0.250:alpha=1" in graph
+    assert "enable='between(t,2.000,4.000)'" in graph
+
+
+def test_callouts_are_drawn_as_full_frame_svgs():
+    [step] = overlay_plan({"callouts": [arrow(1.0, 2.0), label(1.0, 2.0, text="Q&A")]}).steps
+
+    first, second = step.params["layers"]
+    assert 'width="1280" height="720"' in first.svg and "<line" in first.svg
+    assert "Q&amp;A" in second.svg and "<rect" in second.svg
+
+
+def test_a_callout_over_the_subtitle_band_while_a_cue_shows_warns():
+    low = label(0.5, 1.5, position=(400, 650))
+
+    assert overlay_plan({"callouts": [low]}).warnings == (
+        "callouts[0] (text) overlaps the burned-in subtitle band at 0.500s-1.500s; "
+        "move it above y=576",)
+    assert overlay_plan({"callouts": [low]}, cues=()).warnings == ()
+    assert overlay_plan({"callouts": [label(0.5, 1.5, position=(400, 300))]}).warnings == ()
+
+
+def test_a_callout_over_the_presenter_bubble_warns():
+    corner = arrow(1.0, 2.0, frm=(300, 300), to=(60, 60))
+
+    assert overlay_plan({"callouts": [corner]}, bubble=("top-left", 0.2)).warnings == (
+        "callouts[0] (arrow) overlaps the presenter bubble (top-left)",)
+    assert overlay_plan({"callouts": [corner]}, bubble=("top-right", 0.2)).warnings == ()
+    assert overlay_plan({"callouts": [corner]}).warnings == ()
+
+
+def test_image_watermark_sits_in_its_corner_at_its_size_and_opacity():
+    [step] = overlay_plan({"watermark": {"image": "logo.png", "corner": "bottom-left",
+                                         "size": 0.1, "opacity": 0.5}}).steps
+
+    assert step.line == "watermark\timage logo.png\tbottom-left"
+    assert "[1:v]format=rgba,scale=-1:72,colorchannelmixer=aa=0.50[l1]" in graph_of(step)
+    assert "overlay=x=22:y=H-h-22:shortest=1[v]" in graph_of(step)
+
+
+def test_text_watermark_is_an_svg_and_stays_for_the_whole_video():
+    [step] = overlay_plan({"watermark": {"text": "acme.io"}}).steps
+    [layer] = step.params["layers"]
+
+    assert step.line == 'watermark\ttext "acme.io"\ttop-right'
+    assert "acme.io" in layer.svg and 'opacity="0.8"' in layer.svg
+    assert "enable=" not in graph_of(step)
+
+
+def test_the_default_watermark_corner_avoids_the_overlay_and_the_bubble():
+    # keycaps sit bottom-right, the Back badge top-left, the bubble defaults to bottom-left
+    assert overlay_plan({"watermark": {"text": "x"}}).steps[0].line.endswith("top-right")
+    assert overlay_plan({"watermark": {"text": "x"}},
+                        bubble=("top-right", 0.2)).steps[0].line.endswith("bottom-left")
+
+
+@pytest.mark.parametrize("callout, message", [
+    (label(2.0, 1.0), r"callouts\[0\] must end after it starts"),
+    (label(1.0, 2.0, position=(1300, 10)), r"callouts\[0\].position \[1300, 10\] is outside"),
+])
+def test_bad_callouts_are_clear_errors(callout, message):
+    with pytest.raises(RecipeError, match=message):
+        overlay_plan({"callouts": [callout]})
+
+
+def test_a_callout_window_inside_a_cut_is_an_error():
+    with pytest.raises(RecipeError, match=r"callouts\[0\].start.*inside a cut"):
+        overlay_plan({"trim": {"cuts": [{"from": 1.0, "to": 3.0}]}, "callouts": [label(2.0, 4.0)]})

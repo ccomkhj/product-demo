@@ -18,13 +18,15 @@ import json
 import shutil
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import proc
 from compose import srt_text, svg_to_png_cmd
 from demo_spec import read_json_object
-from post_plan import (RecipeError, build_post_plan, contact_sheet_svg, frame_cmd, parse_srt,
-                       validate_recipe)
+from avatar import DEFAULT_CORNER, DEFAULT_SIZE
+from post_plan import (RecipeError, build_post_plan, contact_sheet_svg, frame_cmd, overlay_cmd,
+                       parse_srt, validate_recipe)
 
 CONTACT_WIDTH = 480  # widest frame in a contact sheet
 
@@ -66,22 +68,44 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
         png = work_dir / f"contact-{index:03d}.png"
         run(frame_cmd(video, at_s, frame_w, png))
         frames.append((png.name, at_s))
-    svg = work_dir / "contact.svg"
-    svg.write_text(contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h),
-                   encoding="utf-8")
     out = Path(f"{out_prefix}-contact.png")
-    if not shutil.which("rsvg-convert"):
-        raise PostError("the contact sheet needs rsvg-convert for its frame times "
-                        "(`brew install librsvg`)")
-    run(svg_to_png_cmd(svg, out))
+    render_svg(contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h),
+               work_dir / "contact.svg", out, "the contact sheet's frame times")
     return out
+
+
+def _run_overlay_step(step, video, out_prefix, work_dir):
+    """Overlay the step's layers: SVGs rendered to PNGs here, images from the demo folder."""
+    layers = []
+    for layer in step.params["layers"]:
+        if layer.svg is None:
+            image = Path(out_prefix).parent / layer.image
+            if not image.is_file():
+                raise PostError(f"{step.op} image not found: {image}")
+        else:
+            image = work_dir / layer.image
+            render_svg(layer.svg, image.with_suffix(".svg"), image, f"the {step.op}")
+        layers.append(replace(layer, image=image))
+    out = work_dir / f"{step.op}.mp4"
+    run(overlay_cmd(video, out, layers))
+    return out
+
+
+def render_svg(svg, svg_path, png, what):
+    """Write ``svg`` and convert it to ``png`` with rsvg-convert (ADR-0001)."""
+    if not shutil.which("rsvg-convert"):
+        raise PostError(f"{what} needs rsvg-convert to draw text (`brew install librsvg`)")
+    svg_path.write_text(svg, encoding="utf-8")
+    run(svg_to_png_cmd(svg_path, png))
 
 
 # How each step op is run: (step, video, out_prefix, work_dir) -> the step's file.
 RUNNERS = {
     "trim": _run_video_step,
     "speed": _run_video_step,
-    # watermark, callouts, progress_bar (#18)
+    "watermark": _run_overlay_step,
+    "callouts": _run_overlay_step,
+    "progress_bar": _run_video_step,
 
     # cards (#19)
 
@@ -160,9 +184,21 @@ def _plan(recipe, demo_dir, slug):
         edit_map = None
         warnings.append(f"no edit map ({edit_map_path.name}), so scene-anchored times are "
                         f"unavailable; re-run compose to write it")
-    plan = build_post_plan(recipe, probe(source)[0], parse_srt(srt.read_text(encoding="utf-8")),
-                           edit_map)
+    source_s, width, height = probe(source)
+    plan = build_post_plan(recipe, source_s, parse_srt(srt.read_text(encoding="utf-8")),
+                           edit_map, frame=(width, height), bubble=_bubble(demo_dir))
     return plan, source, [*warnings, *plan.warnings]
+
+
+def _bubble(demo_dir):
+    """(corner, size) of the presenter bubble in the demo spec, or None without one."""
+    spec_path = demo_dir / "demo.json"
+    if not spec_path.is_file():
+        return None
+    avatar = read_json_object(spec_path, "demo spec", PostError).get("avatar")
+    if not isinstance(avatar, dict):
+        return None
+    return avatar.get("corner", DEFAULT_CORNER), avatar.get("size", DEFAULT_SIZE)
 
 
 if __name__ == "__main__":
