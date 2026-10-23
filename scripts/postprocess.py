@@ -23,7 +23,8 @@ from pathlib import Path
 import proc
 from compose import srt_text, svg_to_png_cmd
 from demo_spec import read_json_object
-from post_plan import (RecipeError, build_post_plan, contact_sheet_svg, frame_cmd, parse_srt,
+from post_plan import (RecipeError, build_post_plan, contact_sheet_svg, frame_cmd, gif_cmd,
+                       gif_warning, parse_srt, size_cap_cmds, size_cap_encoding,
                        validate_recipe)
 
 CONTACT_WIDTH = 480  # widest frame in a contact sheet
@@ -77,6 +78,34 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
     return out
 
 
+def _run_size_cap(step, video, out_prefix, work_dir):
+    cap_mb = step.params["cap_mb"]
+    length_s, width, height = probe(video)
+    w, h, kbps = size_cap_encoding(cap_mb, length_s, width, height)
+    out = Path(f"{out_prefix}-{cap_mb:g}mb.mp4")
+    for cmd in size_cap_cmds(video, out, w, h, kbps, work_dir / "size-cap",
+                             scale=(w, h) != (width, height)):
+        run(cmd)
+    if out.stat().st_size > cap_mb * 1e6:
+        raise PostError(f"{out.name} is {out.stat().st_size / 1e6:.2f} MB, over its "
+                        f"{cap_mb:g} MB cap; lower size_cap_mb a little and re-run")
+    return out
+
+
+def _run_gif(step, video, out_prefix, work_dir):
+    out = Path(f"{out_prefix}-gif.gif")
+    run(gif_cmd(video, out, **step.params))
+    if warning := gif_warning(out.stat().st_size):
+        print(f"postprocess: warning: {warning}", file=sys.stderr)
+    return out
+
+
+def _run_poster(step, video, out_prefix, work_dir):
+    out = Path(f"{out_prefix}-poster.png")
+    run(frame_cmd(video, step.params["at_s"], None, out))
+    return out
+
+
 # How each step op is run: (step, video, out_prefix, work_dir) -> the step's file.
 RUNNERS = {
     "trim": _run_video_step,
@@ -89,7 +118,9 @@ RUNNERS = {
 
     # click_sounds, music (#20)
 
-    # size_cap, gif, poster (#22)
+    "size_cap": _run_size_cap,
+    "gif": _run_gif,
+    "poster": _run_poster,
 
     "contact_sheet": _run_contact_sheet,
 }
