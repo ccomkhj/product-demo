@@ -9,7 +9,7 @@ audio {display: block; width: 100%; margin: 20px 0} #status {min-height: 32px}
 </style>
 <h1>Record your voice once</h1>
 <p>Your recording stays on this Mac and will be reused for future demos. Read this passage naturally in a quiet room. Aim for 10–20 seconds.</p>
-<label for="transcript">Words to read (edit afterward if you say something different)</label>
+<label for="transcript">Words to read (edit afterward so they match exactly what you said)</label>
 <textarea id="transcript">__READING__</textarea>
 <p><button id="record">Record</button><button id="stop" disabled>Stop</button></p>
 <p id="status" role="status" aria-live="polite">Ready when you are.</p>
@@ -37,7 +37,7 @@ record.onclick = async () => {
       status.textContent = 'Listen to the preview and check the transcript, then save.';
     };
     recorder.start(); stop.disabled = false;
-    status.textContent = 'Recording… Read the passage, then press Stop.';
+    status.textContent = 'Recording… Read the passage, pause a moment, then press Stop.';
     timer = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 29000);
   } catch (error) { release(); record.disabled = false; status.textContent = 'Microphone unavailable: ' + error.message; }
 };

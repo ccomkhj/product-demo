@@ -120,6 +120,18 @@ def test_known_say_voice_is_used(tmp_path):
     assert (tmp_path / "audio" / "intro.wav").exists()
 
 
+@needs_say_and_ffmpeg
+def test_voice_speed_shortens_narration(tmp_path):
+    lengths = []
+    for speed in (1, 2):
+        demo = tmp_path / str(speed)
+        demo.mkdir()
+        result = run_tts(write_spec(demo, voice={"backend": "say", "speed": speed}))
+        assert result.returncode == 0, result.stderr
+        lengths.append(json.loads((demo / "audio" / "durations.json").read_text())["intro"])
+    assert lengths[1] == pytest.approx(lengths[0] / 2, rel=0.1)
+
+
 @needs_kokoro
 def test_kokoro_backend_writes_48k_mono_wav_per_scene(tmp_path):
     spec_path = write_spec(tmp_path, voice={"backend": "kokoro"})

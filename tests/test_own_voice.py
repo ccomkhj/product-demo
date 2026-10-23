@@ -25,11 +25,13 @@ def registry(tmp_path, monkeypatch):
     return config
 
 
-def recording(seconds=4, silent=False):
+def recording(seconds=4, silent=False, pause=0.5):
+    """Speech-like tone for ``seconds``, ending in ``pause`` seconds of silence."""
     buffer = io.BytesIO()
+    speech = int((seconds - pause) * 24000)
     with wave.open(buffer, 'wb') as wav:
         wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
-        wav.writeframes(b''.join(struct.pack('<h', 0 if silent else int(4000 * math.sin(i / 10)))
+        wav.writeframes(b''.join(struct.pack('<h', 0 if silent or i >= speech else int(4000 * math.sin(i / 10)))
                                  for i in range(int(seconds * 24000))))
     return {'audio': base64.b64encode(buffer.getvalue()).decode(), 'transcript': 'My exact words.'}
 
@@ -51,6 +53,32 @@ def test_register_and_reuse_without_prompt(registry, monkeypatch):
     assert registry.read_bytes() == before
 
 
+def test_replace_records_over_a_registered_voice(registry, monkeypatch):
+    own_voice.register(recording())
+    first = voice_config.resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path('/tmp'))['reference_audio']
+
+    class Server:
+        saved = False
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            pass
+        def handle_request(self):
+            own_voice.register({**recording(), 'transcript': 'New words.'}, replace)
+            self.saved = True
+
+    def fake_server(flag):
+        nonlocal replace
+        replace = flag
+        return Server(), 'http://127.0.0.1:1/token'
+    replace = None
+    monkeypatch.setattr(own_voice, 'recorder_server', fake_server)
+    assert own_voice.main(['--replace', '--no-open']) == 0
+    config = voice_config.resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path('/tmp'))
+    assert replace is True and config['reference_text'] == 'New words.'
+    assert config['reference_audio'] != first and not Path(first).exists()
+
+
 def test_profile_selects_local_backend_before_api_keys():
     spec = {'voice': {'profile': 'own_voice'}}
     assert choose_backend(None, spec, {'OPENAI_API_KEY': 'secret'}) == 'qwen3'
@@ -67,7 +95,8 @@ def test_missing_and_broken_registration(registry):
     assert own_voice.status()['ready']
 
 
-@pytest.mark.parametrize('payload', [recording(1), recording(4, True), {'audio': 'bad!', 'transcript': 'Hello'},
+@pytest.mark.parametrize('payload', [recording(1), recording(4, True), recording(4, pause=0),
+                                     {'audio': 'bad!', 'transcript': 'Hello'},
                                      {'audio': 'AAAA', 'transcript': ''}])
 def test_invalid_recordings_are_not_registered(registry, payload):
     with pytest.raises(ValueError):

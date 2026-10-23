@@ -21,6 +21,10 @@ def validate_voice(voice):
     for field in ("backend", "voice", "profile", "model", "reference_audio", "reference_text", "language"):
         if field in voice and not isinstance(voice[field], str):
             raise ValueError(f"voice.{field} must be a string")
+    speed = voice.get("speed", 1)
+    # ffmpeg's atempo filter takes 0.5-2.0 in a single pass.
+    if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.5 <= speed <= 2:
+        raise ValueError("voice.speed must be a number from 0.5 to 2")
 
 
 def resolve_voice_config(voice, backend, spec_dir):

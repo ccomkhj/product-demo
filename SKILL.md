@@ -107,7 +107,8 @@ frame for the whole runaway. A `duration` warning means narration exceeds the
 target by more than 10%; final video can be longer because scenes may be padded. Propose
 shorter wording, get the existing script approval for changes, then regenerate audio and
 rerun the check. Never truncate or accelerate speech automatically. If the user keeps the
-longer script, note the accepted duration in the readiness report.
+longer script, note the accepted duration in the readiness report. When the user says the
+voice is too slow or too fast, set `voice.speed` (0.5 to 2, keeps pitch) and rerun `tts.py`.
 
 ## 5. Record
 
@@ -197,11 +198,14 @@ supported and do not require registering a profile.
 If it also reports `photo: true`, add `"avatar": {"profile": "own_photo"}` too, in the
 corner the scenes' actions don't use, unless the user asks for no presenter. When the user
 gives a photo to keep, save it once with `own_voice.py --photo <path>`; it replaces any
-earlier one.
+earlier one. When the user asks to record their voice again, run `own_voice.py --replace`;
+the new recording replaces the old one only once it is saved.
 
 If the profile is missing or unusable, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`.
 It opens a local recording page and waits. Tell the user to click Record, read the
-passage, stop, check the transcript, and click Save my voice. The user controls microphone
+passage, pause a moment, stop, check the transcript matches word-for-word, and click Save
+my voice. A recording that ends mid-speech is rejected, because Qwen would speak the
+missing words at the start of every scene. The user controls microphone
 permission and recording; never press Record on their behalf. The command registers the
 validated audio and transcript in the ignored `.voices/config.json` and exits after save.
 Use `--no-open` and share the printed URL when opening a browser is unavailable.

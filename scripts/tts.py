@@ -14,7 +14,7 @@ Backends: `say` (macOS), `kokoro` (the free, local Kokoro-82M model, needs uv),
 ELEVENLABS_API_KEY). `qwen3` clones a local reference voice on Apple Silicon via MLX.
 `voice.voice` in the spec picks the voice: a `say -v` name, a
 Kokoro voice (default af_heart), an OpenAI voice name (default alloy) or an ElevenLabs
-voice ID.
+voice ID. `voice.speed` (0.5-2, default 1) speeds every backend up or down, keeping pitch.
 
 Stdlib only (HTTP via urllib); needs ffmpeg/ffprobe on PATH (and macOS `say` for
 the say backend, uv for the kokoro backend, which runs scripts/kokoro_tts.py).
@@ -209,15 +209,17 @@ def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=N
     with tempfile.TemporaryDirectory(prefix="tts-") as tmp:
         for scene_id, raw in synthesize(spec["scenes"], config, Path(tmp), env, transport):
             wav = out_dir / f"{scene_id}.wav"
-            normalise_to_wav(raw, wav)
+            normalise_to_wav(raw, wav, config.get("speed", 1))
             durations[scene_id] = round(measure_seconds(wav), 3)
     (out_dir / "durations.json").write_text(json.dumps(durations, indent=2) + "\n")
     return durations
 
 
-def normalise_to_wav(source, target):
+def normalise_to_wav(source, target, speed=1):
+    """Convert to 48 kHz mono PCM; a speed other than 1 changes the tempo but keeps the pitch."""
+    tempo = ["-af", f"atempo={speed}"] if speed != 1 else []
     _run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source), *tempo,
          "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(target)],
     )
 
