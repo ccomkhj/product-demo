@@ -307,6 +307,54 @@ def test_anchor_matches_the_start_of_the_subtitle_cue_holding_the_phrase():
     assert plan.scenes[0].segments[1].anchor_s == pytest.approx(plan.cues[1].start_s)
 
 
+# --- action times: where compose places each `at` action in the final video ---------
+
+CLICK = [{"type": "point", "target": "a"}, {"type": "click", "target": "b", "at": "click"}]
+
+
+def test_a_mid_sentence_phrase_is_placed_after_its_cue_starts():
+    # "click" is character 28 of 40 spoken characters: 0.7 of 8 s = 5.6 s, while its
+    # cue ("Then we click there.") starts at 4 s.
+    video = FakeVideo({(1.0, 6.0): 1.0, (6.0, 9.0): 2.0})
+
+    plan = build_plan(synced_spec(CLICK), synced_timeline(6.0), {"home": 8.0}, video)
+
+    (action,) = plan.actions
+    assert (action.scene_id, action.n, action.phrase) == ("home", 1, "click")
+    assert action.start_s == pytest.approx(5.6, abs=1 / 30)
+    assert action.start_s > plan.cues[1].start_s + 1
+    assert action.late_s == 0
+
+
+def test_a_sped_up_scene_places_its_actions_earlier_by_its_speed():
+    # held to "Then" at 4 s, then 6 s of motion: 10 s of video for 8 s of audio, 1.25x
+    video = FakeVideo({(1.0, 6.0): 1.0, (6.0, 9.0): 6.0})
+
+    plan = build_plan(synced_spec(ACTIONS), synced_timeline(6.0), {"home": 8.0}, video)
+
+    assert plan.scenes[0].fit.speed == pytest.approx(1.25)
+    (action,) = plan.actions
+    assert action.start_s == pytest.approx(3.2)
+    assert action.late_s == 0
+
+
+def test_an_action_pushed_past_its_phrase_is_late_by_the_overrun():
+    # an intro scene first (2 s), then home: its first segment plays 5 s, past "Then" at 4 s
+    spec = synced_spec(ACTIONS)
+    spec["scenes"].insert(0, {"id": "intro", "url": "u", "narration": "Hi.", "actions": []})
+    timeline = [*synced_timeline(6.0),
+                {"scene": "intro", "event": "start", "t_ms": 9_500},
+                {"scene": "intro", "event": "end", "t_ms": 10_500}]
+    video = FakeVideo({(1.0, 6.0): 5.0, (6.0, 9.0): 1.0})
+
+    plan = build_plan(spec, timeline, {"intro": 2.0, "home": 8.0}, video)
+
+    (action,) = plan.actions
+    assert (action.scene_id, action.phrase) == ("home", "Then")
+    assert action.start_s == pytest.approx(7.0)
+    assert action.late_s == pytest.approx(1.0)
+
+
 # --- sync flash: raw-video time 0 from the flash, not from when rec_start was marked ---
 
 def test_a_sync_flash_sets_raw_time_zero_however_late_rec_start_was_marked():
