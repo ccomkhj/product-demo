@@ -81,9 +81,9 @@ def make_demo(tmp_path, recipe, edit_map=True):
     return demo
 
 
-def run_post(*args):
+def run_post(*args, env=None):
     return subprocess.run(
-        [sys.executable, str(POSTPROCESS), *map(str, args)], capture_output=True, text=True
+        [sys.executable, str(POSTPROCESS), *map(str, args)], capture_output=True, text=True, env=env
     )
 
 
@@ -397,3 +397,111 @@ def test_music_plays_under_the_title_and_closing_cards(tmp_path):
     title = demo / "title.wav"
     ffmpeg("-i", demo / "smoke-post.mp4", "-t", "1.5", "-vn", title)
     assert volume_db(title)[0] > -40
+
+
+def pixel(video, at_s, x, y):
+    """(r, g, b) of one pixel of ``video``'s frame at ``at_s``."""
+    return tuple(
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-ss",
+                str(at_s),
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"crop=2:2:{x}:{y}",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        ).stdout[:3]
+    )
+
+
+@needs_ffmpeg
+def test_progress_bar_fills_along_its_edge(tmp_path):
+    demo = make_demo(tmp_path, {"progress_bar": {"color": "#ff0000", "thickness": 10}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    assert "progress_bar\tbottom 10px\t0.000s-6.000s" in result.stdout
+    r, g, b = pixel(demo / "smoke-post.mp4", 3.0, 40, 235)
+    assert r > 200 and g < 60 and b < 60
+    assert pixel(demo / "smoke-post.mp4", 3.0, 300, 235) != pytest.approx((r, g, b), abs=60)
+    assert float(probe(demo / "smoke-post.mp4")["format"]["duration"]) == pytest.approx(
+        SOURCE_S, abs=0.05
+    )
+
+
+@needs_ffmpeg
+def test_image_watermark_sits_in_its_corner_without_rsvg(tmp_path):
+    demo = make_demo(tmp_path, {"watermark": {"image": "logo.png", "size": 0.2, "opacity": 1}})
+    ffmpeg("-f", "lavfi", "-i", "color=c=white:s=40x40", "-frames:v", "1", demo / "logo.png")
+
+    result = run_post(demo / "post.json", env={"PATH": _path_without_rsvg(tmp_path)})
+
+    assert result.returncode == 0, result.stderr
+    assert "watermark\timage logo.png\ttop-right" in result.stdout
+    assert min(pixel(demo / "smoke-post.mp4", 1.0, 290, 30)) > 220
+
+
+@needs_ffmpeg
+@needs_rsvg
+def test_text_callout_shows_only_inside_its_window(tmp_path):
+    demo = make_demo(
+        tmp_path,
+        {
+            "watermark": {"text": "acme"},
+            "callouts": [
+                {
+                    "type": "text",
+                    "text": "Here",
+                    "position": [20, 20],
+                    "start": {"scene": "two"},
+                    "end": 4.0,
+                },
+                {"type": "arrow", "from": [200, 200], "to": [150, 120], "start": 1.0, "end": 5.0},
+            ],
+        },
+    )
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    assert "callouts\t2\ttext 2.000s-4.000s, arrow 1.000s-5.000s" in result.stdout
+    streams = probe(demo / "smoke-post.mp4")["streams"]
+    assert [float(s["duration"]) for s in streams] == pytest.approx([SOURCE_S] * 2, abs=0.05)
+    assert max(pixel(demo / "smoke-post.mp4", 3.0, 24, 24)) < 60
+    assert pixel(demo / "smoke-post.mp4", 1.0, 24, 24) == pytest.approx(
+        pixel(demo / "smoke.mp4", 1.0, 24, 24), abs=40
+    )
+
+
+@needs_ffmpeg
+def test_text_overlays_without_rsvg_fail_with_the_install_hint(tmp_path):
+    demo = make_demo(tmp_path, {"watermark": {"text": "acme"}})
+
+    result = run_post(demo / "post.json", env={"PATH": _path_without_rsvg(tmp_path)})
+
+    assert result.returncode == 1
+    assert "rsvg-convert" in result.stderr and "brew install librsvg" in result.stderr
+    assert not (demo / "smoke-post.mp4").exists()
+
+
+def _path_without_rsvg(tmp_path):
+    """A PATH holding only ffmpeg and ffprobe."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("ffmpeg", "ffprobe"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    return str(bin_dir)

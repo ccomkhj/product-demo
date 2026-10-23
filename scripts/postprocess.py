@@ -18,9 +18,11 @@ import json
 import shutil
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import proc
+from avatar import DEFAULT_CORNER, DEFAULT_SIZE
 from compose import srt_text, svg_to_png_cmd
 from demo_spec import read_json_object
 from post_plan import (
@@ -33,6 +35,7 @@ from post_plan import (
     frame_cmd,
     gif_cmd,
     gif_warning,
+    overlay_cmd,
     parse_srt,
     size_cap_cmds,
     size_cap_encoding,
@@ -100,6 +103,26 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
     return out
 
 
+def _run_overlay_step(step, video, out_prefix, work_dir):
+    """Overlay the step's layers: SVGs rendered to PNGs here, images from the demo folder."""
+    layers = []
+    for layer in step.params["layers"]:
+        if layer.svg is None:
+            image = Path(out_prefix).parent / layer.image  # checked by _plan
+        else:
+            image = work_dir / layer.image
+            _render_svg(
+                layer.svg,
+                image.with_suffix(".svg"),
+                image,
+                f"the {step.op} need rsvg-convert to draw text",
+            )
+        layers.append(replace(layer, image=image))
+    out = work_dir / f"{step.op}.mp4"
+    run(overlay_cmd(video, out, layers))
+    return out
+
+
 def _run_cards(step, video, out_prefix, work_dir):
     _, width, height = probe(video)
     pngs = {}
@@ -163,7 +186,9 @@ def _run_poster(step, video, out_prefix, work_dir):
 RUNNERS = {
     "trim": _run_video_step,
     "speed": _run_video_step,
-    # watermark, callouts, progress_bar (#18)
+    "watermark": _run_overlay_step,
+    "callouts": _run_overlay_step,
+    "progress_bar": _run_video_step,
     "cards": _run_cards,
     # subtitle_tracks, chapters (#21)
     "click_sounds": _run_video_step,
@@ -259,19 +284,34 @@ def _plan(recipe, demo_dir, slug):
             f"no edit map ({edit_map_path.name}), so scene-anchored times are "
             f"unavailable; re-run compose to write it"
         )
-    logo = recipe.get("cards", {}).get("title", {}).get("logo")
-    if logo and not (demo_dir / logo).is_file():
-        raise PostError(f"cards.title.logo not found: {demo_dir / logo}")
+    images = {
+        "cards.title.logo": recipe.get("cards", {}).get("title", {}).get("logo"),
+        "watermark.image": recipe.get("watermark", {}).get("image"),
+    }
+    for where, image in images.items():
+        if image and not (demo_dir / image).is_file():
+            raise PostError(f"{where} not found: {demo_dir / image}")
     spec_path = demo_dir / "demo.json"
     spec = read_json_object(spec_path, "demo spec", PostError) if spec_path.is_file() else {}
+    source_s, width, height = probe(source)
     plan = build_post_plan(
         recipe,
-        probe(source)[0],
+        source_s,
         parse_srt(srt.read_text(encoding="utf-8")),
         edit_map,
         card_defaults(spec, slug),
+        frame=(width, height),
+        bubble=_bubble(spec),
     )
     return plan, source, [*warnings, *plan.warnings]
+
+
+def _bubble(spec):
+    """(corner, size) of the presenter bubble in the demo spec, or None without one."""
+    avatar = spec.get("avatar")
+    if not isinstance(avatar, dict):
+        return None
+    return avatar.get("corner", DEFAULT_CORNER), avatar.get("size", DEFAULT_SIZE)
 
 
 if __name__ == "__main__":
