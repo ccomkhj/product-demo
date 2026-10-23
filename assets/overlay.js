@@ -18,7 +18,8 @@
  * automatically by capture-phase listeners: ripple, double ring, keycap.
  *
  * Every overlay element is pointer-events:none inside a shadow root on a
- * max-z-index host, raised into the top layer above open dialogs; listeners are passive and never cancel or stop events.
+ * max-z-index host, raised into the top layer above open dialogs; listeners
+ * are passive and never cancel or stop events.
  */
 (() => {
   const VERSION = 4;
@@ -118,6 +119,7 @@
     host = document.createElement("demo-overlay");
     host.setAttribute("data-demo-overlay", "");
     host.setAttribute("aria-hidden", "true");
+    host.popover = "manual";
     const s = host.style;
     s.setProperty("all", "initial", "important");
     s.setProperty("position", "fixed", "important");
@@ -144,14 +146,9 @@
     if (!host) buildHost();
     const parent = document.documentElement;
     if (host.parentNode !== parent || parent.lastElementChild !== host) parent.appendChild(host);
-    // A page's open modal <dialog> sits in the top layer, above any z-index. Re-entering the
-    // top layer as a manual popover on every draw puts the overlay back above it.
-    if (typeof host.showPopover === "function") {
-      try {
-        host.popover = "manual";
-        if (host.matches(":popover-open")) host.hidePopover();
-        host.showPopover();
-      } catch (_) {}
+    // An open modal <dialog> sits in the top layer, above any z-index; re-entering it keeps us on top.
+    if (host.showPopover) {
+      try { host.hidePopover(); host.showPopover(); } catch (_) {}
     }
     return layer;
   }

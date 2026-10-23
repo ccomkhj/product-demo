@@ -229,9 +229,8 @@ It prints `ready` (own voice registered), `photo` (presenter photo saved) and `d
 | Video size | `viewport` (copy into the spec) | 1920×1080 |
 | Subtitles | `burn_subs` → `--burn-subs` / `--no-burn-subs` on preflight and compose | burned in |
 
-Place a presenter without a saved `corner` in the corner the scenes' actions don't use. The
-overlay draws keycaps bottom-right and the Back badge top-left, so those corners are taken
-when the demo presses keys, types or goes back.
+Place a presenter without a saved `corner` in the corner the scenes' actions don't use
+(keycaps take bottom-right, the Back badge top-left).
 
 **Missing own voice** (no saved `voice`, `ready: false`): ask one AskUserQuestion with two
 options, "Record my voice now (Recommended)" and "Use the free Kokoro voice". On Kokoro,
