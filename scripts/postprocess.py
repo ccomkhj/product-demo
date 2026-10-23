@@ -188,15 +188,17 @@ def _run_size_cap(step, video, out_prefix, work_dir):
     length_s, width, height = probe(video)
     w, h, kbps = size_cap_encoding(cap_mb, length_s, width, height)
     out = Path(f"{out_prefix}-{cap_mb:g}mb.mp4")
+    encoded = work_dir / out.name  # moved into place only once it is under the cap
     for cmd in size_cap_cmds(
-        video, out, w, h, kbps, work_dir / "size-cap", scale=(w, h) != (width, height)
+        video, encoded, w, h, kbps, work_dir / "size-cap", scale=(w, h) != (width, height)
     ):
         run(cmd)
-    if out.stat().st_size > cap_mb * 1e6:
+    if encoded.stat().st_size > cap_mb * 1e6:
         raise PostError(
-            f"{out.name} is {out.stat().st_size / 1e6:.2f} MB, over its "
+            f"{out.name} would be {encoded.stat().st_size / 1e6:.2f} MB, over its "
             f"{cap_mb:g} MB cap; lower size_cap_mb a little and re-run"
         )
+    shutil.copyfile(encoded, out)
     return out
 
 
@@ -285,7 +287,7 @@ def _with_audio_files(recipe, demo_dir):
             path = demo_dir / recipe[key]["file"]
             if not path.is_file():
                 raise PostError(
-                    f"{key} file not found: {path}; music is never downloaded, "
+                    f"{key} file not found: {path}; audio is never downloaded, "
                     f"so give a file you have the rights to"
                 )
             recipe[key] = {**recipe[key], "file": str(path)}

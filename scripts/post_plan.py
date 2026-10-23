@@ -231,7 +231,7 @@ def build_post_plan(
     )
     retimed, warnings = _retime(cues, time_map)
     translated = _translations(recipe.get("translations", ()), cues, translations, time_map)
-    if translated and (edit_map or {}).get("subtitles_burned", True):
+    if translated and subtitles_burned(edit_map):
         warnings.append(
             "translated subtitle tracks over burned-in subtitles: viewers see two at once "
             "(no edit map says otherwise); re-compose with --no-burn-subs for clean tracks"
@@ -254,6 +254,11 @@ def build_post_plan(
     return replace(
         plan, steps=steps, warnings=(*plan.warnings, *(w for step in steps for w in step.warnings))
     )
+
+
+def subtitles_burned(edit_map):
+    """Whether the source has burned-in subtitles: yes unless its edit map says not."""
+    return (edit_map or {}).get("subtitles_burned", True)
 
 
 def _retime(cues, time_map):
@@ -860,7 +865,11 @@ def _callouts_step(recipe, plan):
         svg, box = callout_svg(callout, width, height)
         name = f"{where} ({callout['type']})"
         band_y = round(height * (1 - SUBTITLE_BAND))
-        if box[3] > band_y and any(cue.start_s < end and cue.end_s > start for cue in plan.cues):
+        if (
+            subtitles_burned(plan.edit_map)
+            and box[3] > band_y
+            and any(cue.start_s < end and cue.end_s > start for cue in plan.cues)
+        ):
             warnings.append(
                 f"{name} overlaps the burned-in subtitle band at "
                 f"{start:.3f}s-{end:.3f}s; move it above y={band_y}"
@@ -1441,7 +1450,8 @@ def _floor_kbps(width, height):
 
 
 def size_cap_cmds(src, out, width, height, video_kbps, passlog, scale):
-    """The two x264 passes at ``video_kbps`` (scaled to width x height when ``scale``)."""
+    """The two x264 passes at ``video_kbps`` (scaled to width x height when ``scale``); the
+    second keeps every subtitle track (with its language tag) and the chapters."""
     vf = ["-vf", f"scale={width}:{height}"] if scale else []
     common = [
         "ffmpeg",
@@ -1468,12 +1478,18 @@ def size_cap_cmds(src, out, width, height, video_kbps, passlog, scale):
             *common,
             "-pass",
             "2",
+            "-map",
+            "0",
+            "-map_chapters",
+            "0",
             "-c:a",
             "aac",
             "-b:a",
             f"{SIZE_AUDIO_KBPS}k",
+            "-c:s",
+            "copy",
             "-map_metadata",
-            "-1",
+            "0",
             "-movflags",
             "+faststart",
             str(out),

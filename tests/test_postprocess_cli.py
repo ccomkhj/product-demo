@@ -328,7 +328,11 @@ def test_translations_and_chapters_are_muxed_as_tagged_tracks_and_mp4_chapters(t
     assert "Second scene [de] starts." in (demo / "smoke-post.de.srt").read_text()
     assert "burned-in subtitles" in result.stderr
     assert "YouTube needs at least 3 chapters" in result.stderr
-    assert (demo / "smoke-post-1mb.mp4").is_file() and (demo / "smoke-post-gif.gif").is_file()
+    assert (demo / "smoke-post-gif.gif").is_file()
+    capped = demo / "smoke-post-1mb.mp4"
+    capped_subs = [s for s in probe(capped)["streams"] if s["codec_type"] == "subtitle"]
+    assert [s["tags"]["language"] for s in capped_subs] == ["und", "kor", "deu"]
+    assert chapters_of(capped) == chapters_of(demo / "smoke-post.mp4")
 
 
 @needs_ffmpeg
@@ -436,6 +440,16 @@ def test_a_missing_music_file_fails_before_any_output(tmp_path):
     assert result.returncode == 1
     assert "music file not found" in result.stderr and "missing.mp3" in result.stderr
     assert not (demo / "smoke-post.mp4").exists()
+
+
+@needs_ffmpeg
+def test_a_missing_click_sound_file_fails_without_mentioning_music(tmp_path):
+    demo = make_demo(tmp_path, {"click_sounds": {"file": "missing.wav"}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "click_sounds file not found" in result.stderr and "music" not in result.stderr
 
 
 @needs_ffmpeg

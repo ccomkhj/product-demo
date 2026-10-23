@@ -419,8 +419,8 @@ def test_invalid_recipes_fail_with_clear_messages(recipe, message):
 FRAME = (1280, 720)
 
 
-def overlay_plan(recipe, cues=CUES, **kwargs):
-    return build_post_plan(recipe, SOURCE_S, cues, EDIT_MAP, frame=FRAME, **kwargs)
+def overlay_plan(recipe, cues=CUES, edit_map=EDIT_MAP, **kwargs):
+    return build_post_plan(recipe, SOURCE_S, cues, edit_map, frame=FRAME, **kwargs)
 
 
 def graph_of(step):
@@ -517,6 +517,16 @@ def test_a_callout_over_the_subtitle_band_while_a_cue_shows_warns():
     )
     assert overlay_plan({"callouts": [low]}, cues=()).warnings == ()
     assert overlay_plan({"callouts": [label(0.5, 1.5, position=(400, 300))]}).warnings == ()
+
+
+def test_a_callout_over_the_subtitle_band_is_fine_without_burned_in_subtitles():
+    low = label(0.5, 1.5, position=(400, 650))
+    clean = {**EDIT_MAP, "subtitles_burned": False}
+
+    assert overlay_plan({"callouts": [low]}, edit_map=clean).warnings == ()
+    assert overlay_plan(
+        {"callouts": [low]}, edit_map={**EDIT_MAP, "subtitles_burned": True}
+    ).warnings
 
 
 def test_a_callout_over_the_presenter_bubble_warns():
