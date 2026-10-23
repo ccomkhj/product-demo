@@ -29,11 +29,23 @@ The end.
 EDIT_MAP = {
     "total_s": SOURCE_S,
     "scenes": [
-        {"id": "one", "title": "One", "start_s": 0.0, "end_s": 2.0,
-         "actions": [{"index": 0, "type": "point", "start_s": 0.0}]},
-        {"id": "two", "title": "Two", "start_s": 2.0, "end_s": 6.0,
-         "actions": [{"index": 0, "type": "click", "start_s": 2.0},
-                     {"index": 1, "type": "click", "start_s": 4.0, "at": "end"}]},
+        {
+            "id": "one",
+            "title": "One",
+            "start_s": 0.0,
+            "end_s": 2.0,
+            "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
+        },
+        {
+            "id": "two",
+            "title": "Two",
+            "start_s": 2.0,
+            "end_s": 6.0,
+            "actions": [
+                {"index": 0, "type": "click", "start_s": 2.0},
+                {"index": 1, "type": "click", "start_s": 4.0, "at": "end"},
+            ],
+        },
     ],
 }
 
@@ -42,10 +54,25 @@ def make_demo(tmp_path, recipe, edit_map=True):
     """A composed demo folder (slug = folder name): a 6 s source, its .srt, edit map, recipe."""
     demo = tmp_path / "smoke"
     demo.mkdir(parents=True)
-    ffmpeg("-f", "lavfi", "-i", f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
-           "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
-           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "1",
-           demo / "smoke.mp4")
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ac",
+        "1",
+        demo / "smoke.mp4",
+    )
     (demo / "smoke.srt").write_text(SRT)
     (demo / "transcript.md").write_text("# Smoke\n")
     if edit_map:
@@ -55,8 +82,9 @@ def make_demo(tmp_path, recipe, edit_map=True):
 
 
 def run_post(*args):
-    return subprocess.run([sys.executable, str(POSTPROCESS), *map(str, args)],
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(POSTPROCESS), *map(str, args)], capture_output=True, text=True
+    )
 
 
 def digest(path):
@@ -71,10 +99,14 @@ def printed_total(stdout):
 @needs_ffmpeg
 def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     # cut 1.0-3.0 (splits cues 1 and 2), anchored to scene two's start; then 2x
-    demo = make_demo(tmp_path, {"speed": 2.0, "trim": {
-        "cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}})
-    originals = {name: digest(demo / name)
-                 for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")}
+    demo = make_demo(
+        tmp_path,
+        {"speed": 2.0, "trim": {"cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}},
+    )
+    originals = {
+        name: digest(demo / name)
+        for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")
+    }
 
     result = run_post(demo / "post.json")
 
@@ -85,7 +117,9 @@ def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     info = probe(demo / "smoke-post.mp4")
     assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
     assert float(info["format"]["duration"]) == pytest.approx(2.0, abs=1 / 30 + 0.03)
-    assert (demo / "smoke-post.srt").read_text() == """1
+    assert (
+        (demo / "smoke-post.srt").read_text()
+        == """1
 00:00:00,000 --> 00:00:00,500
 First scene.
 
@@ -97,6 +131,7 @@ Second scene starts.
 00:00:01,000 --> 00:00:02,000
 The end.
 """
+    )
     assert "splits cue 1" in result.stderr and "splits cue 2" in result.stderr
     assert {name: digest(demo / name) for name in originals} == originals
 
@@ -154,27 +189,92 @@ def test_contact_sheet_export_is_written_with_its_frames(tmp_path):
     assert printed_total(result.stdout) == pytest.approx(SOURCE_S)
 
 
+@needs_ffmpeg
+def test_size_cap_gif_and_poster_exports_are_written_within_their_limits(tmp_path):
+    demo = make_demo(
+        tmp_path,
+        {
+            "speed": 2.0,
+            "exports": {
+                "size_cap_mb": 0.2,
+                "gif": {"from": 2.0, "to": 6.0, "width": 160, "fps": 10},
+                "poster": {"time": {"scene": "two", "at": "end"}},
+            },
+        },
+    )
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    capped, gif, poster = (
+        demo / f"smoke-post-{name}" for name in ("0.2mb.mp4", "gif.gif", "poster.png")
+    )
+    assert f"size_cap\t0.2 MB\t{capped}" in result.stdout
+    assert f"gif\t1.000s-3.000s\t160px 10fps\t{gif}" in result.stdout
+    assert f"poster\t2.000s\t{poster}" in result.stdout
+    assert 0 < capped.stat().st_size <= 200_000
+    info = probe(capped)
+    assert float(info["format"]["duration"]) == pytest.approx(3.0, abs=0.1)
+    assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
+    [stream] = probe(gif)["streams"]
+    assert (stream["codec_name"], stream["width"], stream["height"]) == ("gif", 160, 120)
+    assert float(probe(gif)["format"]["duration"]) == pytest.approx(2.0, abs=0.15)
+    [stream] = probe(poster)["streams"]
+    assert (stream["width"], stream["height"]) == (320, 240)
+
+
+@needs_ffmpeg
+def test_an_unreachable_size_cap_fails_with_the_smallest_reachable_size(tmp_path):
+    demo = make_demo(tmp_path, {"exports": {"size_cap_mb": 0.01}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "smallest reachable size is 0.08 MB" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not list(demo.glob("smoke-post-*mb.mp4"))
+
+
 # --- click sounds and music (#20) ------------------------------------------------------
+
 
 def volume_db(path):
     """(mean, max) volume of a file's audio, in dB."""
-    err = subprocess.run(["ffmpeg", "-v", "info", "-i", str(path), "-af", "volumedetect",
-                          "-f", "null", "-"], capture_output=True, text=True, check=True).stderr
-    return tuple(float(err.split(f"{key}: ")[1].split(" dB")[0])
-                 for key in ("mean_volume", "max_volume"))
+    err = subprocess.run(
+        ["ffmpeg", "-v", "info", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+    return tuple(
+        float(err.split(f"{key}: ")[1].split(" dB")[0]) for key in ("mean_volume", "max_volume")
+    )
 
 
 def add_song(demo):
     """A 1 s stereo song.wav (shorter than the video, so it loops) in the demo folder."""
-    ffmpeg("-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100:duration=1",
-           "-ac", "2", demo / "song.wav")
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=880:sample_rate=44100:duration=1",
+        "-ac",
+        "2",
+        demo / "song.wav",
+    )
 
 
 @needs_ffmpeg
 def test_click_sounds_and_looped_music_are_mixed_into_the_audio(tmp_path):
     # the click at 2.6 s is cut; the one at 4.6 s plays; the 1 s song loops under all 5 s
-    demo = make_demo(tmp_path, {"trim": {"cuts": [{"from": 2.5, "to": 3.5}]},
-                                "click_sounds": {}, "music": {"file": "song.wav", "level": 0.8}})
+    demo = make_demo(
+        tmp_path,
+        {
+            "trim": {"cuts": [{"from": 2.5, "to": 3.5}]},
+            "click_sounds": {},
+            "music": {"file": "song.wav", "level": 0.8},
+        },
+    )
     add_song(demo)
 
     result = run_post(demo / "post.json")
@@ -182,7 +282,9 @@ def test_click_sounds_and_looped_music_are_mixed_into_the_audio(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "click_sounds\t1 clicks\t1 unplaceable" in result.stdout
     assert "music\tsong.wav\tlevel 0.80\tduck 8:1\tfade out 2.00s" in result.stdout
-    assert "no click sound for scene 'two' action 0 (click at 2.600s): inside a cut" in result.stderr
+    assert (
+        "no click sound for scene 'two' action 0 (click at 2.600s): inside a cut" in result.stderr
+    )
     info = probe(demo / "smoke-post.mp4")
     [audio] = [s for s in info["streams"] if s["codec_type"] == "audio"]
     assert float(audio["duration"]) == pytest.approx(5.0, abs=0.05)
@@ -195,8 +297,9 @@ def test_click_sounds_and_looped_music_are_mixed_into_the_audio(tmp_path):
 @needs_ffmpeg
 def test_music_is_ducked_under_the_narration(tmp_path):
     def mean_db(duck):
-        demo = make_demo(tmp_path / str(duck), {"music": {"file": "song.wav", "level": 0.8,
-                                                          "duck": duck}})
+        demo = make_demo(
+            tmp_path / str(duck), {"music": {"file": "song.wav", "level": 0.8, "duck": duck}}
+        )
         add_song(demo)
         result = run_post(demo / "post.json")
         assert result.returncode == 0, result.stderr

@@ -93,8 +93,9 @@ def test_cues_cover_every_scene_in_spec_order():
 def test_scene_lengths_and_cue_offsets_snap_to_whole_frames_at_30fps():
     # intro: hold, 3.969 s of audio -> 119 frames (3.9667 s); filters: speed-up, 4.41 s
     # -> 132 frames (4.4 s); outro: padded to 10/1.5 s = 200 frames.
-    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0},
-                      FakeVideo())
+    plan = build_plan(
+        spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0}, FakeVideo()
+    )
 
     assert [s.frames for s in plan.scenes] == [119, 132, 200]
     assert [s.scene_s for s in plan.scenes] == pytest.approx([119 / 30, 132 / 30, 200 / 30])
@@ -107,8 +108,9 @@ def test_scene_lengths_and_cue_offsets_snap_to_whole_frames_at_30fps():
 
 def test_a_cue_never_runs_past_its_frame_rounded_scene():
     # 3.969 s of audio in a scene cut at 119 frames (3.9667 s): compose trims the audio there
-    plan = build_plan(spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0},
-                      FakeVideo())
+    plan = build_plan(
+        spec(), TIMELINE, {"intro": 3.969, "filters": 4.41, "outro": 2.0}, FakeVideo()
+    )
 
     ends = {s.id: s.end_s for s in plan.scenes}
     assert all(c.end_s <= ends[c.scene_id] + 1e-9 for c in plan.cues)

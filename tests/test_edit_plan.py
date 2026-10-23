@@ -6,12 +6,26 @@ from fake_video import FakeVideo
 SPEC = {
     "title": "Demo",
     "scenes": [
-        {"id": "home", "title": "Home", "url": "https://example.com", "actions": [],
-         "narration": "This is home."},
-        {"id": "details", "url": "https://example.com/d", "actions": [],
-         "narration": "These are the details."},
-        {"id": "outro", "title": "Outro", "url": "https://example.com", "actions": [],
-         "narration": "Thanks."},
+        {
+            "id": "home",
+            "title": "Home",
+            "url": "https://example.com",
+            "actions": [],
+            "narration": "This is home.",
+        },
+        {
+            "id": "details",
+            "url": "https://example.com/d",
+            "actions": [],
+            "narration": "These are the details.",
+        },
+        {
+            "id": "outro",
+            "title": "Outro",
+            "url": "https://example.com",
+            "actions": [],
+            "narration": "Thanks.",
+        },
     ],
 }
 
@@ -34,7 +48,9 @@ def test_plan_has_trim_windows_relative_to_rec_start_in_spec_order():
 
     assert [s.id for s in plan.scenes] == ["home", "details", "outro"]
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
-        (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
+        (1.0, 3.0),
+        (4.0, 10.0),
+        (11.0, 21.0),
     ]
     assert [s.audio_s for s in plan.scenes] == [5.0, 4.0, 4.0]
 
@@ -83,7 +99,9 @@ def test_each_scene_is_fitted_from_its_decimated_length_and_offsets_follow():
     assert refitted.total_s == pytest.approx(15.0)
     # trim windows and narration stay put
     assert [(s.trim_start, s.trim_end) for s in refitted.scenes] == [
-        (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
+        (1.0, 3.0),
+        (4.0, 10.0),
+        (11.0, 21.0),
     ]
     assert refitted.scenes[0].narration == "This is home."
 
@@ -100,7 +118,9 @@ def test_a_re_recording_uses_only_the_events_after_the_last_rec_start():
     plan = build_plan(SPEC, [*first_take, *TIMELINE], DURATIONS, FakeVideo())
 
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
-        (1.0, 3.0), (4.0, 10.0), (11.0, 21.0),
+        (1.0, 3.0),
+        (4.0, 10.0),
+        (11.0, 21.0),
     ]
 
 
@@ -142,9 +162,11 @@ def test_scene_ending_before_it_starts_is_an_error():
 
 
 def test_scene_in_timeline_but_not_in_spec_is_an_error():
-    timeline = [*TIMELINE,
-                {"scene": "bonus", "event": "start", "t_ms": 32_000},
-                {"scene": "bonus", "event": "end", "t_ms": 33_000}]
+    timeline = [
+        *TIMELINE,
+        {"scene": "bonus", "event": "start", "t_ms": 32_000},
+        {"scene": "bonus", "event": "end", "t_ms": 33_000},
+    ]
 
     message = errors_for(timeline)
 
@@ -204,12 +226,15 @@ def test_scene_missing_from_durations_is_an_error():
 
 def test_load_timeline_reads_jsonl_and_reports_bad_lines(tmp_path):
     good = tmp_path / "timeline.jsonl"
-    good.write_text('{"event": "rec_start", "t_ms": 1}\n\n{"scene": "a", "event": "start", "t_ms": 2}\n')
+    good.write_text(
+        '{"event": "rec_start", "t_ms": 1}\n\n{"scene": "a", "event": "start", "t_ms": 2}\n'
+    )
     bad = tmp_path / "bad.jsonl"
     bad.write_text('{"event": "rec_start", "t_ms": 1}\nnot json\n')
 
     assert load_timeline(good) == [
-        {"event": "rec_start", "t_ms": 1}, {"scene": "a", "event": "start", "t_ms": 2},
+        {"event": "rec_start", "t_ms": 1},
+        {"scene": "a", "event": "start", "t_ms": 2},
     ]
     with pytest.raises(PlanError, match="line 2"):
         load_timeline(bad)
@@ -230,13 +255,13 @@ SYNCED_NARRATION = "First, we look here. Then we click there."
 
 
 def synced_spec(actions):
-    return {"scenes": [{"id": "home", "url": "u", "narration": SYNCED_NARRATION,
-                        "actions": actions}]}
+    return {
+        "scenes": [{"id": "home", "url": "u", "narration": SYNCED_NARRATION, "actions": actions}]
+    }
 
 
 def synced_timeline(*beats_s):
-    events = [{"event": "rec_start", "t_ms": 0},
-              {"scene": "home", "event": "start", "t_ms": 1_000}]
+    events = [{"event": "rec_start", "t_ms": 0}, {"scene": "home", "event": "start", "t_ms": 1_000}]
     events += [{"scene": "home", "event": "beat", "t_ms": int(b * 1000)} for b in beats_s]
     return events + [{"scene": "home", "event": "end", "t_ms": 9_000}]
 
@@ -342,9 +367,11 @@ def test_an_action_pushed_past_its_phrase_is_late_by_the_overrun():
     # an intro scene first (2 s), then home: its first segment plays 5 s, past "Then" at 4 s
     spec = synced_spec(ACTIONS)
     spec["scenes"].insert(0, {"id": "intro", "url": "u", "narration": "Hi.", "actions": []})
-    timeline = [*synced_timeline(6.0),
-                {"scene": "intro", "event": "start", "t_ms": 9_500},
-                {"scene": "intro", "event": "end", "t_ms": 10_500}]
+    timeline = [
+        *synced_timeline(6.0),
+        {"scene": "intro", "event": "start", "t_ms": 9_500},
+        {"scene": "intro", "event": "end", "t_ms": 10_500},
+    ]
     video = FakeVideo({(1.0, 6.0): 5.0, (6.0, 9.0): 1.0})
 
     plan = build_plan(spec, timeline, {"intro": 2.0, "home": 8.0}, video)
@@ -357,6 +384,7 @@ def test_an_action_pushed_past_its_phrase_is_late_by_the_overrun():
 
 # --- sync flash: raw-video time 0 from the flash, not from when rec_start was marked ---
 
+
 def test_a_sync_flash_sets_raw_time_zero_however_late_rec_start_was_marked():
     # The flash was painted at wall 9.5 s and shows 2.0 s into the raw video, so the
     # recording began at 7.5 s; rec_start itself was only marked at 10 s.
@@ -365,7 +393,9 @@ def test_a_sync_flash_sets_raw_time_zero_however_late_rec_start_was_marked():
     plan = build_plan(SPEC, synced, DURATIONS, FakeVideo(flash_s=2.0))
 
     assert [(s.trim_start, s.trim_end) for s in plan.scenes] == [
-        (3.5, 5.5), (6.5, 12.5), (13.5, 23.5),
+        (3.5, 5.5),
+        (6.5, 12.5),
+        (13.5, 23.5),
     ]
     assert plan.flash_s == 2.0
 
@@ -388,6 +418,7 @@ def test_a_sync_ms_with_no_flash_in_the_video_is_an_error():
 
 # --- measuring: the raw video is only decimated once everything else checks out ---
 
+
 def test_segments_are_measured_once_each_in_plan_order():
     video = FakeVideo()
 
@@ -406,6 +437,7 @@ def test_nothing_is_measured_when_a_later_scene_is_wrong():
 
 
 def test_a_scene_with_no_frames_left_is_an_error():
-    with pytest.raises(PlanError, match="'details' has no video frames in its trim window "
-                                        "4.000-10.000s"):
+    with pytest.raises(
+        PlanError, match="'details' has no video frames in its trim window 4.000-10.000s"
+    ):
         build_plan(SPEC, TIMELINE, DURATIONS, FakeVideo({(4.0, 10.0): 0.0}))

@@ -5,10 +5,9 @@ import json
 import math
 import shutil
 
-from voice_config import validate_voice
-
 from avatar import CORNERS, DEFAULT_CORNER, DEFAULT_SIZE, MAX_SIZE, MIN_SIZE
 from narration import Narration, PhraseError
+from voice_config import validate_voice
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
 BACKENDS = ("say", "kokoro", "openai", "elevenlabs", "qwen3")
@@ -54,9 +53,12 @@ def validate_spec(spec):
     _validate_avatar(result)
     viewport = result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
     if not isinstance(viewport, dict) or not all(
-            isinstance(viewport.get(side), int) and not isinstance(viewport[side], bool)
-            and viewport[side] > 0 for side in ("width", "height")):
-        raise SpecError("viewport must be { \"width\", \"height\" } in positive whole pixels")
+        isinstance(viewport.get(side), int)
+        and not isinstance(viewport[side], bool)
+        and viewport[side] > 0
+        for side in ("width", "height")
+    ):
+        raise SpecError('viewport must be { "width", "height" } in positive whole pixels')
     scenes = result.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise SpecError("demo spec must have a 'scenes' list with at least one scene")
@@ -82,17 +84,20 @@ def validate_spec(spec):
             raise SpecError(f"{where}: missing url")
         for position, action in enumerate(scene.get("actions", []), start=1):
             if not isinstance(action, dict):
-                raise SpecError(f"{where}, action {position}: must be a JSON object, "
-                                f"got {action!r}")
+                raise SpecError(
+                    f"{where}, action {position}: must be a JSON object, got {action!r}"
+                )
             action_type = action.get("type")
             if action_type not in ACTION_TYPES:
                 raise SpecError(
                     f"{where}, action {position}: unknown action type {action_type!r} "
                     f"(allowed: {', '.join(ACTION_TYPES)})"
                 )
-        anchored = [(number, action["at"])
-                    for number, action in enumerate(scene.get("actions", []), start=1)
-                    if "at" in action]
+        anchored = [
+            (number, action["at"])
+            for number, action in enumerate(scene.get("actions", []), start=1)
+            if "at" in action
+        ]
         try:
             Narration(narration).phrase_shares([phrase for _, phrase in anchored])
         except PhraseError as exc:
@@ -102,8 +107,12 @@ def validate_spec(spec):
 
 def positive_seconds(value):
     """Whether a JSON value is a finite positive duration (not a boolean)."""
-    return (isinstance(value, (int, float)) and not isinstance(value, bool)
-            and value > 0 and (isinstance(value, int) or math.isfinite(value)))
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value > 0
+        and (isinstance(value, int) or math.isfinite(value))
+    )
 
 
 def _validate_metadata(spec):
@@ -135,8 +144,10 @@ def _validate_avatar(spec):
         raise SpecError(f"avatar.corner must be one of {', '.join(CORNERS)}")
     size = avatar.setdefault("size", DEFAULT_SIZE)
     if not positive_seconds(size) or not MIN_SIZE <= size <= MAX_SIZE:
-        raise SpecError(f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
-                        "(the photo's diameter as a share of the video's height)")
+        raise SpecError(
+            f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
+            "(the photo's diameter as a share of the video's height)"
+        )
 
 
 def _validate_checks(scene, where):
@@ -159,13 +170,14 @@ def _validate_checks(scene, where):
 
 def choose_backend(flag, spec, env):
     """Pick the TTS backend from (CLI flag, demo spec, environment mapping)."""
-    for source, name in (("--backend flag", flag),
-                         ("voice.backend", (spec.get("voice") or {}).get("backend"))):
+    for source, name in (
+        ("--backend flag", flag),
+        ("voice.backend", (spec.get("voice") or {}).get("backend")),
+    ):
         if name:
             if name not in BACKENDS:
                 raise SpecError(
-                    f"unknown TTS backend {name!r} from {source} "
-                    f"(allowed: {', '.join(BACKENDS)})"
+                    f"unknown TTS backend {name!r} from {source} (allowed: {', '.join(BACKENDS)})"
                 )
             return name
     if (spec.get("voice") or {}).get("profile") == "own_voice":

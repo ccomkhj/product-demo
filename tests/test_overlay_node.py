@@ -19,7 +19,6 @@ def test_overlay_node_tests_pass():
     assert files, f"no *.test.mjs files in {OVERLAY_TESTS}"
 
     # `node --test <dir>` does not pick up .mjs files here, so pass them by name.
-    result = subprocess.run(["node", "--test", *files], capture_output=True, text=True,
-                            timeout=300)
+    result = subprocess.run(["node", "--test", *files], capture_output=True, text=True, timeout=300)
 
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-2000:]

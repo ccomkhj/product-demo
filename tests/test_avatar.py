@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from avatar import (Avatar, bubble_cmd, geometry, halo_cmd, level_commands, read_wav,
-                    voice_levels)
+from avatar import Avatar, bubble_cmd, geometry, halo_cmd, level_commands, read_wav, voice_levels
 
 PHOTO = Path(__file__).resolve().parent.parent / "assets" / "avatars" / "huijo.png"
 
@@ -16,14 +15,21 @@ needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmp
 
 
 def tone(seconds, rate=48000, amplitude=8000):
-    return [round(amplitude * math.sin(2 * math.pi * 220 * n / rate))
-            for n in range(round(seconds * rate))]
+    return [
+        round(amplitude * math.sin(2 * math.pi * 220 * n / rate))
+        for n in range(round(seconds * rate))
+    ]
 
 
-@pytest.mark.parametrize("corner, left, top", [
-    ("bottom-left", True, False), ("bottom-right", False, False),
-    ("top-left", True, True), ("top-right", False, True),
-])
+@pytest.mark.parametrize(
+    "corner, left, top",
+    [
+        ("bottom-left", True, False),
+        ("bottom-right", False, False),
+        ("top-left", True, True),
+        ("top-right", False, True),
+    ],
+)
 def test_the_bubble_sits_in_its_corner_inside_the_frame(corner, left, top):
     geo = geometry(Avatar(PHOTO, corner, 0.2), 1920, 1080)
 
@@ -73,9 +79,11 @@ def test_no_audio_gives_no_levels():
 def test_level_commands_send_rounded_opacity_only_when_it_changes():
     text = level_commands([0.0, 0.01, 0.5, 0.52, 0.98], 30)
 
-    assert text == ("0.000 colorchannelmixer@halo aa 0.00;\n"
-                    "0.067 colorchannelmixer@halo aa 0.50;\n"
-                    "0.133 colorchannelmixer@halo aa 1.00;\n")
+    assert text == (
+        "0.000 colorchannelmixer@halo aa 0.00;\n"
+        "0.067 colorchannelmixer@halo aa 0.50;\n"
+        "0.133 colorchannelmixer@halo aa 1.00;\n"
+    )
 
 
 def test_read_wav_returns_mono_16_bit_samples(tmp_path):
@@ -105,9 +113,22 @@ def test_read_wav_rejects_stereo(tmp_path):
 
 def alpha_at(png, size, x, y):
     alpha = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(png), "-vf", "format=rgba,extractplanes=a",
-         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-        capture_output=True, check=True,
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(png),
+            "-vf",
+            "format=rgba,extractplanes=a",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
     ).stdout
     assert len(alpha) == size * size
     return alpha[y * size + x]

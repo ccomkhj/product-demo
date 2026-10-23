@@ -73,6 +73,8 @@ to the user with the reason), or a missing edit map. On
   `${CLAUDE_PLUGIN_ROOT}/references/verify.md` on `<slug>-post.mp4`.
 - For a contact sheet of the source (to pick cut times), run with a recipe holding only
   `exports.contact_sheet`: with no other operation its frame times are source times.
+- Exports: each printed export file exists; the size-capped mp4 is under its cap
+  (`ls -l`), the GIF and poster open (Read the poster).
 
 Hand over `<slug>-post.mp4` and `<slug>-post.srt` with the printed lines' summary and any
 warnings. Burned-in subtitles move with the picture: they are cut and sped up with it and
