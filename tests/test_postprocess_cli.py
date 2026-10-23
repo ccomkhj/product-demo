@@ -29,11 +29,23 @@ The end.
 EDIT_MAP = {
     "total_s": SOURCE_S,
     "scenes": [
-        {"id": "one", "title": "One", "start_s": 0.0, "end_s": 2.0,
-         "actions": [{"index": 0, "type": "point", "start_s": 0.0}]},
-        {"id": "two", "title": "Two", "start_s": 2.0, "end_s": 6.0,
-         "actions": [{"index": 0, "type": "click", "start_s": 2.0},
-                     {"index": 1, "type": "click", "start_s": 4.0, "at": "end"}]},
+        {
+            "id": "one",
+            "title": "One",
+            "start_s": 0.0,
+            "end_s": 2.0,
+            "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
+        },
+        {
+            "id": "two",
+            "title": "Two",
+            "start_s": 2.0,
+            "end_s": 6.0,
+            "actions": [
+                {"index": 0, "type": "click", "start_s": 2.0},
+                {"index": 1, "type": "click", "start_s": 4.0, "at": "end"},
+            ],
+        },
     ],
 }
 
@@ -42,10 +54,25 @@ def make_demo(tmp_path, recipe, edit_map=True):
     """A composed demo folder (slug = folder name): a 6 s source, its .srt, edit map, recipe."""
     demo = tmp_path / "smoke"
     demo.mkdir(parents=True)
-    ffmpeg("-f", "lavfi", "-i", f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
-           "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
-           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "1",
-           demo / "smoke.mp4")
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ac",
+        "1",
+        demo / "smoke.mp4",
+    )
     (demo / "smoke.srt").write_text(SRT)
     (demo / "transcript.md").write_text("# Smoke\n")
     if edit_map:
@@ -55,8 +82,9 @@ def make_demo(tmp_path, recipe, edit_map=True):
 
 
 def run_post(*args):
-    return subprocess.run([sys.executable, str(POSTPROCESS), *map(str, args)],
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, str(POSTPROCESS), *map(str, args)], capture_output=True, text=True
+    )
 
 
 def digest(path):
@@ -71,10 +99,14 @@ def printed_total(stdout):
 @needs_ffmpeg
 def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     # cut 1.0-3.0 (splits cues 1 and 2), anchored to scene two's start; then 2x
-    demo = make_demo(tmp_path, {"speed": 2.0, "trim": {
-        "cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}})
-    originals = {name: digest(demo / name)
-                 for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")}
+    demo = make_demo(
+        tmp_path,
+        {"speed": 2.0, "trim": {"cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}},
+    )
+    originals = {
+        name: digest(demo / name)
+        for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")
+    }
 
     result = run_post(demo / "post.json")
 
@@ -85,7 +117,9 @@ def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     info = probe(demo / "smoke-post.mp4")
     assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
     assert float(info["format"]["duration"]) == pytest.approx(2.0, abs=1 / 30 + 0.03)
-    assert (demo / "smoke-post.srt").read_text() == """1
+    assert (
+        (demo / "smoke-post.srt").read_text()
+        == """1
 00:00:00,000 --> 00:00:00,500
 First scene.
 
@@ -97,6 +131,7 @@ Second scene starts.
 00:00:01,000 --> 00:00:02,000
 The end.
 """
+    )
     assert "splits cue 1" in result.stderr and "splits cue 2" in result.stderr
     assert {name: digest(demo / name) for name in originals} == originals
 

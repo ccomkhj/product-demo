@@ -63,9 +63,14 @@ def test_audio_length_must_be_positive():
         fit(video_s=1.0, audio_s=0.0)
 
 
-@pytest.mark.parametrize("video_s, strategy, text", [
-    (2.0, Strategy.HOLD, "hold"), (6.0, Strategy.SPEEDUP, "speedup"), (9.0, Strategy.PAD, "pad"),
-])
+@pytest.mark.parametrize(
+    "video_s, strategy, text",
+    [
+        (2.0, Strategy.HOLD, "hold"),
+        (6.0, Strategy.SPEEDUP, "speedup"),
+        (9.0, Strategy.PAD, "pad"),
+    ],
+)
 def test_strategy_is_an_enum_that_still_reads_as_its_name(video_s, strategy, text):
     result = fit(video_s=video_s, audio_s=5.0)
 

@@ -13,9 +13,12 @@ KOKORO_MODELS = Path.home() / ".cache" / "product-demo" / "kokoro"
 # Skipped until the ~340 MB model is cached (any kokoro run caches it), so the suite
 # never starts a large download by itself.
 needs_kokoro = pytest.mark.skipif(
-    not (shutil.which("uv") and shutil.which("ffmpeg")
-         and (KOKORO_MODELS / "kokoro-v1.0.onnx").exists()
-         and (KOKORO_MODELS / "voices-v1.0.bin").exists()),
+    not (
+        shutil.which("uv")
+        and shutil.which("ffmpeg")
+        and (KOKORO_MODELS / "kokoro-v1.0.onnx").exists()
+        and (KOKORO_MODELS / "voices-v1.0.bin").exists()
+    ),
     reason="needs uv, ffmpeg and the cached Kokoro model",
 )
 HOME = {"HOME": str(Path.home())}
@@ -30,10 +33,20 @@ def write_spec(demo_dir, voice=None):
     spec = {
         "title": "Smoke",
         "scenes": [
-            {"id": "intro", "title": "Intro", "url": "https://example.com",
-             "actions": [], "narration": "Welcome to the demo."},
-            {"id": "outro", "title": "Outro", "url": "https://example.com",
-             "actions": [{"type": "wait", "ms": 500}], "narration": "Thanks for watching."},
+            {
+                "id": "intro",
+                "title": "Intro",
+                "url": "https://example.com",
+                "actions": [],
+                "narration": "Welcome to the demo.",
+            },
+            {
+                "id": "outro",
+                "title": "Outro",
+                "url": "https://example.com",
+                "actions": [{"type": "wait", "ms": 500}],
+                "narration": "Thanks for watching.",
+            },
         ],
     }
     if voice is not None:
@@ -48,7 +61,9 @@ def run_tts(*args, env_extra=None):
     env.update(env_extra or {})
     return subprocess.run(
         [sys.executable, str(TTS), *map(str, args)],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 
@@ -197,10 +212,13 @@ def heard(monkeypatch):
 
 
 def pronounce_spec(narration, pronounce):
-    return {"title": "Smoke",
-            "voice": {"backend": "say", "pronounce": pronounce},
-            "scenes": [{"id": "intro", "url": "https://example.com", "actions": [],
-                        "narration": narration}]}
+    return {
+        "title": "Smoke",
+        "voice": {"backend": "say", "pronounce": pronounce},
+        "scenes": [
+            {"id": "intro", "url": "https://example.com", "actions": [], "narration": narration}
+        ],
+    }
 
 
 @needs_ffmpeg
@@ -261,8 +279,9 @@ def test_pronounce_leaves_the_spec_unchanged(tmp_path, heard):
     assert spec == before
 
 
-@pytest.mark.parametrize("pronounce", [{"": "x"}, {"OOS": ""}, {"OOS": "  "}, {"OOS": 3},
-                                       ["OOS"], "OOS"])
+@pytest.mark.parametrize(
+    "pronounce", [{"": "x"}, {"OOS": ""}, {"OOS": "  "}, {"OOS": 3}, ["OOS"], "OOS"]
+)
 def test_malformed_pronounce_is_rejected(tmp_path, pronounce):
     spec_path = tmp_path / "demo.json"
     spec_path.write_text(json.dumps(pronounce_spec("Our OOS alerts.", pronounce)))

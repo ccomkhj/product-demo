@@ -2,33 +2,53 @@
 """Check local demo dependencies and optional measured narration duration."""
 
 import argparse
-from dataclasses import asdict, dataclass
 import json
 import math
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 if __name__ == "__main__" and sys.version_info < (3, 11):
     skill_dir = Path(__file__).resolve().parents[1]
     command = f"uv run --project {skill_dir} python {skill_dir / 'scripts' / 'preflight.py'}"
     message = f"Python 3.11+ is required; rerun with the same arguments as: {command}"
     if "--json" in sys.argv:
-        print(json.dumps({"schema_version": 1, "scope": "local", "ready": False,
-                          "selected_backend": None, "checks": [
-                              {"id": "python", "status": "fail", "message": message,
-                               "remedy": f"Run: {command}"}]}))
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "scope": "local",
+                    "ready": False,
+                    "selected_backend": None,
+                    "checks": [
+                        {
+                            "id": "python",
+                            "status": "fail",
+                            "message": message,
+                            "remedy": f"Run: {command}",
+                        }
+                    ],
+                }
+            )
+        )
     else:
         print(message)
     raise SystemExit(1)
 
-from voice_config import check_platform, probe_reference, resolve_voice_config
-
 from compose import ComposeError, burn_method
-from demo_spec import BACKENDS, SpecError, choose_backend, load_spec, positive_seconds, read_json_object
+from demo_spec import (
+    BACKENDS,
+    SpecError,
+    choose_backend,
+    load_spec,
+    positive_seconds,
+    read_json_object,
+)
+from voice_config import check_platform, probe_reference, resolve_voice_config
 
 
 @dataclass(frozen=True)
@@ -79,7 +99,14 @@ def _duration(spec, path):
         if not math.isfinite(total):
             raise SpecError("total narration duration must be finite")
     except (SpecError, OverflowError, UnicodeError) as exc:
-        return [CheckResult("duration", "fail", str(exc), "Regenerate audio/durations.json with tts.py for this spec.")]
+        return [
+            CheckResult(
+                "duration",
+                "fail",
+                str(exc),
+                "Regenerate audio/durations.json with tts.py for this spec.",
+            )
+        ]
     return [_pace(spec["scenes"], seconds), _target(spec.get("target_duration_s"), total)]
 
 
@@ -91,8 +118,12 @@ def _pace(scenes, seconds):
         if value > words * MAX_SECONDS_PER_WORD + PACE_SLACK_S:
             outliers.append(f"{scene['id']} ({value:g}s for {words} words)")
     if outliers:
-        return CheckResult("pace", "fail", "Narration audio far longer than its words: " + ", ".join(outliers),
-                           "Rerun tts.py to resynthesize, then recheck; keep the wording.")
+        return CheckResult(
+            "pace",
+            "fail",
+            "Narration audio far longer than its words: " + ", ".join(outliers),
+            "Rerun tts.py to resynthesize, then recheck; keep the wording.",
+        )
     return CheckResult("pace", "pass", "Every scene's audio length fits its word count")
 
 
@@ -102,8 +133,12 @@ def _target(target, total):
         return CheckResult("duration", "pass", message + " (no target set)")
     message += f"; target: {target:g}s. Final video may be longer because scenes can be padded."
     if total > target * 1.1:
-        return CheckResult("duration", "warning", message,
-                           "Propose a shorter script; approve changed wording and regenerate audio before recording.")
+        return CheckResult(
+            "duration",
+            "warning",
+            message,
+            "Propose a shorter script; approve changed wording and regenerate audio before recording.",
+        )
     return CheckResult("duration", "pass", message)
 
 
@@ -117,8 +152,14 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
         checks.append(CheckResult("spec", "pass", "Demo spec and backend selection are valid"))
     except (SpecError, TypeError, AttributeError, UnicodeError) as exc:
         # Older spec fields may fail with a structural type error; keep CLI errors actionable.
-        message = str(exc) if isinstance(exc, SpecError) else "Demo spec contains an invalid field type or encoding"
-        checks.append(CheckResult("spec", "fail", message, "Correct demo.json using references/demo-spec.md."))
+        message = (
+            str(exc)
+            if isinstance(exc, SpecError)
+            else "Demo spec contains an invalid field type or encoding"
+        )
+        checks.append(
+            CheckResult("spec", "fail", message, "Correct demo.json using references/demo-spec.md.")
+        )
         return _report(checks, selected)
 
     checks.extend(_executable(name, ["-version"]) for name in ("ffmpeg", "ffprobe"))
@@ -128,69 +169,136 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
             handle.flush()
         checks.append(CheckResult("output", "pass", "Demo directory is writable"))
     except OSError:
-        checks.append(CheckResult("output", "fail", "Cannot write beside the demo spec",
-                                  "Choose a writable demo directory or fix its permissions."))
+        checks.append(
+            CheckResult(
+                "output",
+                "fail",
+                "Cannot write beside the demo spec",
+                "Choose a writable demo directory or fix its permissions.",
+            )
+        )
 
     if selected in ("openai", "elevenlabs"):
         key = "OPENAI_API_KEY" if selected == "openai" else "ELEVENLABS_API_KEY"
         present = bool(os.environ.get(key, "").strip())
-        checks.append(CheckResult("voice", "pass" if present else "fail",
-                                  f"{key} is configured; remote validity and credits are not checked"
-                                  if present else f"{key} is missing or blank",
-                                  "" if present else f"Set {key} or choose an available local backend."))
+        checks.append(
+            CheckResult(
+                "voice",
+                "pass" if present else "fail",
+                f"{key} is configured; remote validity and credits are not checked"
+                if present
+                else f"{key} is missing or blank",
+                "" if present else f"Set {key} or choose an available local backend.",
+            )
+        )
     elif selected == "qwen3":
         checks.append(_executable("uv", ["--version"]))
         try:
             check_platform()
-            config = resolve_voice_config(spec.get("voice"), selected, Path(spec_path).resolve().parent)
+            config = resolve_voice_config(
+                spec.get("voice"), selected, Path(spec_path).resolve().parent
+            )
             probe_reference(config["reference_audio"], probe)
-            checks.append(CheckResult("voice", "pass", "Local cloning configuration and reference audio are valid"))
+            checks.append(
+                CheckResult(
+                    "voice", "pass", "Local cloning configuration and reference audio are valid"
+                )
+            )
         except (ValueError, OSError, ComposeError) as exc:
-            checks.append(CheckResult("voice", "fail", str(exc),
-                                      "Use native arm64 Python and configure a readable reference recording and exact transcript."))
-        checks.append(CheckResult("qwen3", "warning",
-                                  "First synthesis may download dependencies and model weights; cache completeness is checked during synthesis."))
+            checks.append(
+                CheckResult(
+                    "voice",
+                    "fail",
+                    str(exc),
+                    "Use native arm64 Python and configure a readable reference recording and exact transcript.",
+                )
+            )
+        checks.append(
+            CheckResult(
+                "qwen3",
+                "warning",
+                "First synthesis may download dependencies and model weights; cache completeness is checked during synthesis.",
+            )
+        )
     elif selected == "kokoro":
         checks.append(_executable("uv", ["--version"]))
-        checks.append(CheckResult("kokoro", "warning",
-                                  "First synthesis may install dependencies and download models; preflight does neither."))
+        checks.append(
+            CheckResult(
+                "kokoro",
+                "warning",
+                "First synthesis may install dependencies and download models; preflight does neither.",
+            )
+        )
     else:
         say = _executable("say", ["-v", "?"])
         checks.append(say)
         voice = (spec.get("voice") or {}).get("voice")
         if voice and say.status == "pass":
             try:
-                names = {line.split("  ")[0].strip() for line in probe(["say", "-v", "?"]).splitlines()}
+                names = {
+                    line.split("  ")[0].strip() for line in probe(["say", "-v", "?"]).splitlines()
+                }
                 found = voice in names
-                checks.append(CheckResult("voice", "pass" if found else "fail",
-                                          "Selected say voice is available" if found else "Selected say voice is unavailable",
-                                          "" if found else "Choose an installed voice with: say -v '?'"))
+                checks.append(
+                    CheckResult(
+                        "voice",
+                        "pass" if found else "fail",
+                        "Selected say voice is available"
+                        if found
+                        else "Selected say voice is unavailable",
+                        "" if found else "Choose an installed voice with: say -v '?'",
+                    )
+                )
             except (ComposeError, TypeError):
-                checks.append(CheckResult("voice", "fail", "Could not verify selected say voice",
-                                          "Check voice.voice and the local say installation."))
+                checks.append(
+                    CheckResult(
+                        "voice",
+                        "fail",
+                        "Could not verify selected say voice",
+                        "Check voice.voice and the local say installation.",
+                    )
+                )
 
     if burn_subs is False:
-        checks.append(CheckResult("subtitles", "pass", "Burned subtitles disabled; SRT remains available"))
+        checks.append(
+            CheckResult("subtitles", "pass", "Burned subtitles disabled; SRT remains available")
+        )
     else:
         method = burn_method(probe=probe)
         if method is not None:
-            checks.append(CheckResult("subtitles", "pass", f"Subtitle renderer available: {method.value}"))
+            checks.append(
+                CheckResult("subtitles", "pass", f"Subtitle renderer available: {method.value}")
+            )
         else:
-            checks.append(CheckResult("subtitles", "fail" if burn_subs is True else "warning",
-                                      "No subtitle renderer; default composition will still write SRT",
-                                      "Install ffmpeg with libass or rsvg-convert, or use --no-burn-subs."))
+            checks.append(
+                CheckResult(
+                    "subtitles",
+                    "fail" if burn_subs is True else "warning",
+                    "No subtitle renderer; default composition will still write SRT",
+                    "Install ffmpeg with libass or rsvg-convert, or use --no-burn-subs.",
+                )
+            )
     if durations is not None:
         checks.extend(_duration(spec, durations))
-    checks.append(CheckResult("browser", "warning",
-                              "Browser access, login, viewport and capture are not checked here",
-                              "Complete the Chrome MCP workflow in references/readiness.md before recording."))
+    checks.append(
+        CheckResult(
+            "browser",
+            "warning",
+            "Browser access, login, viewport and capture are not checked here",
+            "Complete the Chrome MCP workflow in references/readiness.md before recording.",
+        )
+    )
     return _report(checks, selected)
 
 
 def _report(checks, selected):
-    return {"schema_version": 1, "scope": "local",
-            "ready": not any(item.status == "fail" for item in checks),
-            "selected_backend": selected, "checks": [asdict(item) for item in checks]}
+    return {
+        "schema_version": 1,
+        "scope": "local",
+        "ready": not any(item.status == "fail" for item in checks),
+        "selected_backend": selected,
+        "checks": [asdict(item) for item in checks],
+    }
 
 
 def main(argv=None):
@@ -199,13 +307,19 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="print a machine-readable local report")
     parser.add_argument("--backend", choices=BACKENDS)
     parser.add_argument("--burn-subs", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--durations", type=Path, help="check measured TTS durations per scene and against the optional target")
+    parser.add_argument(
+        "--durations",
+        type=Path,
+        help="check measured TTS durations per scene and against the optional target",
+    )
     args = parser.parse_args(argv)
     report = run_checks(args.spec, args.backend, args.burn_subs, args.durations)
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        print(f"Local preflight: {'ready' if report['ready'] else 'blocked'} (backend: {report['selected_backend'] or 'unresolved'})")
+        print(
+            f"Local preflight: {'ready' if report['ready'] else 'blocked'} (backend: {report['selected_backend'] or 'unresolved'})"
+        )
         for item in report["checks"]:
             print(f"{item['status'].upper()} {item['id']}: {item['message']}")
             if item["remedy"]:

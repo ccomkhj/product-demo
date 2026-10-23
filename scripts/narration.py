@@ -16,11 +16,40 @@ import re
 # Words that end in a full stop without ending the sentence (compared lower-case,
 # without the stop). Dotted forms such as "e.g." and "U.S." and single-letter
 # initials are recognised without being listed.
-ABBREVIATIONS = frozenset({
-    "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "st", "mt", "vs", "etc", "approx",
-    "fig", "inc", "ltd", "co", "corp", "dept",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
-})
+ABBREVIATIONS = frozenset(
+    {
+        "dr",
+        "mr",
+        "mrs",
+        "ms",
+        "prof",
+        "sr",
+        "jr",
+        "st",
+        "mt",
+        "vs",
+        "etc",
+        "approx",
+        "fig",
+        "inc",
+        "ltd",
+        "co",
+        "corp",
+        "dept",
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "sept",
+        "oct",
+        "nov",
+        "dec",
+    }
+)
 
 _BOUNDARY = re.compile(r"[.!?]+[\"')\]]*\s+")
 
@@ -103,7 +132,7 @@ def _split_sentences(text):
     """Split narration into sentences without breaking after abbreviations like "e.g." or "Dr."."""
     sentences, start = [], 0
     for match in _BOUNDARY.finditer(text):
-        candidate = text[start:match.end()].strip()
+        candidate = text[start : match.end()].strip()
         if match.group().startswith(".") and _ends_with_abbreviation(candidate):
             continue
         sentences.append(candidate)
