@@ -58,7 +58,31 @@ tempo change that keeps the pitch; subtitles are retimed with it.
 
 Extra files made from the finished `<slug>-post.mp4`, each named `<slug>-post…`.
 
-<!-- size_cap_mb, gif, poster (#22) -->
+### `size_cap_mb`
+
+`<slug>-post-<cap>mb.mp4`, e.g. `"size_cap_mb": 10` for Slack or email: a two-pass encode
+at the bitrate that fits the cap (95% of it, audio 64 kb/s). The resolution stays unless
+the bitrate would drop below a readable floor (0.015 bits per pixel per frame); then it
+steps down through 1080, 720, 540 and 360 px high. Below the floor at 360 px the run fails
+with the smallest reachable size: cut the video shorter or raise the cap.
+
+### `gif`
+
+`<slug>-post-gif.gif`, looping, with a palette generated from the clip so UI colours do
+not band.
+
+- `from`, `to`: the source range (times as above), default the whole video. Cut parts
+  are left out.
+- `width`: 16 to 1920 px, default 640. `fps`: 1 to 30, default 10.
+
+Over 10 MB warns: shorten the range or lower the width or fps.
+
+### `poster`
+
+`<slug>-post-poster.png`, one full-size frame.
+
+- `time`: the frame's time, default the middle of the first scene that is left after the
+  trim and any title card.
 
 ### `contact_sheet`
 
