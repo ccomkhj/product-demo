@@ -15,8 +15,9 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from demo_spec import BACKENDS, SpecError, validate_spec
+from demo_spec import SpecError, validate_spec
 from proc import ffprobe_cmd
+from tts import BACKENDS
 from voice_config import (
     QWEN_MODEL,
     probe_reference,

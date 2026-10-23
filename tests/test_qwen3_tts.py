@@ -8,7 +8,7 @@ import pytest
 
 import qwen3_tts
 import tts
-from demo_spec import choose_backend
+from tts import choose_backend
 from voice_config import QWEN_MODEL, resolve_voice_config, validate_voice
 
 needs_ffmpeg = pytest.mark.skipif(
@@ -174,7 +174,7 @@ def test_qwen_pipeline_one_worker_and_normalized_output(voice, tmp_path, monkeyp
 def test_preflight_qwen_is_local(voice, tmp_path, monkeypatch):
     import preflight
 
-    monkeypatch.setattr(preflight, "check_platform", lambda: None)
+    monkeypatch.setattr(tts, "check_platform", lambda: None)
     monkeypatch.setattr(
         preflight, "_executable", lambda name, args: preflight.CheckResult(name, "pass", "ok")
     )

@@ -207,7 +207,7 @@ def heard(monkeypatch):
                 out.writeframes(b"\x00\x00" * 2400)
             yield scene["id"], raw
 
-    monkeypatch.setitem(tts.SYNTHESIZERS, "say", fake)
+    monkeypatch.setitem(tts.BACKENDS, "say", tts.Backend(fake))
     return texts
 
 

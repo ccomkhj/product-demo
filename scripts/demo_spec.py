@@ -3,14 +3,12 @@
 import copy
 import json
 import math
-import shutil
 
 from avatar import CORNERS, DEFAULT_CORNER, DEFAULT_SIZE, MAX_SIZE, MIN_SIZE
 from narration import Narration, PhraseError
 from voice_config import validate_voice
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
-BACKENDS = ("say", "kokoro", "openai", "elevenlabs", "qwen3")
 ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
 PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
@@ -166,29 +164,6 @@ def _validate_checks(scene, where):
             value = check.get(payload)
             if not isinstance(value, str) or not value.strip():
                 raise SpecError(f"{label}: {payload} must be a non-empty string")
-
-
-def choose_backend(flag, spec, env):
-    """Pick the TTS backend from (CLI flag, demo spec, environment mapping)."""
-    for source, name in (
-        ("--backend flag", flag),
-        ("voice.backend", (spec.get("voice") or {}).get("backend")),
-    ):
-        if name:
-            if name not in BACKENDS:
-                raise SpecError(
-                    f"unknown TTS backend {name!r} from {source} (allowed: {', '.join(BACKENDS)})"
-                )
-            return name
-    if (spec.get("voice") or {}).get("profile") == "own_voice":
-        return "qwen3"
-    if env.get("ELEVENLABS_API_KEY"):
-        return "elevenlabs"
-    if env.get("OPENAI_API_KEY"):
-        return "openai"
-    if env.get("PATH") and shutil.which("uv", path=env["PATH"]):
-        return "kokoro"
-    return "say"
 
 
 def _describe(index, scene):

@@ -1,6 +1,7 @@
 import pytest
 
-from demo_spec import BACKENDS, SpecError, choose_backend
+from demo_spec import SpecError
+from tts import BACKENDS, choose_backend
 
 NO_VOICE = {"scenes": []}
 
@@ -71,12 +72,6 @@ def test_flag_beats_env_without_spec_backend():
 def test_unknown_backend_in_flag_is_rejected():
     with pytest.raises(SpecError, match="unknown TTS backend 'polly'"):
         choose_backend("polly", NO_VOICE, {})
-
-
-def test_every_known_backend_has_a_synthesizer():
-    from tts import SYNTHESIZERS
-
-    assert set(SYNTHESIZERS) == set(BACKENDS)
 
 
 def test_tts_cli_offers_exactly_the_known_backends(capsys):
