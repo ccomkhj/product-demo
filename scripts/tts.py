@@ -25,16 +25,18 @@ import argparse
 import functools
 import json
 import os
+import shutil
 import sys
 import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 import demo_paths
 import proc
-from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
+from demo_spec import SpecError, load_spec
 from narration import spoken
 from voice_config import check_platform, probe_reference, resolve_voice_config
 
@@ -47,8 +49,6 @@ class TtsError(RuntimeError):
 
 def synth_say(text, voice, out_base, _env, _transport):
     """Render ``text`` with macOS ``say`` and return the path of the raw audio file."""
-    if voice:
-        _check_say_voice(voice)
     out_path = out_base.with_suffix(".aiff")
     command = ["say", "-o", str(out_path)]
     if voice:
@@ -58,8 +58,12 @@ def synth_say(text, voice, out_base, _env, _transport):
     return out_path
 
 
-def _check_say_voice(voice):
-    listing = _run(["say", "-v", "?"])
+def check_say_voice(config, run):
+    """So an unknown voice fails once, up front, naming the command that lists them."""
+    voice = config.get("voice")
+    if not voice:
+        return
+    listing = run(["say", "-v", "?"])
     names = {line.split("  ")[0].strip() for line in listing.splitlines() if line.strip()}
     if voice not in names:
         raise TtsError(f"unknown say voice {voice!r} (list voices with: say -v '?')")
@@ -190,9 +194,13 @@ def synth_scenes(synthesize, scenes, config, directory, env, transport):
         yield scene["id"], raw
 
 
-def synth_qwen3(scenes, config, directory, _env, _transport):
+def check_qwen3_voice(config, run):
+    """So a bad machine or recording fails before the slow model download."""
     check_platform()
-    probe_reference(config["reference_audio"], _run)
+    probe_reference(config["reference_audio"], run)
+
+
+def synth_qwen3(scenes, config, directory, _env, _transport):
     reference = directory / "reference.wav"
     normalise_to_wav(config["reference_audio"], reference)
     config = {**config, "reference_audio": str(reference)}
@@ -220,32 +228,88 @@ def synth_qwen3(scenes, config, directory, _env, _transport):
         yield scene["id"], output / name
 
 
-SYNTHESIZERS = {
-    "say": functools.partial(synth_scenes, synth_say),
-    "kokoro": functools.partial(synth_scenes, synth_kokoro),
-    "openai": functools.partial(synth_scenes, synth_openai),
-    "elevenlabs": functools.partial(synth_scenes, synth_elevenlabs),
-    "qwen3": synth_qwen3,
+@dataclass(frozen=True)
+class Backend:
+    """Everything one backend needs, in one place: synthesis, tts and preflight all read it."""
+
+    # synthesize: (scenes, config, directory, env, transport) -> (scene id, raw audio) pairs.
+    # tool: (executable, probe args). check_voice: (config, run) -> raises if it can't work.
+    # note: preflight's warning for what it can't check (first-run downloads).
+
+    synthesize: object
+    api_key: str | None = None
+    tool: tuple | None = None
+    check_voice: object = None
+    note: str | None = None
+
+    def available(self, env):
+        """So auto-detection only picks a backend that will run without more setup."""
+        if self.api_key:
+            return bool(env.get(self.api_key))
+        path = env.get("PATH")
+        return bool(self.tool and path and shutil.which(self.tool[0], path=path))
+
+
+UV = ("uv", ("--version",))
+
+BACKENDS = {
+    "say": Backend(
+        functools.partial(synth_scenes, synth_say),
+        tool=("say", ("-v", "?")),
+        check_voice=check_say_voice,
+    ),
+    "kokoro": Backend(
+        functools.partial(synth_scenes, synth_kokoro),
+        tool=UV,
+        note="First synthesis may install dependencies and download models; "
+        "preflight does neither.",
+    ),
+    "openai": Backend(functools.partial(synth_scenes, synth_openai), api_key="OPENAI_API_KEY"),
+    "elevenlabs": Backend(
+        functools.partial(synth_scenes, synth_elevenlabs), api_key="ELEVENLABS_API_KEY"
+    ),
+    "qwen3": Backend(
+        synth_qwen3,
+        tool=UV,
+        check_voice=check_qwen3_voice,
+        note="First synthesis may download dependencies and model weights; "
+        "cache completeness is checked during synthesis.",
+    ),
 }
 
-# Backend name -> environment variable holding its API key, checked before any request.
-API_KEYS = {
-    "openai": "OPENAI_API_KEY",
-    "elevenlabs": "ELEVENLABS_API_KEY",
-}
+# Auto-detection order when neither the flag nor the spec names a backend; say is the fallback.
+PREFERRED = ("elevenlabs", "openai", "kokoro")
+
+
+def choose_backend(flag, spec, env):
+    """Pick the TTS backend from (CLI flag, demo spec, environment mapping)."""
+    for source, name in (
+        ("--backend flag", flag),
+        ("voice.backend", (spec.get("voice") or {}).get("backend")),
+    ):
+        if name:
+            if name not in BACKENDS:
+                raise SpecError(
+                    f"unknown TTS backend {name!r} from {source} (allowed: {', '.join(BACKENDS)})"
+                )
+            return name
+    if (spec.get("voice") or {}).get("profile") == "own_voice":
+        return "qwen3"
+    return next((name for name in PREFERRED if BACKENDS[name].available(env)), "say")
 
 
 def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=None):
     """Write one normalised WAV per scene and durations.json; return the durations."""
-    synthesize = SYNTHESIZERS[backend]
-    key_name = API_KEYS.get(backend)
-    if key_name and not (env.get(key_name) or "").strip():
+    chosen = BACKENDS[backend]
+    if chosen.api_key and not (env.get(chosen.api_key) or "").strip():
         raise TtsError(
-            f"{key_name} is not set; the {backend} backend needs it "
+            f"{chosen.api_key} is not set; the {backend} backend needs it "
             f"(set it, or pick another backend with --backend)"
         )
     try:
         config = resolve_voice_config(spec.get("voice"), backend, spec_dir or Path.cwd())
+        if chosen.check_voice:
+            chosen.check_voice(config, _run)
     except (ValueError, OSError) as exc:
         raise TtsError(str(exc)) from exc
     # Speak from copies, so subtitles, transcript and `at` phrases keep the written spelling.
@@ -257,7 +321,7 @@ def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=N
     out_dir.mkdir(parents=True, exist_ok=True)
     durations = {}
     with tempfile.TemporaryDirectory(prefix="tts-") as tmp:
-        for scene_id, raw in synthesize(scenes, config, Path(tmp), env, transport):
+        for scene_id, raw in chosen.synthesize(scenes, config, Path(tmp), env, transport):
             wav = out_dir / f"{scene_id}.wav"
             normalise_to_wav(raw, wav, config.get("speed", 1))
             durations[scene_id] = round(measure_seconds(wav), 3)

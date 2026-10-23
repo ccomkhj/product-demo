@@ -14,7 +14,7 @@ import pytest
 
 import own_voice
 import voice_config
-from demo_spec import choose_backend
+from tts import choose_backend
 
 
 @pytest.fixture

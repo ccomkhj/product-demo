@@ -40,15 +40,9 @@ if __name__ == "__main__" and sys.version_info < (3, 11):
     raise SystemExit(1)
 
 from compose import ComposeError, burn_method
-from demo_spec import (
-    BACKENDS,
-    SpecError,
-    choose_backend,
-    load_spec,
-    positive_seconds,
-    read_json_object,
-)
-from voice_config import check_platform, probe_reference, resolve_voice_config
+from demo_spec import SpecError, load_spec, positive_seconds, read_json_object
+from tts import BACKENDS, TtsError, choose_backend
+from voice_config import resolve_voice_config
 
 
 @dataclass(frozen=True)
@@ -79,6 +73,44 @@ def _executable(name, args):
     except ComposeError as exc:
         return CheckResult(name, "fail", str(exc), remedy)
     return CheckResult(name, "pass", f"{name} is available")
+
+
+def _voice(spec, selected, spec_dir):
+    """So a backend's needs are declared once, in tts.BACKENDS, not re-coded per backend."""
+    backend, checks = BACKENDS[selected], []
+    if backend.api_key:
+        key = backend.api_key
+        present = bool(os.environ.get(key, "").strip())
+        checks.append(
+            CheckResult(
+                "voice",
+                "pass" if present else "fail",
+                f"{key} is configured; remote validity and credits are not checked"
+                if present
+                else f"{key} is missing or blank",
+                "" if present else f"Set {key} or choose an available local backend.",
+            )
+        )
+    tool = _executable(*backend.tool) if backend.tool else None
+    if tool:
+        checks.append(tool)
+    if backend.check_voice and (tool is None or tool.status == "pass"):
+        try:
+            config = resolve_voice_config(spec.get("voice"), selected, spec_dir)
+            backend.check_voice(config, probe)
+            checks.append(CheckResult("voice", "pass", f"The {selected} voice settings are valid"))
+        except (ValueError, OSError, ComposeError, TtsError) as exc:
+            checks.append(
+                CheckResult(
+                    "voice",
+                    "fail",
+                    str(exc),
+                    "Fix voice in demo.json (references/demo-spec.md), then recheck.",
+                )
+            )
+    if backend.note:
+        checks.append(CheckResult(selected, "warning", backend.note))
+    return checks
 
 
 # Spoken narration runs about 0.3-0.5 s per word; well past this bound the synthesis ran away.
@@ -178,86 +210,7 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
             )
         )
 
-    if selected in ("openai", "elevenlabs"):
-        key = "OPENAI_API_KEY" if selected == "openai" else "ELEVENLABS_API_KEY"
-        present = bool(os.environ.get(key, "").strip())
-        checks.append(
-            CheckResult(
-                "voice",
-                "pass" if present else "fail",
-                f"{key} is configured; remote validity and credits are not checked"
-                if present
-                else f"{key} is missing or blank",
-                "" if present else f"Set {key} or choose an available local backend.",
-            )
-        )
-    elif selected == "qwen3":
-        checks.append(_executable("uv", ["--version"]))
-        try:
-            check_platform()
-            config = resolve_voice_config(
-                spec.get("voice"), selected, Path(spec_path).resolve().parent
-            )
-            probe_reference(config["reference_audio"], probe)
-            checks.append(
-                CheckResult(
-                    "voice", "pass", "Local cloning configuration and reference audio are valid"
-                )
-            )
-        except (ValueError, OSError, ComposeError) as exc:
-            checks.append(
-                CheckResult(
-                    "voice",
-                    "fail",
-                    str(exc),
-                    "Use native arm64 Python and configure a readable reference recording and exact transcript.",
-                )
-            )
-        checks.append(
-            CheckResult(
-                "qwen3",
-                "warning",
-                "First synthesis may download dependencies and model weights; cache completeness is checked during synthesis.",
-            )
-        )
-    elif selected == "kokoro":
-        checks.append(_executable("uv", ["--version"]))
-        checks.append(
-            CheckResult(
-                "kokoro",
-                "warning",
-                "First synthesis may install dependencies and download models; preflight does neither.",
-            )
-        )
-    else:
-        say = _executable("say", ["-v", "?"])
-        checks.append(say)
-        voice = (spec.get("voice") or {}).get("voice")
-        if voice and say.status == "pass":
-            try:
-                names = {
-                    line.split("  ")[0].strip() for line in probe(["say", "-v", "?"]).splitlines()
-                }
-                found = voice in names
-                checks.append(
-                    CheckResult(
-                        "voice",
-                        "pass" if found else "fail",
-                        "Selected say voice is available"
-                        if found
-                        else "Selected say voice is unavailable",
-                        "" if found else "Choose an installed voice with: say -v '?'",
-                    )
-                )
-            except (ComposeError, TypeError):
-                checks.append(
-                    CheckResult(
-                        "voice",
-                        "fail",
-                        "Could not verify selected say voice",
-                        "Check voice.voice and the local say installation.",
-                    )
-                )
+    checks.extend(_voice(spec, selected, Path(spec_path).resolve().parent))
 
     if burn_subs is False:
         checks.append(
