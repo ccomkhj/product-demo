@@ -32,6 +32,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import demo_paths
 import proc
 from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
 from narration import spoken
@@ -260,7 +261,7 @@ def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=N
             wav = out_dir / f"{scene_id}.wav"
             normalise_to_wav(raw, wav, config.get("speed", 1))
             durations[scene_id] = round(measure_seconds(wav), 3)
-    (out_dir / "durations.json").write_text(json.dumps(durations, indent=2) + "\n")
+    demo_paths.durations(out_dir).write_text(json.dumps(durations, indent=2) + "\n")
     return durations
 
 
@@ -319,7 +320,7 @@ def main(argv=None):
     try:
         spec = load_spec(args.spec)
         backend = choose_backend(args.backend, spec, os.environ)
-        out_dir = args.out_dir or args.spec.parent / "audio"
+        out_dir = args.out_dir or demo_paths.audio_dir(args.spec.parent)
         durations = generate(
             spec, backend, out_dir, os.environ, spec_dir=args.spec.resolve().parent
         )

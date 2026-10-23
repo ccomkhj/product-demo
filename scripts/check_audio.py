@@ -20,6 +20,7 @@ import re
 import sys
 from pathlib import Path
 
+import demo_paths
 from demo_spec import load_spec
 from narration import spoken
 from voice_config import check_platform, pinned_snapshot, resolve_voice_config
@@ -103,7 +104,7 @@ def main():
         spec = load_spec(args.spec)
         voice = resolve_voice_config(spec.get("voice"), "qwen3", args.spec.resolve().parent)
         language = None if voice["language"] == "auto" else voice["language"]
-        ok = check(spec, args.spec.parent / "audio", language)
+        ok = check(spec, demo_paths.audio_dir(args.spec.parent), language)
     except Exception as exc:
         print(f"check_audio: {exc}", file=sys.stderr)
         return 1

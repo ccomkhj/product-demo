@@ -37,6 +37,7 @@ from enum import StrEnum
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
+import demo_paths
 import proc
 from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
@@ -557,21 +558,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     demo_dir = args.spec.parent
-    audio_dir = args.audio_dir or demo_dir / "audio"
-    out = args.out or demo_dir / f"{demo_dir.resolve().name}.mp4"
-    srt_path, transcript_path = out.with_suffix(".srt"), out.parent / "transcript.md"
-    edit_map_path = out.with_suffix(".editmap.json")
+    audio_dir = args.audio_dir or demo_paths.audio_dir(demo_dir)
+    out = args.out or demo_paths.video(demo_dir)
+    srt_path, transcript_path = demo_paths.srt(out), out.parent / "transcript.md"
+    edit_map_path = demo_paths.edit_map(out)
     try:
         spec = load_spec(args.spec)
-        timeline = load_timeline(args.timeline or demo_dir / "timeline.jsonl")
+        timeline = load_timeline(args.timeline or demo_paths.timeline(demo_dir))
         durations = read_json_object(
-            args.durations or audio_dir / "durations.json",
+            args.durations or demo_paths.durations(audio_dir),
             "durations",
             ComposeError,
             hint="; run tts.py first",
             shape="a JSON object of scene id -> seconds",
         )
-        raw = args.raw or demo_dir / "raw.mp4"
+        raw = args.raw or demo_paths.raw(demo_dir)
         avatar = spec_avatar(spec, demo_dir)
         method = burn_method() if args.burn_subs is not False else None
         if method is None and args.burn_subs:

@@ -21,6 +21,7 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
+import demo_paths
 import proc
 from avatar import DEFAULT_CORNER, DEFAULT_SIZE
 from compose import svg_to_png_cmd
@@ -242,11 +243,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     demo_dir = args.recipe.parent
-    slug = demo_dir.resolve().name
-    out_prefix = demo_dir / f"{slug}-post"
+    out_prefix = demo_paths.post_prefix(demo_dir)
     try:
         recipe = read_json_object(args.recipe, "post recipe", RecipeError)
-        plan, source, warnings = _plan(recipe, demo_dir, slug)
+        plan, source, warnings = _plan(recipe, demo_dir)
         for warning in warnings:
             print(f"postprocess: warning: {warning}", file=sys.stderr)
         with tempfile.TemporaryDirectory(prefix="postprocess-") as work_dir:
@@ -278,23 +278,23 @@ def _with_audio_files(recipe, demo_dir):
     return recipe
 
 
-def _plan(recipe, demo_dir, slug):
+def _plan(recipe, demo_dir):
     """Validate the recipe, read the source's length, cues and edit map; build the plan.
 
     Returns (plan, source, warnings).
     """
     validate_recipe(recipe)
     recipe = _with_audio_files(recipe, demo_dir)
-    source = demo_dir / recipe.get("source", f"{slug}.mp4")
+    source = demo_dir / recipe["source"] if "source" in recipe else demo_paths.video(demo_dir)
     if not source.is_file():
         raise PostError(f"source video not found: {source}; run compose first")
-    if source.resolve() == Path(f"{demo_dir / slug}-post.mp4").resolve():
+    if source.resolve() == Path(f"{demo_paths.post_prefix(demo_dir)}.mp4").resolve():
         raise PostError("the source must not be the post-processed video itself")
-    srt = source.with_suffix(".srt")
+    srt = demo_paths.srt(source)
     if not srt.is_file():
         raise PostError(f"subtitles not found: {srt}; re-run compose to write them")
     warnings = []
-    edit_map_path = source.with_suffix(".editmap.json")
+    edit_map_path = demo_paths.edit_map(source)
     if edit_map_path.is_file():
         edit_map = read_json_object(edit_map_path, "edit map", PostError)
     else:
@@ -310,11 +310,11 @@ def _plan(recipe, demo_dir, slug):
     for where, image in images.items():
         if image and not (demo_dir / image).is_file():
             raise PostError(f"{where} not found: {demo_dir / image}")
-    spec_path = demo_dir / "demo.json"
+    spec_path = demo_paths.spec(demo_dir)
     spec = read_json_object(spec_path, "demo spec", PostError) if spec_path.is_file() else {}
     translations = {}
     for lang in recipe.get("translations", ()):
-        path = source.with_suffix(f".{lang}.srt")
+        path = demo_paths.srt(source, lang)
         if not path.is_file():
             raise PostError(
                 f"translation not found: {path}; write it first "
@@ -327,7 +327,7 @@ def _plan(recipe, demo_dir, slug):
         source_s,
         parse_srt(srt.read_text(encoding="utf-8")),
         edit_map,
-        card_defaults(spec, slug),
+        card_defaults(spec, demo_paths.slug(demo_dir)),
         translations=translations,
         frame=(width, height),
         bubble=_bubble(spec),
