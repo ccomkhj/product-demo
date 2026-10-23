@@ -70,6 +70,7 @@ class Step:
 
 # --- time map ------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class TimeMap:
     """Source time -> output time: the kept ranges laid end to end, then the speed,
@@ -102,13 +103,19 @@ class TimeMap:
     def range(self, start_s, end_s):
         """The output range of source range [start_s, end_s] with its cut parts removed:
         (start, end, clipped), or None when it is all cut. ``clipped``: part of it was cut."""
-        parts = [(max(start, start_s), min(end, end_s)) for start, end in self.kept
-                 if min(end, end_s) > max(start, start_s)]
+        parts = [
+            (max(start, start_s), min(end, end_s))
+            for start, end in self.kept
+            if min(end, end_s) > max(start, start_s)
+        ]
         if not parts:
             return None
         kept_s = sum(end - start for start, end in parts)
-        return (self.output_s(parts[0][0]), self.output_s(parts[-1][1]),
-                kept_s < end_s - start_s - 1e-6)
+        return (
+            self.output_s(parts[0][0]),
+            self.output_s(parts[-1][1]),
+            kept_s < end_s - start_s - 1e-6,
+        )
 
 
 @dataclass(frozen=True)
@@ -149,13 +156,17 @@ def build_post_plan(recipe, source_s, cues, edit_map):
             continue
         start, end, clipped = placed
         if clipped:
-            cuts = ", ".join(f"{a:.3f}s-{b:.3f}s" for a, b in time_map.removed
-                             if b > cue.start_s and a < cue.end_s)
+            cuts = ", ".join(
+                f"{a:.3f}s-{b:.3f}s"
+                for a, b in time_map.removed
+                if b > cue.start_s and a < cue.end_s
+            )
             warnings.append(f'cut at {cuts} splits cue {number} "{cue.text}"')
         retimed.append(Cue(round(start, 3), round(end, 3), cue.text))
     plan = PostPlan(time_map, tuple(retimed), tuple(warnings), (), edit_map)
-    return replace(plan, steps=tuple(step for build in STEPS.values()
-                                     if (step := build(recipe, plan))))
+    return replace(
+        plan, steps=tuple(step for build in STEPS.values() if (step := build(recipe, plan)))
+    )
 
 
 def source_time(value, source_s, edit_map, where="time"):
@@ -167,36 +178,41 @@ def source_time(value, source_s, edit_map, where="time"):
     if seconds < 0:
         raise RecipeError(f"{where} is before the start of the source ({seconds:.3f}s)")
     if seconds > source_s + 1e-9:
-        raise RecipeError(f"{where} is past the end of the source "
-                          f"({seconds:.3f}s of {source_s:.3f}s)")
+        raise RecipeError(
+            f"{where} is past the end of the source ({seconds:.3f}s of {source_s:.3f}s)"
+        )
     return seconds
 
 
 def _anchor_s(ref, edit_map, where):
     if edit_map is None:
-        raise RecipeError(f"{where} is anchored to a scene, which needs the edit map; "
-                          f"re-run compose to write <slug>.editmap.json")
+        raise RecipeError(
+            f"{where} is anchored to a scene, which needs the edit map; "
+            f"re-run compose to write <slug>.editmap.json"
+        )
     scenes = {scene["id"]: scene for scene in edit_map["scenes"]}
     if ref["scene"] not in scenes:
-        raise RecipeError(f"{where}: unknown scene '{ref['scene']}' "
-                          f"(scenes: {', '.join(scenes)})")
+        raise RecipeError(f"{where}: unknown scene '{ref['scene']}' (scenes: {', '.join(scenes)})")
     scene = scenes[ref["scene"]]
     if "at" not in ref:
         return scene["start_s"]
     starts = {action["at"]: action["start_s"] for action in scene["actions"] if "at" in action}
     if ref["at"] not in starts:
         known = ", ".join(f"'{phrase}'" for phrase in starts) or "none"
-        raise RecipeError(f"{where}: scene '{scene['id']}' has no action at '{ref['at']}' "
-                          f"(at phrases: {known})")
+        raise RecipeError(
+            f"{where}: scene '{scene['id']}' has no action at '{ref['at']}' (at phrases: {known})"
+        )
     return starts[ref["at"]]
 
 
 def _time_map(recipe, source_s, edit_map):
     trim = recipe.get("trim", {})
+
     def at(key, default):
         if key not in trim:
             return default
         return _frame(source_time(trim[key], source_s, edit_map, f"trim.{key}"))
+
     start, end = at("start", 0.0), at("end", _frame(source_s))
     if end <= start:
         raise RecipeError("trim.end must be after trim.start")
@@ -225,6 +241,7 @@ def _frame(seconds):
 
 # --- validation ----------------------------------------------------------------------
 
+
 def validate_recipe(recipe):
     """Check the recipe's shape and ranges (no times placed yet); raise RecipeError."""
     if not isinstance(recipe, dict):
@@ -242,8 +259,9 @@ def _check_source(value, where):
 
 def _check_speed(value, where):
     if not _is_number(value) or not MIN_SPEED <= value <= MAX_SPEED:
-        raise RecipeError(f"{where} must be a number from {MIN_SPEED} to {MAX_SPEED:g}, "
-                          f"got {value!r}")
+        raise RecipeError(
+            f"{where} must be a number from {MIN_SPEED} to {MAX_SPEED:g}, got {value!r}"
+        )
 
 
 def _check_trim(value, where):
@@ -253,7 +271,7 @@ def _check_trim(value, where):
             check_time(value[key], f"{where}.{key}")
     cuts = value.get("cuts", [])
     if not isinstance(cuts, list):
-        raise RecipeError(f"{where}.cuts must be a list of {{\"from\": t, \"to\": t}}")
+        raise RecipeError(f'{where}.cuts must be a list of {{"from": t, "to": t}}')
     for index, cut in enumerate(cuts):
         here = f"{where}.cuts[{index}]"
         _check_keys(cut, here, ("from", "to"))
@@ -311,8 +329,10 @@ def check_time(value, where):
         if "offset_s" in value and not _is_number(value["offset_s"]):
             raise RecipeError(f"{where}.offset_s must be a number of seconds")
     elif not _is_number(value) or value < 0:
-        raise RecipeError(f"{where} must be seconds (>= 0) or a scene anchor "
-                          f"{{\"scene\": id, \"at\": phrase, \"offset_s\": s}}")
+        raise RecipeError(
+            f"{where} must be seconds (>= 0) or a scene anchor "
+            f'{{"scene": id, "at": phrase, "offset_s": s}}'
+        )
 
 
 def _check_keys(value, where, known):
@@ -333,13 +353,9 @@ VALIDATORS = {
     "trim": _check_trim,
     "speed": _check_speed,
     # watermark, callouts, progress_bar (#18)
-
     # cards (#19)
-
     # translations, chapters (#21)
-
     # click_sounds, music (#20)
-
     "exports": _check_exports,
 }
 
@@ -347,12 +363,12 @@ EXPORT_VALIDATORS = {
     "size_cap_mb": _check_size_cap,
     "gif": _check_gif,
     "poster": _check_poster,
-
     "contact_sheet": _check_contact_sheet,
 }
 
 
 # --- steps (pure: recipe + plan in, Step or None out) ----------------------------------
+
 
 def _trim_step(recipe, plan):
     if "trim" not in recipe:
@@ -360,9 +376,11 @@ def _trim_step(recipe, plan):
     kept = plan.time_map.kept
     kept_s = sum(end - start for start, end in kept)
     ranges = len(plan.time_map.removed)
-    return Step("trim", f"trim\tremoved {plan.source_s - kept_s:.3f}s in {ranges} ranges\t"
-                        f"kept {kept_s:.3f}s",
-                {"kept": kept, "source_s": plan.source_s})
+    return Step(
+        "trim",
+        f"trim\tremoved {plan.source_s - kept_s:.3f}s in {ranges} ranges\tkept {kept_s:.3f}s",
+        {"kept": kept, "source_s": plan.source_s},
+    )
 
 
 def _speed_step(recipe, plan):
@@ -387,14 +405,18 @@ def _gif_step(recipe, plan):
         where = "exports.gif"
         placed = plan.time_map.range(
             source_time(gif.get("from", 0.0), plan.source_s, plan.edit_map, f"{where}.from"),
-            source_time(gif.get("to", plan.source_s), plan.source_s, plan.edit_map, f"{where}.to"))
+            source_time(gif.get("to", plan.source_s), plan.source_s, plan.edit_map, f"{where}.to"),
+        )
         if placed is None or placed[1] - placed[0] <= 0:
             raise RecipeError(f"{where}: its range is empty or all cut")
         start, end = placed[0], placed[1]
     width, fps = gif.get("width", GIF_WIDTH), gif.get("fps", GIF_FPS)
-    return Step("gif", f"gif\t{start:.3f}s-{end:.3f}s\t{width}px {fps}fps",
-                {"start_s": round(start, 3), "end_s": round(end, 3), "width": width, "fps": fps},
-                export=True)
+    return Step(
+        "gif",
+        f"gif\t{start:.3f}s-{end:.3f}s\t{width}px {fps}fps",
+        {"start_s": round(start, 3), "end_s": round(end, 3), "width": width, "fps": fps},
+        export=True,
+    )
 
 
 def _poster_step(recipe, plan):
@@ -404,9 +426,13 @@ def _poster_step(recipe, plan):
     if "time" in poster:
         at_s = plan.output_s(poster["time"], "exports.poster.time")
     else:
-        scenes = [*(plan.edit_map or {}).get("scenes", ()), {"start_s": 0.0, "end_s": plan.source_s}]
-        placed = next(p for scene in scenes
-                      if (p := plan.time_map.range(scene["start_s"], scene["end_s"])))
+        scenes = [
+            *(plan.edit_map or {}).get("scenes", ()),
+            {"start_s": 0.0, "end_s": plan.source_s},
+        ]
+        placed = next(
+            p for scene in scenes if (p := plan.time_map.range(scene["start_s"], scene["end_s"]))
+        )
         at_s = (placed[0] + placed[1]) / 2  # the middle of the first scene left after the cards
     at_s = round(min(at_s, plan.total_s - 1 / FPS), 3)
     return Step("poster", f"poster\t{at_s:.3f}s", {"at_s": at_s}, export=True)
@@ -420,11 +446,17 @@ def _contact_sheet_step(recipe, plan):
     interval = sheet.get("interval_s", total / CONTACT_FRAMES)
     count = math.ceil(total / interval - 1e-9)
     if count > MAX_CONTACT_FRAMES:
-        raise RecipeError(f"exports.contact_sheet.interval_s {interval:g} gives more than "
-                          f"{MAX_CONTACT_FRAMES} frames of a {total:.3f}s video")
+        raise RecipeError(
+            f"exports.contact_sheet.interval_s {interval:g} gives more than "
+            f"{MAX_CONTACT_FRAMES} frames of a {total:.3f}s video"
+        )
     times = tuple(round(index * interval, 3) for index in range(count))
-    return Step("contact_sheet", f"contact_sheet\t{len(times)} frames",
-                {"columns": sheet.get("columns", 4), "times": times}, export=True)
+    return Step(
+        "contact_sheet",
+        f"contact_sheet\t{len(times)} frames",
+        {"columns": sheet.get("columns", 4), "times": times},
+        export=True,
+    )
 
 
 # The fixed step order, whatever order the recipe lists its keys in (spec #14): trim and
@@ -434,13 +466,9 @@ STEPS = {
     "trim": _trim_step,
     "speed": _speed_step,
     # watermark, callouts, progress_bar (#18)
-
     # cards (#19)
-
     # subtitle_tracks, chapters (#21)
-
     # click_sounds, music (#20)
-
     "size_cap": _size_cap_step,
     "gif": _gif_step,
     "poster": _poster_step,
@@ -450,6 +478,7 @@ STEPS = {
 
 # --- command builders (pure: arguments in, argument list out) ------------------------
 
+
 def trim_cmd(src, out, kept, source_s):
     """Keep the ``kept`` source ranges, joined, with a short audio fade at every cut."""
     chain, joined = [], ""
@@ -458,11 +487,14 @@ def trim_cmd(src, out, kept, source_s):
         if start > 0:
             fades.append(f"afade=t=in:d={_fade(start, end):.3f}")
         if end < source_s - 1e-9:
-            fades.append(f"afade=t=out:st={end - start - _fade(start, end):.3f}:"
-                         f"d={_fade(start, end):.3f}")
+            fades.append(
+                f"afade=t=out:st={end - start - _fade(start, end):.3f}:d={_fade(start, end):.3f}"
+            )
         chain.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
-        chain.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS"
-                     f"{''.join(',' + fade for fade in fades)}[a{index}]")
+        chain.append(
+            f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS"
+            f"{''.join(',' + fade for fade in fades)}[a{index}]"
+        )
         joined += f"[v{index}][a{index}]"
     chain.append(f"{joined}concat=n={len(kept)}:v=1:a=1[v][a]")
     return _encode(src, ";".join(chain), out)
@@ -476,8 +508,20 @@ def speed_cmd(src, out, speed):
 def frame_cmd(src, at_s, width, out):
     """One frame of ``src`` at ``at_s`` seconds, scaled to ``width`` (None: as is), as a PNG."""
     scale = ["-vf", f"scale={width}:-2"] if width else []
-    return ["ffmpeg", "-v", "error", "-y", "-ss", f"{at_s:.3f}", "-i", str(src),
-            "-frames:v", "1", *scale, str(out)]
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-ss",
+        f"{at_s:.3f}",
+        "-i",
+        str(src),
+        "-frames:v",
+        "1",
+        *scale,
+        str(out),
+    ]
 
 
 def size_cap_encoding(cap_mb, length_s, width, height):
@@ -485,16 +529,19 @@ def size_cap_encoding(cap_mb, length_s, width, height):
     the bitrate drops first, the resolution only below the MIN_BPP floor; RecipeError
     naming the smallest reachable size when even the ladder's last rung is too big."""
     video_kbps = cap_mb * 8000 / length_s * SIZE_MARGIN - SIZE_AUDIO_KBPS
-    sizes = [(width, height)] + [(round(width * h / height / 2) * 2, h)
-                                 for h in SIZE_HEIGHTS if h < height]
+    sizes = [(width, height)] + [
+        (round(width * h / height / 2) * 2, h) for h in SIZE_HEIGHTS if h < height
+    ]
     for w, h in sizes:
         if video_kbps >= _floor_kbps(w, h):
             return w, h, round(video_kbps)
     w, h = sizes[-1]
     smallest = (_floor_kbps(w, h) + SIZE_AUDIO_KBPS) * length_s / SIZE_MARGIN / 8000
-    raise RecipeError(f"exports.size_cap_mb: {cap_mb:g} MB is out of reach for a "
-                      f"{length_s:.1f}s video even at {w}x{h}; the smallest reachable size "
-                      f"is {math.ceil(smallest * 100) / 100:.2f} MB (cut the video shorter)")
+    raise RecipeError(
+        f"exports.size_cap_mb: {cap_mb:g} MB is out of reach for a "
+        f"{length_s:.1f}s video even at {w}x{h}; the smallest reachable size "
+        f"is {math.ceil(smallest * 100) / 100:.2f} MB (cut the video shorter)"
+    )
 
 
 def _floor_kbps(width, height):
@@ -504,28 +551,77 @@ def _floor_kbps(width, height):
 def size_cap_cmds(src, out, width, height, video_kbps, passlog, scale):
     """The two x264 passes at ``video_kbps`` (scaled to width x height when ``scale``)."""
     vf = ["-vf", f"scale={width}:{height}"] if scale else []
-    common = ["ffmpeg", "-v", "error", "-y", "-i", str(src), *vf, "-c:v", "libx264",
-              "-preset", "medium", "-b:v", f"{video_kbps}k", "-pix_fmt", "yuv420p",
-              "-passlogfile", str(passlog)]
-    return [[*common, "-pass", "1", "-an", "-f", "null", "-"],
-            [*common, "-pass", "2", "-c:a", "aac", "-b:a", f"{SIZE_AUDIO_KBPS}k",
-             "-map_metadata", "-1", "-movflags", "+faststart", str(out)]]
+    common = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        str(src),
+        *vf,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-b:v",
+        f"{video_kbps}k",
+        "-pix_fmt",
+        "yuv420p",
+        "-passlogfile",
+        str(passlog),
+    ]
+    return [
+        [*common, "-pass", "1", "-an", "-f", "null", "-"],
+        [
+            *common,
+            "-pass",
+            "2",
+            "-c:a",
+            "aac",
+            "-b:a",
+            f"{SIZE_AUDIO_KBPS}k",
+            "-map_metadata",
+            "-1",
+            "-movflags",
+            "+faststart",
+            str(out),
+        ],
+    ]
 
 
 def gif_cmd(src, out, start_s, end_s, width, fps):
     """A looping GIF of [start_s, end_s] at ``width`` and ``fps``, with its own palette."""
-    graph = (f"[0:v]fps={fps},scale={width}:-1:flags=lanczos,split[a][b];"
-             f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5")
-    return ["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", f"{end_s - start_s:.3f}",
-            "-i", str(src), "-filter_complex", graph, "-loop", "0", str(out)]
+    graph = (
+        f"[0:v]fps={fps},scale={width}:-1:flags=lanczos,split[a][b];"
+        f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5"
+    )
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-t",
+        f"{end_s - start_s:.3f}",
+        "-i",
+        str(src),
+        "-filter_complex",
+        graph,
+        "-loop",
+        "0",
+        str(out),
+    ]
 
 
 def gif_warning(size_bytes):
     """A warning when a GIF is over GIF_WARN_MB, else None."""
     if size_bytes <= GIF_WARN_MB * 1e6:
         return None
-    return (f"the GIF is {size_bytes / 1e6:.1f} MB (over {GIF_WARN_MB} MB); shorten its range "
-            f"or lower its width or fps")
+    return (
+        f"the GIF is {size_bytes / 1e6:.1f} MB (over {GIF_WARN_MB} MB); shorten its range "
+        f"or lower its width or fps"
+    )
 
 
 def contact_sheet_svg(frames, columns, width, height):
@@ -537,19 +633,43 @@ def contact_sheet_svg(frames, columns, width, height):
     parts = []
     for index, (href, time_s) in enumerate(frames):
         x, y = pad + (index % columns) * cell_w, pad + (index // columns) * cell_h
-        parts.append(f'<image x="{x}" y="{y}" width="{width}" height="{height}" href="{href}"/>'
-                     f'<text x="{x + 4}" y="{y + height + label_h * 0.8:.0f}" '
-                     f'font-family="Helvetica, Arial, sans-serif" font-size="{label_h * 0.8:.0f}" '
-                     f'fill="white">{time_s:.2f}s</text>')
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{pad + columns * cell_w}" '
-            f'height="{pad + rows * cell_h}"><rect width="100%" height="100%" fill="#202020"/>'
-            f'{"".join(parts)}</svg>')
+        parts.append(
+            f'<image x="{x}" y="{y}" width="{width}" height="{height}" href="{href}"/>'
+            f'<text x="{x + 4}" y="{y + height + label_h * 0.8:.0f}" '
+            f'font-family="Helvetica, Arial, sans-serif" font-size="{label_h * 0.8:.0f}" '
+            f'fill="white">{time_s:.2f}s</text>'
+        )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{pad + columns * cell_w}" '
+        f'height="{pad + rows * cell_h}"><rect width="100%" height="100%" fill="#202020"/>'
+        f"{''.join(parts)}</svg>"
+    )
 
 
 def _encode(src, graph, out):
-    return ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-filter_complex", graph,
-            "-map", "[v]", "-map", "[a]", "-r", str(FPS), *X264, *AAC,
-            "-map_metadata", "-1", "-movflags", "+faststart", str(out)]
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        str(src),
+        "-filter_complex",
+        graph,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-r",
+        str(FPS),
+        *X264,
+        *AAC,
+        "-map_metadata",
+        "-1",
+        "-movflags",
+        "+faststart",
+        str(out),
+    ]
 
 
 def _fade(start, end):
@@ -577,8 +697,12 @@ def parse_srt(text):
             match = re.match(rf"\s*{_SRT_TIME}\s*-->\s*{_SRT_TIME}", line)
             if match:
                 h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
-                cues.append(Cue((h1 * 3600 + m1 * 60 + s1) + ms1 / 1000,
-                                (h2 * 3600 + m2 * 60 + s2) + ms2 / 1000,
-                                "\n".join(lines[index + 1:])))
+                cues.append(
+                    Cue(
+                        (h1 * 3600 + m1 * 60 + s1) + ms1 / 1000,
+                        (h2 * 3600 + m2 * 60 + s2) + ms2 / 1000,
+                        "\n".join(lines[index + 1 :]),
+                    )
+                )
                 break
     return tuple(cues)

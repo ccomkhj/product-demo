@@ -191,15 +191,24 @@ def test_contact_sheet_export_is_written_with_its_frames(tmp_path):
 
 @needs_ffmpeg
 def test_size_cap_gif_and_poster_exports_are_written_within_their_limits(tmp_path):
-    demo = make_demo(tmp_path, {"speed": 2.0, "exports": {
-        "size_cap_mb": 0.2,
-        "gif": {"from": 2.0, "to": 6.0, "width": 160, "fps": 10},
-        "poster": {"time": {"scene": "two", "at": "end"}}}})
+    demo = make_demo(
+        tmp_path,
+        {
+            "speed": 2.0,
+            "exports": {
+                "size_cap_mb": 0.2,
+                "gif": {"from": 2.0, "to": 6.0, "width": 160, "fps": 10},
+                "poster": {"time": {"scene": "two", "at": "end"}},
+            },
+        },
+    )
 
     result = run_post(demo / "post.json")
 
     assert result.returncode == 0, result.stderr
-    capped, gif, poster = (demo / f"smoke-post-{name}" for name in ("0.2mb.mp4", "gif.gif", "poster.png"))
+    capped, gif, poster = (
+        demo / f"smoke-post-{name}" for name in ("0.2mb.mp4", "gif.gif", "poster.png")
+    )
     assert f"size_cap\t0.2 MB\t{capped}" in result.stdout
     assert f"gif\t1.000s-3.000s\t160px 10fps\t{gif}" in result.stdout
     assert f"poster\t2.000s\t{poster}" in result.stdout
