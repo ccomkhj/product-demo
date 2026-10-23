@@ -5,7 +5,8 @@ Usage:
         [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--no-burn-subs]
 
 Defaults are relative to the demo spec's folder: raw.mp4, timeline.jsonl,
-audio/ (with <scene-id>.wav), audio/durations.json and final.mp4.
+audio/ (with <scene-id>.wav), audio/durations.json and <slug>.mp4, where <slug>
+is the folder's name.
 
 Next to FINAL it also writes FINAL's name with .srt (one cue per narration
 sentence) and transcript.md (scene titles + narration). The subtitles are also
@@ -382,7 +383,7 @@ def main(argv=None):
     parser.add_argument("--timeline", type=Path, help="default: <demo>/timeline.jsonl")
     parser.add_argument("--audio-dir", type=Path, help="default: <demo>/audio")
     parser.add_argument("--durations", type=Path, help="default: <audio-dir>/durations.json")
-    parser.add_argument("--out", type=Path, help="default: <demo>/final.mp4")
+    parser.add_argument("--out", type=Path, help="default: <demo>/<slug>.mp4, named after the demo folder")
     parser.add_argument("--burn-subs", action=argparse.BooleanOptionalAction, default=None,
                         help="draw the subtitles into the video (default: when a burn method "
                              "is available; the .srt is always written)")
@@ -390,7 +391,7 @@ def main(argv=None):
 
     demo_dir = args.spec.parent
     audio_dir = args.audio_dir or demo_dir / "audio"
-    out = args.out or demo_dir / "final.mp4"
+    out = args.out or demo_dir / f"{demo_dir.resolve().name}.mp4"
     srt_path, transcript_path = out.with_suffix(".srt"), out.parent / "transcript.md"
     try:
         spec = load_spec(args.spec)

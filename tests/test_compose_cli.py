@@ -94,6 +94,11 @@ def make_media(demo_dir, audio):
                "-ac", "1", "-c:a", "pcm_s16le", audio / f"{sid}.wav")
 
 
+def default_out(demo_dir):
+    """compose.py names its video after the demo folder (the slug)."""
+    return demo_dir / f"{demo_dir.name}.mp4"
+
+
 def run_compose(*args):
     return subprocess.run(
         [sys.executable, str(COMPOSE), *map(str, args)], capture_output=True, text=True,
@@ -116,7 +121,9 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     result = run_compose(tmp_path / "demo.json")
 
     assert result.returncode == 0, result.stderr
-    final = tmp_path / "final.mp4"
+    # Outputs are named after the demo folder (its slug); transcript.md keeps its name.
+    final = tmp_path / f"{tmp_path.name}.mp4"
+    assert not (tmp_path / "final.mp4").exists()
     info = probe(final)
     kinds = {s["codec_type"]: s for s in info["streams"]}
     assert set(kinds) == {"video", "audio"}
@@ -127,7 +134,7 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     assert float(kinds["audio"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
     assert "burned in" in result.stdout
-    assert (tmp_path / "final.srt").read_text() == EXPECTED_SRT
+    assert (tmp_path / f"{tmp_path.name}.srt").read_text() == EXPECTED_SRT
     transcript = (tmp_path / "transcript.md").read_text()
     assert transcript.startswith("# Smoke\n")
     headings = [line for line in transcript.splitlines() if line.startswith("## ")]
@@ -167,7 +174,7 @@ def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
     assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     assert (tmp_path / "burned.srt").read_text() == EXPECTED_SRT
     # the burned-in subtitle changes the bottom of the frame, not the top
-    bottom, top = bottom_and_top_difference(tmp_path / "final.mp4", tmp_path / "burned.mp4")
+    bottom, top = bottom_and_top_difference(default_out(tmp_path), tmp_path / "burned.mp4")
     assert bottom > 5 * max(top, 1.0)
 
 
@@ -209,7 +216,7 @@ def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phra
     result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
 
     assert result.returncode == 0, result.stderr
-    final = tmp_path / "final.mp4"
+    final = default_out(tmp_path)
     assert float(probe(final)["format"]["duration"]) == pytest.approx(8.0, abs=0.1)
     # held from the end of the first motion (~2.5 s) until the phrase at 4 s, then moving
     assert frame_difference(final, 2.9, 3.8) < 1.0
@@ -254,7 +261,7 @@ def test_compose_lines_the_timeline_up_on_the_sync_flash(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "sync\tflash at 0.000s" in result.stdout
-    assert float(probe(tmp_path / "final.mp4")["format"]["duration"]) == pytest.approx(
+    assert float(probe(default_out(tmp_path))["format"]["duration"]) == pytest.approx(
         EXPECTED_TOTAL, abs=0.15)
     assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
 
@@ -287,7 +294,7 @@ def test_compose_reports_timeline_errors_without_a_traceback(tmp_path):
     assert "compose: error:" in result.stderr
     assert "rec_start" in result.stderr
     assert "Traceback" not in result.stderr
-    assert not (tmp_path / "final.mp4").exists()
+    assert not default_out(tmp_path).exists()
 
 
 @pytest.mark.parametrize("content, expected", [
@@ -367,7 +374,7 @@ def test_avatar_draws_the_bubble_in_its_corner_for_the_whole_video(tmp_path):
     assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
     assert float(info["format"]["duration"]) == pytest.approx(EXPECTED_TOTAL, abs=0.15)
     for at in (0.5, EXPECTED_TOTAL - 0.3):
-        diff = corner_differences(tmp_path / "final.mp4", tmp_path / "bubble.mp4", at=at)
+        diff = corner_differences(default_out(tmp_path), tmp_path / "bubble.mp4", at=at)
         assert diff["top-right"] > 20
         # elsewhere only the extra encode's noise
         assert max(diff["top-left"], diff["bottom-left"], diff["bottom-right"]) < 3

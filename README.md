@@ -25,6 +25,9 @@ claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
 ```
 
 Needs `ffmpeg` and [`uv`](https://docs.astral.sh/uv/).
+The chrome-devtools MCP server needs the Node version in `chrome-devtools-mcp`'s `engines`
+(`npm view chrome-devtools-mcp engines`, currently `^20.19 || ^22.12 || >=23`); older Node
+fails with `CONNECTION_CLOSED`.
 
 ## Use it
 
@@ -32,7 +35,7 @@ Needs `ffmpeg` and [`uv`](https://docs.astral.sh/uv/).
 /product-demo We shipped CSV export on the Reports page. Show a customer how to export last month's report.
 ```
 
-It asks what's missing, you approve the script, and you get `final.mp4`, `final.srt` and
+It asks what's missing, you approve the script, and you get `<slug>.mp4`, `<slug>.srt` and
 `transcript.md` in `demos/<slug>/`.
 
 Voices, your own voice, presenter bubble, preflight checks and internals: see the
