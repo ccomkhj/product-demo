@@ -140,11 +140,11 @@ It transcribes each scene locally with whisper, compares it with the narration a
 should say it (after `voice.pronounce`), and prints `ok` or `check`, the match ratio and the
 differences per scene; it exits 1 on any `check`. On `check`:
 
-- Extra words at a scene's start or end (leaked reference text): rerun `tts.py`, then the pace
-  and audio checks, at most twice.
+- An extra word anywhere in a scene (leaked reference text at its edges, a stray word inside):
+  rerun `tts.py`, then the pace and audio checks, at most twice.
 - The same word wrong on every run (a mispronunciation): propose a `voice.pronounce` entry.
-- A product name, acronym or number: likely whisper's error, not the voice's. List the scene
-  and words for the user to listen to; don't rerun.
+- A proper noun (product, place or person name), acronym or number: likely whisper's error,
+  not the voice's. List the scene and words for the user to listen to; don't rerun.
 
 ## 5. Record
 
