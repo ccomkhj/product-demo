@@ -5,7 +5,7 @@
   "purpose": "custom",
   "outcome": "Know where Korea.net introduces the country, three facts about Korea, and who its president is",
   "viewport": { "width": 1920, "height": 1080 },
-  "voice": { "backend": "kokoro", "voice": "am_michael" },
+  "voice": { "backend": "qwen3", "profile": "own_voice" },
   "avatar": { "image": "../../assets/avatars/huijo.png", "corner": "bottom-left", "size": 0.2 },
   "scenes": [
     {

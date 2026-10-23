@@ -1,39 +1,39 @@
 1
-00:00:00,000 --> 00:00:08,327
+00:00:00,000 --> 00:00:08,370
 This is Korea dot net, the official website of the Republic of Korea, with news on culture, sports and technology.
 
 2
-00:00:08,327 --> 00:00:11,533
+00:00:08,370 --> 00:00:11,600
 To learn the basics, let's open About Korea.
 
 3
-00:00:11,533 --> 00:00:15,706
+00:00:11,600 --> 00:00:16,106
 The Overview of Korea page covers the country's essentials.
 
 4
-00:00:15,706 --> 00:00:16,767
+00:00:16,106 --> 00:00:17,252
 Here are three.
 
 5
-00:00:16,767 --> 00:00:25,960
+00:00:17,252 --> 00:00:27,180
 First, geography: Korea sits on a peninsula about a thousand kilometers long, and roughly seventy-five percent of it is mountains.
 
 6
-00:00:25,960 --> 00:00:32,467
+00:00:27,180 --> 00:00:34,206
 Second, it is a land of four distinct seasons, from spring cherry blossoms to snowy winters.
 
 7
-00:00:32,467 --> 00:00:41,165
+00:00:34,206 --> 00:00:43,600
 Third, Hangeul, the Korean alphabet, was created in 1443 by King Sejong to make reading and writing accessible to everyone.
 
 8
-00:00:41,167 --> 00:00:43,181
+00:00:43,600 --> 00:00:45,680
 And who leads the country?
 
 9
-00:00:43,181 --> 00:00:48,139
+00:00:45,680 --> 00:00:50,800
 Under Government, the president's page introduces Lee Jae Myung.
 
 10
-00:00:48,139 --> 00:00:53,562
+00:00:50,800 --> 00:00:56,400
 He was elected President of the Republic of Korea on June third, 2025.

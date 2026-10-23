@@ -57,8 +57,13 @@ are known.
 Resolve the voice, presenter, viewport and subtitle policy with **Settings** below before
 writing the spec.
 
-Write `demos/<slug>/demo.json` following `references/demo-spec.md`. Narration is plain
-spoken sentences, pitched at the audience and carrying each page's key message. Describe
+Write `demos/<slug>/demo.json` following `references/demo-spec.md`. Narration is spoken
+sentences, pitched at the audience and carrying each page's key message. Hook the viewer,
+don't introduce the site. Talk to "you" about what they gain, not what the screen shows.
+Vary the rhythm, end on a payoff. Every page needs one dry line that would make a
+colleague smirk. Use understatement, a before/after contrast, a callback, or a deadpan
+true fact. Aim at shared pain, never at anyone. If it needs an exclamation mark, cut it.
+Describe
 targets in words ("the Save button"), because element uids change between runs and are
 resolved while recording. Give every action the narration talks about an `at` phrase
 from its narration: compose starts the action when the voice says it, so the screen shows
@@ -229,7 +234,8 @@ It prints `ready` (own voice registered), `photo` (presenter photo saved) and `d
 | Video size | `viewport` (copy into the spec) | 1920×1080 |
 | Subtitles | `burn_subs` → `--burn-subs` / `--no-burn-subs` on preflight and compose | burned in |
 
-Place a presenter without a saved `corner` in the corner the scenes' actions don't use.
+Place a presenter without a saved `corner` in the corner the scenes' actions don't use
+(keycaps take bottom-right, the Back badge top-left).
 
 **Missing own voice** (no saved `voice`, `ready: false`): ask one AskUserQuestion with two
 options, "Record my voice now (Recommended)" and "Use the free Kokoro voice". On Kokoro,

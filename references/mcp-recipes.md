@@ -22,7 +22,8 @@ Every tool takes `pageId`. Get it once with `list_pages` (the selected page is m
 - **Resolve targets at record time.** Element targets in the demo spec are natural-language
   descriptions. Take a fresh `take_snapshot` on each page and pick the uid that matches the
   description. Never reuse uids from an earlier run or an earlier snapshot of a page that
-  has since changed: uids are not stable.
+  has since changed: uids are not stable. On a long page, pass `filePath: "demos/<slug>/snap.txt"`
+  and grep it (the MCP writes only under the working directory).
 - **Mark a beat before every `at` action.** Compose cuts the scene there and holds the
   screen until the narration reaches the phrase, so a missing or extra beat fails compose.
 - **Use real input.** Clicks, double-clicks and key presses must go through `click`,
