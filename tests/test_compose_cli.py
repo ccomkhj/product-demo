@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from compose import cue_svg, subtitles_burn_cmd
+from compose import action_line, cue_svg, subtitles_burn_cmd
+from edit_plan import ActionTime
 
 COMPOSE = Path(__file__).resolve().parent.parent / "scripts" / "compose.py"
 
@@ -214,6 +215,10 @@ def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phra
     # held from the end of the first motion (~2.5 s) until the phrase at 4 s, then moving
     assert frame_difference(final, 2.9, 3.8) < 1.0
     assert frame_difference(final, 4.1, 4.6) > 5.0
+    # the scene line, then the click: "Second" is 17/33 of 8 s = 4.121 s, on frame 124
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("frozen\thold")
+    assert lines[1] == 'at\tfrozen\t1\t4.133s\t"Second"'
 
 
 def test_first_flash_is_the_first_frame_that_is_magenta_throughout():
@@ -421,3 +426,11 @@ def test_avatar_profile_uses_the_saved_photo(tmp_path, monkeypatch):
     (tmp_path / ".voices" / "config.json").write_text(json.dumps({"own_photo": {"image": "me.png"}}))
     avatar = compose.spec_avatar(spec, tmp_path)
     assert (avatar.image, avatar.corner, avatar.size) == ((tmp_path / ".voices" / "me.png").resolve(), "top-left", 0.3)
+
+
+def test_an_action_line_names_its_time_and_phrase_and_how_late_it_is():
+    on_time = ActionTime("home", 1, 4.1333, "Then", 0.0)
+    late = ActionTime("home", 2, 12.5, "we click", 1.25)
+
+    assert action_line(on_time) == 'at\thome\t1\t4.133s\t"Then"'
+    assert action_line(late) == 'at\thome\t2\t12.500s\t"we click"\tlate 1.250s'
