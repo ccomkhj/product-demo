@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from avatar import CORNERS, Avatar, geometry
+from edit_map import NEEDS_COMPOSE, EditMap, EditMapError, subtitles_burned
 from edit_plan import FPS
 from post_draw import callout_svg, watermark_svg
 from subtitles import Cue
@@ -52,8 +53,6 @@ SUBTITLE_BAND = 0.2  # burned-in subtitles sit in the bottom 20% of the frame
 AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
 CARD_KEYS = {"title": ("title", "subtitle", "logo"), "closing": ("text", "url")}
 CLICK_SOUND = Path(__file__).resolve().parent.parent / "assets" / "click.wav"
-CLICK_TYPES = ("click", "dblclick", "type")  # a type action clicks its field first
-GLIDE_S = 0.6  # the overlay's cursor glide (assets/overlay.js GLIDE_MS): the click lands after it
 CLICK_LEVEL = 0.5
 MUSIC_LEVEL, MUSIC_DUCK, MAX_DUCK, MUSIC_FADE_S = 0.2, 8, 20, 2.0
 YOUTUBE_MIN_CHAPTERS, YOUTUBE_MIN_CHAPTER_S = 3, 10.0
@@ -191,7 +190,7 @@ class PostPlan:
     cues: tuple
     warnings: tuple
     steps: tuple
-    edit_map: dict | None = None
+    edit_map: EditMap | None = None
     cards: dict = field(default_factory=dict)  # resolve_cards: "title" / "closing", if on
     translations: dict = field(default_factory=dict)  # language code -> retimed cues
     chapters: tuple = ()  # Chapter, in order, covering the whole output
@@ -225,7 +224,7 @@ def build_post_plan(
     """Validate ``recipe`` and build the plan; raise RecipeError before any ffmpeg work.
 
     source_s: the source video's length. cues: its subtitle cues (Cue). edit_map: the
-    parsed ``<slug>.editmap.json``, or None (then scene anchors are an error). demo: the
+    EditMap read from ``<slug>.editmap.json``, or None (then scene anchors are an error). demo: the
     card defaults ``{"title", "url"}`` (see ``card_defaults``), or None. frame: the
     source's (width, height), needed by overlays. bubble: the presenter bubble's
     (corner, size) from the demo spec, or None without one. translations: {language
@@ -264,11 +263,6 @@ def build_post_plan(
     return replace(
         plan, steps=steps, warnings=(*plan.warnings, *(w for step in steps for w in step.warnings))
     )
-
-
-def subtitles_burned(edit_map):
-    """Whether the source has burned-in subtitles: yes unless its edit map says not."""
-    return (edit_map or {}).get("subtitles_burned", True)
 
 
 def _retime(cues, time_map):
@@ -330,24 +324,17 @@ def source_time(value, source_s, edit_map, where="time"):
 
 
 def _anchor_s(ref, edit_map, where):
+    _need_edit_map(edit_map, f"{where} is anchored to a scene, which needs the edit map")
+    try:
+        return edit_map.anchor_s(ref["scene"], ref.get("at"))
+    except EditMapError as exc:
+        raise RecipeError(f"{where}: {exc}") from None
+
+
+def _need_edit_map(edit_map, what):
+    """Scene anchors, click sounds and chapters fail alike on a demo without an edit map."""
     if edit_map is None:
-        raise RecipeError(
-            f"{where} is anchored to a scene, which needs the edit map; "
-            f"re-run compose to write <slug>.editmap.json"
-        )
-    scenes = {scene["id"]: scene for scene in edit_map["scenes"]}
-    if ref["scene"] not in scenes:
-        raise RecipeError(f"{where}: unknown scene '{ref['scene']}' (scenes: {', '.join(scenes)})")
-    scene = scenes[ref["scene"]]
-    if "at" not in ref:
-        return scene["start_s"]
-    starts = {action["at"]: action["start_s"] for action in scene["actions"] if "at" in action}
-    if ref["at"] not in starts:
-        known = ", ".join(f"'{phrase}'" for phrase in starts) or "none"
-        raise RecipeError(
-            f"{where}: scene '{scene['id']}' has no action at '{ref['at']}' (at phrases: {known})"
-        )
-    return starts[ref["at"]]
+        raise RecipeError(f"{what}; {NEEDS_COMPOSE}")
 
 
 def _time_map(recipe, source_s, edit_map):
@@ -426,28 +413,20 @@ def _click_sounds_step(recipe, plan):
     if "click_sounds" not in recipe:
         return None
     clicks = recipe["click_sounds"]
-    if plan.edit_map is None:
-        raise RecipeError(
-            "click_sounds needs the click times in the edit map; "
-            "re-run compose to write <slug>.editmap.json"
-        )
+    _need_edit_map(plan.edit_map, "click_sounds needs the click times in the edit map")
     times, unplaced = [], []
-    for scene in plan.edit_map["scenes"]:
-        for action in scene["actions"]:
-            if action["type"] not in CLICK_TYPES:
-                continue
-            what = f"scene '{scene['id']}' action {action['index']}"
-            if "start_s" not in action:
-                unplaced.append(
-                    f"{what} ({action['type']}): start unknown "
-                    f"(not the scene's first action and no at phrase)"
-                )
-                continue
-            click_s = action["start_s"] + GLIDE_S
-            try:
-                times.append(round(plan.time_map.output_s(click_s), 3))
-            except RecipeError:
-                unplaced.append(f"{what} ({action['type']} at {click_s:.3f}s): inside a cut")
+    for scene_id, action, click_s in plan.edit_map.clicks():
+        what = f"scene '{scene_id}' action {action.index}"
+        if click_s is None:
+            unplaced.append(
+                f"{what} ({action.type}): start unknown "
+                f"(not the scene's first action and no at phrase)"
+            )
+            continue
+        try:
+            times.append(round(plan.time_map.output_s(click_s), 3))
+        except RecipeError:
+            unplaced.append(f"{what} ({action.type} at {click_s:.3f}s): inside a cut")
     line = f"click_sounds\t{len(times)} clicks"
     if unplaced:
         line += f"\t{len(unplaced)} unplaceable"
@@ -964,13 +943,9 @@ def _poster_step(recipe, plan):
     if "time" in poster:
         at_s = plan.output_s(poster["time"], "exports.poster.time")
     else:
-        scenes = [
-            *(plan.edit_map or {}).get("scenes", ()),
-            {"start_s": 0.0, "end_s": plan.source_s},
-        ]
-        placed = next(
-            p for scene in scenes if (p := plan.time_map.range(scene["start_s"], scene["end_s"]))
-        )
+        scenes = plan.edit_map.scenes if plan.edit_map else ()
+        spans = [*((scene.start_s, scene.end_s) for scene in scenes), (0.0, plan.source_s)]
+        placed = next(p for span in spans if (p := plan.time_map.range(*span)))
         at_s = (placed[0] + placed[1]) / 2  # the middle of the first scene left after the cards
     at_s = round(min(at_s, plan.total_s - 1 / FPS), 3)
     return Step("poster", f"poster\t{at_s:.3f}s", {"at_s": at_s}, export=True)
@@ -1066,15 +1041,11 @@ def _chapters(recipe, time_map, edit_map, intro):
     when there is a title card. Each ends where the next starts, the last at the end."""
     if not recipe.get("chapters"):
         return ()
-    if edit_map is None:
-        raise RecipeError(
-            "chapters need the scene times from the edit map; "
-            "re-run compose to write <slug>.editmap.json"
-        )
+    _need_edit_map(edit_map, "chapters need the scene times from the edit map")
     starts = [(0.0, "Intro")] if intro else []
-    for scene in edit_map["scenes"]:
-        if placed := time_map.range(scene["start_s"], scene["end_s"]):
-            starts.append((placed[0], scene["title"]))
+    for scene in edit_map.scenes:
+        if placed := time_map.range(scene.start_s, scene.end_s):
+            starts.append((placed[0], scene.title))
     ends = [start for start, _ in starts[1:]] + [time_map.total_s]
     return tuple(
         Chapter(round(start, 3), round(end, 3), title) for (start, title), end in zip(starts, ends)

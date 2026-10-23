@@ -9,7 +9,7 @@ audio/ (with <scene-id>.wav), audio/durations.json and <slug>.mp4, where <slug>
 is the folder's name.
 
 Next to FINAL it also writes FINAL's name with .srt (one cue per narration
-sentence), FINAL's name with .editmap.json (see ``edit_map``) and transcript.md
+sentence), FINAL's name with .editmap.json (see edit_map.py) and transcript.md
 (scene titles + narration). The subtitles are also
 drawn into the video, with libass when ffmpeg has the `subtitles` filter,
 otherwise as cue images rendered by rsvg-convert and overlaid; --no-burn-subs
@@ -27,7 +27,6 @@ run separately by ``run``; ``RawVideo`` is how the edit plan measures the raw vi
 """
 
 import argparse
-import json
 import math
 import shutil
 import sys
@@ -38,6 +37,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 import demo_paths
+import edit_map
 import proc
 from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
@@ -369,38 +369,6 @@ def cue_svg(text, width, height, reserve=0):
     return svg, strip_h
 
 
-def edit_map(spec, plan, burned=False):
-    """The edit map: the total length and, per scene, its id, title, start and end in the
-    final video, plus every action with its index in the scene's actions, its type and,
-    when compose knows it (the scene's first action and each ``at`` action), its start.
-
-    Times are in seconds, rounded to the millisecond like compose's printed lines.
-    ``burned``: the subtitles are drawn into the video (``subtitles_burned``).
-    """
-    at_starts = {(action.scene_id, action.index): action.start_s for action in plan.actions}
-    scenes = []
-    for spec_scene, scene in zip(spec["scenes"], plan.scenes):
-        actions, at_count = [], 0
-        for index, action in enumerate(spec_scene.get("actions", [])):
-            entry = {"index": index, "type": action["type"]}
-            if "at" in action:
-                at_count += 1
-                entry.update(start_s=round(at_starts[(scene.id, at_count)], 3), at=action["at"])
-            elif index == 0:
-                entry["start_s"] = round(scene.offset_s, 3)
-            actions.append(entry)
-        scenes.append(
-            {
-                "id": scene.id,
-                "title": scene.title,
-                "start_s": round(scene.offset_s, 3),
-                "end_s": round(scene.end_s, 3),
-                "actions": actions,
-            }
-        )
-    return {"total_s": round(plan.total_s, 3), "subtitles_burned": burned, "scenes": scenes}
-
-
 def action_line(action):
     """One ``at`` action's line of compose output: where it starts, and how late if it is."""
     late = f"\tlate {action.late_s:.3f}s" if action.late_s else ""
@@ -561,7 +529,6 @@ def main(argv=None):
     audio_dir = args.audio_dir or demo_paths.audio_dir(demo_dir)
     out = args.out or demo_paths.video(demo_dir)
     srt_path, transcript_path = demo_paths.srt(out), out.parent / "transcript.md"
-    edit_map_path = demo_paths.edit_map(out)
     try:
         spec = load_spec(args.spec)
         timeline = load_timeline(args.timeline or demo_paths.timeline(demo_dir))
@@ -600,9 +567,7 @@ def main(argv=None):
                 avatar=avatar,
             )
         srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
-        edit_map_path.write_text(
-            json.dumps(edit_map(spec, plan, method is not None), indent=2) + "\n", encoding="utf-8"
-        )
+        edit_map.write(edit_map.build(spec, plan, method is not None), out)
         transcript_path.write_text(
             transcript_text(spec.get("title") or demo_dir.name, plan), encoding="utf-8"
         )

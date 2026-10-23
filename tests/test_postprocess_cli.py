@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from edit_map import from_dict
+from edit_map import write as write_edit_map
 from test_compose_cli import ffmpeg, needs_ffmpeg, probe
 
 POSTPROCESS = Path(__file__).resolve().parent.parent / "scripts" / "postprocess.py"
@@ -26,28 +28,30 @@ Second scene starts.
 00:00:04,000 --> 00:00:06,000
 The end.
 """
-EDIT_MAP = {
-    "total_s": SOURCE_S,
-    "scenes": [
-        {
-            "id": "one",
-            "title": "One",
-            "start_s": 0.0,
-            "end_s": 2.0,
-            "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
-        },
-        {
-            "id": "two",
-            "title": "Two",
-            "start_s": 2.0,
-            "end_s": 6.0,
-            "actions": [
-                {"index": 0, "type": "click", "start_s": 2.0},
-                {"index": 1, "type": "click", "start_s": 4.0, "at": "end"},
-            ],
-        },
-    ],
-}
+EDIT_MAP = from_dict(
+    {
+        "total_s": SOURCE_S,
+        "scenes": [
+            {
+                "id": "one",
+                "title": "One",
+                "start_s": 0.0,
+                "end_s": 2.0,
+                "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
+            },
+            {
+                "id": "two",
+                "title": "Two",
+                "start_s": 2.0,
+                "end_s": 6.0,
+                "actions": [
+                    {"index": 0, "type": "click", "start_s": 2.0},
+                    {"index": 1, "type": "click", "start_s": 4.0, "at": "end"},
+                ],
+            },
+        ],
+    }
+)
 
 
 def make_demo(tmp_path, recipe, edit_map=True):
@@ -76,7 +80,7 @@ def make_demo(tmp_path, recipe, edit_map=True):
     (demo / "smoke.srt").write_text(SRT)
     (demo / "transcript.md").write_text("# Smoke\n")
     if edit_map:
-        (demo / "smoke.editmap.json").write_text(json.dumps(EDIT_MAP))
+        write_edit_map(EDIT_MAP, demo / "smoke.mp4")
     (demo / "post.json").write_text(json.dumps(recipe))
     return demo
 
@@ -171,6 +175,18 @@ def test_without_an_edit_map_it_asks_to_re_run_compose(tmp_path):
     assert "re-run compose" in ok.stderr
     assert failed.returncode == 1
     assert "re-run compose" in failed.stderr
+
+
+@needs_ffmpeg
+def test_a_malformed_edit_map_is_an_error_not_a_traceback(tmp_path):
+    demo = make_demo(tmp_path, {"trim": {"start": {"scene": "two"}}})
+    (demo / "smoke.editmap.json").write_text('{"total_s": 6.0, "scenes": [{"id": "one"}]}')
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("postprocess: error: edit map ")
+    assert "Traceback" not in result.stderr
 
 
 @needs_ffmpeg

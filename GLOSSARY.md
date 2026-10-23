@@ -64,7 +64,8 @@ How compose matches a scene to its narration: hold, speed-up or pad.
 **Edit map**:
 The `<slug>.editmap.json` compose writes next to the video: total length, each scene's
 start and end, its actions, with the start of those compose knows, and whether the
-subtitles are burned in. Post-processing's only link to the demo's structure.
+subtitles are burned in (missing: burned). Post-processing's only link to the demo's
+structure; owned by `scripts/edit_map.py`.
 
 **Click sound**:
 The short sound post-processing plays one cursor glide after each click, double-click and
