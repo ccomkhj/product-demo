@@ -249,7 +249,7 @@ Tell the user to click Record, read the passage, pause a moment, stop, check the
 matches word-for-word, and click Save my voice. A recording that ends mid-speech is
 rejected, because Qwen would speak the missing words at the start of every scene. The user
 controls microphone permission and recording; never press Record on their behalf. The
-command registers the validated audio and transcript in the ignored `.voices/config.json`
+command registers the validated audio and transcript in `~/.config/product-demo/config.json`
 and exits after save. Use `--no-open` and share the printed URL when opening a browser is
 unavailable. Done when `--status` reports `ready: true`; recheck it after a cancelled or
 failed recording.

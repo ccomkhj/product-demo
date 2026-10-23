@@ -2,10 +2,24 @@
 
 import json
 import math
+import os
 from pathlib import Path
 import platform
+import shutil
 
-PROFILE_CONFIG = Path(__file__).resolve().parents[1] / ".voices" / "config.json"
+# Where the registry lived before it moved to a per-user folder; copied from once.
+LEGACY_DIR = Path(__file__).resolve().parents[1] / ".voices"
+
+
+def profile_config():
+    """The registry of own_voice, own_photo and defaults: ``config.json`` in
+    ``$XDG_CONFIG_HOME/product-demo`` (fallback ``~/.config/product-demo``), outside the
+    plugin folder so it survives updates. The first call copies an old ``.voices`` registry
+    there; the old copy stays."""
+    directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "product-demo"
+    if not directory.exists() and (LEGACY_DIR / "config.json").is_file():
+        shutil.copytree(LEGACY_DIR, directory)
+    return directory / "config.json"
 
 QWEN_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"
 QWEN_REVISION = "1eccf1cb2519b5a4e8a95b5f0544f3303568164f"
@@ -42,7 +56,7 @@ def resolve_voice_config(voice, backend, spec_dir):
         if config["profile"] != "own_voice":
             raise ValueError("voice.profile must be own_voice")
         try:
-            registry = json.loads(PROFILE_CONFIG.read_text())
+            registry = json.loads(profile_config().read_text())
             if not isinstance(registry, dict) or not isinstance(registry.get("own_voice"), dict):
                 raise ValueError("own_voice is not registered")
             saved = dict(registry["own_voice"])
@@ -56,7 +70,7 @@ def resolve_voice_config(voice, backend, spec_dir):
             # Profile paths belong to the registry; per-demo overrides belong to the spec.
             for field in ("reference_audio", "model"):
                 if saved.get(field) and not (field == "model" and saved[field] == QWEN_MODEL):
-                    saved[field] = str((PROFILE_CONFIG.parent / Path(saved[field]).expanduser()).resolve())
+                    saved[field] = str((profile_config().parent / Path(saved[field]).expanduser()).resolve())
             config = {**saved, **config}
         except (OSError, ValueError) as exc:
             raise ValueError(f"own_voice needs setup: {exc}; run scripts/own_voice.py") from exc
@@ -95,12 +109,12 @@ def resolve_voice_config(voice, backend, spec_dir):
 def saved_photo():
     """The registered ``own_photo`` as an absolute path; ValueError when it is missing."""
     try:
-        registry = json.loads(PROFILE_CONFIG.read_text())
+        registry = json.loads(profile_config().read_text())
         entry = registry.get("own_photo") if isinstance(registry, dict) else None
         name = entry.get("image") if isinstance(entry, dict) else None
         if not isinstance(name, str) or not name.strip():
             raise ValueError("own_photo is not registered")
-        photo = (PROFILE_CONFIG.parent / Path(name).expanduser()).resolve()
+        photo = (profile_config().parent / Path(name).expanduser()).resolve()
         if not photo.is_file():
             raise ValueError(f"{photo} is missing")
         return photo

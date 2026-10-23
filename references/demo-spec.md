@@ -49,13 +49,13 @@ local Record / Stop / Preview / Save page. Read the displayed passage, correct t
 transcript if needed, and save. The recording is validated and converted to WAV.
 No recording starts until you click Record and allow microphone access.
 
-The ignored `.voices/config.json` registers `own_voice`; recordings live beside it.
+`~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set) registers `own_voice`; recordings live beside it, so they survive plugin updates. An old `.voices/` registry in the skill folder is copied there once.
 Use `"voice": {"backend": "qwen3", "profile": "own_voice"}` in any demo to reuse it
 without another recording prompt. `profile: own_voice` also selects Qwen when backend
 is omitted; an explicit CLI or spec backend still wins. `--status` reports readiness
 without opening the recorder, and `--no-open` prints the local URL instead of opening it.
 A missing/broken profile requires setup rather than silently selecting another voice.
-Profile paths resolve relative to `.voices/config.json`; per-demo overrides resolve
+Profile paths resolve relative to that `config.json`; per-demo overrides resolve
 relative to the demo spec. Model and language overrides are allowed. To supply a different
 reference in a demo, omit the profile and supply both reference fields explicitly.
 

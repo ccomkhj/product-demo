@@ -48,7 +48,7 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 Asks every setting (voice, own-voice recording, speed, presenter, video size, subtitles,
 and purpose and length if you describe a demo too) and saves the answers as the defaults
 for later `/product-demo` runs. Run it again to change them. The defaults stay in the
-ignored `.voices/config.json`.
+per-user `~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set), so they survive plugin updates.
 
 ### Purposes
 
@@ -105,7 +105,7 @@ To set up your reusable voice, run `uv run python scripts/own_voice.py`. If `own
 already registered and valid, it returns immediately; add `--replace` to record a new one.
 Otherwise a local browser page lets you record and save it. Future demos can use
 `"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.
-The recording and registry stay in the ignored `.voices/` directory.
+The recording and registry stay in `~/.config/product-demo/` (under `$XDG_CONFIG_HOME` when set); an old `.voices/` registry is copied there once.
 
 ## Presenter bubble
 

@@ -13,7 +13,7 @@ settings can't be changed.
 `/product-demo` runs in default mode: it asks no setting questions. The gates stay: missing
 pages, script approval, manual sign-in, and the missing own voice choice from ADR-0008.
 `/product-demo --configure` asks every setting with AskUserQuestion, records the voice if
-chosen, and saves the answers under `defaults` in the ignored `.voices/config.json`. The
+chosen, and saves the answers under `defaults` in the per-user `~/.config/product-demo/config.json`. The
 voice and photo are registered in the same file.
 
 `own_voice.py --status` reports `defaults`, so default mode still needs one call.
