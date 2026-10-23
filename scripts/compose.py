@@ -41,6 +41,7 @@ import proc
 from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
+from subtitles import srt_text
 from tts import SAMPLE_RATE
 from voice_config import saved_photo
 
@@ -104,19 +105,7 @@ def flash_stats_cmd(raw):
 
 
 def count_frames_cmd(path):
-    return [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-count_packets",
-        "-show_entries",
-        "stream=nb_read_packets",
-        "-of",
-        "csv=p=0",
-        str(path),
-    ]
+    return proc.ffprobe_cmd(path, "stream=nb_read_packets", "v", "csv=p=0", ["-count_packets"])
 
 
 def sync_cmd(parts, out):
@@ -340,15 +329,6 @@ def first_flash_s(stats):
 # --- text outputs (pure) -------------------------------------------------------------
 
 
-def srt_text(cues):
-    """Render subtitle cues as a SubRip (.srt) document."""
-    blocks = [
-        f"{n}\n{_srt_time(cue.start_s)} --> {_srt_time(cue.end_s)}\n{cue.text}\n"
-        for n, cue in enumerate(cues, start=1)
-    ]
-    return "\n".join(blocks)
-
-
 def transcript_text(title, plan):
     """Render the narration as Markdown: the demo title, then each scene's title and narration."""
     lines = [f"# {title}", ""]
@@ -424,14 +404,6 @@ def action_line(action):
     """One ``at`` action's line of compose output: where it starts, and how late if it is."""
     late = f"\tlate {action.late_s:.3f}s" if action.late_s else ""
     return f'at\t{action.scene_id}\t{action.index}\t{action.start_s:.3f}s\t"{action.phrase}"{late}'
-
-
-def _srt_time(seconds):
-    ms = max(0, round(seconds * 1000))
-    hours, ms = divmod(ms, 3_600_000)
-    minutes, ms = divmod(ms, 60_000)
-    secs, ms = divmod(ms, 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
 
 
 # --- runner ---------------------------------------------------------------------------

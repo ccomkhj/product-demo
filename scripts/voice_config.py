@@ -7,6 +7,8 @@ import platform
 import shutil
 from pathlib import Path
 
+from proc import ffprobe_cmd
+
 # Where the registry lived before it moved to a per-user folder: an old skill install
 # (`git clone` into ~/.claude/skills, `npx skills add`), then a plugin checkout. The first
 # one holding a config.json is copied from, once.
@@ -17,7 +19,7 @@ LEGACY_DIRS = (
 )
 
 
-def profile_config():
+def registry_path():
     """The registry of own_voice, own_photo and defaults: ``config.json`` in
     ``$XDG_CONFIG_HOME/product-demo`` (fallback ``~/.config/product-demo``), outside the
     plugin folder so it survives updates. The first call copies an old ``.voices`` registry
@@ -89,7 +91,7 @@ def resolve_voice_config(voice, backend, spec_dir):
         if config["profile"] != "own_voice":
             raise ValueError("voice.profile must be own_voice")
         try:
-            registry = json.loads(profile_config().read_text())
+            registry = json.loads(registry_path().read_text())
             if not isinstance(registry, dict) or not isinstance(registry.get("own_voice"), dict):
                 raise ValueError("own_voice is not registered")
             saved = dict(registry["own_voice"])
@@ -104,7 +106,7 @@ def resolve_voice_config(voice, backend, spec_dir):
             for field in ("reference_audio", "model"):
                 if saved.get(field) and not (field == "model" and saved[field] == QWEN_MODEL):
                     saved[field] = str(
-                        (profile_config().parent / Path(saved[field]).expanduser()).resolve()
+                        (registry_path().parent / Path(saved[field]).expanduser()).resolve()
                     )
             config = {**saved, **config}
         except (OSError, ValueError) as exc:
@@ -147,12 +149,12 @@ def resolve_voice_config(voice, backend, spec_dir):
 def saved_photo():
     """The registered ``own_photo`` as an absolute path; ValueError when it is missing."""
     try:
-        registry = json.loads(profile_config().read_text())
+        registry = json.loads(registry_path().read_text())
         entry = registry.get("own_photo") if isinstance(registry, dict) else None
         name = entry.get("image") if isinstance(entry, dict) else None
         if not isinstance(name, str) or not name.strip():
             raise ValueError("own_photo is not registered")
-        photo = (profile_config().parent / Path(name).expanduser()).resolve()
+        photo = (registry_path().parent / Path(name).expanduser()).resolve()
         if not photo.is_file():
             raise ValueError(f"{photo} is missing")
         return photo
@@ -182,20 +184,7 @@ def check_platform(caller="qwen3"):
 
 
 def probe_reference(path, run):
-    output = run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "a:0",
-            "-show_entries",
-            "stream=codec_type:format=duration",
-            "-of",
-            "json",
-            str(path),
-        ]
-    )
+    output = run(ffprobe_cmd(path, "stream=codec_type:format=duration", "a"))
     data = json.loads(output)
     duration = float(data.get("format", {}).get("duration", 0))
     if not data.get("streams") or not math.isfinite(duration) or duration <= 0:

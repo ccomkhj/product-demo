@@ -12,18 +12,19 @@ resolved through the edit map.
 
 Adding an operation: a validator in ``VALIDATORS`` (or ``EXPORT_VALIDATORS``), a step
 builder in its ``STEPS`` slot, its command builder in ``COMMANDS`` (video steps), and a
-runner in postprocess.py.
+runner in postprocess.py. The SVGs it draws (cards, callouts, watermark text, contact
+sheet) live in post_draw.py; .srt reading and writing in subtitles.py.
 """
 
 import math
 import re
-import textwrap
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from xml.sax.saxutils import escape as xml_escape
 
 from avatar import CORNERS, Avatar, geometry
 from edit_plan import FPS
+from post_draw import callout_svg, watermark_svg
+from subtitles import Cue
 
 MIN_SPEED, MAX_SPEED = 0.5, 2.0
 CARD_S, MIN_CARD_S, MAX_CARD_S = 3.0, 1.0, 10.0  # card length: default, range
@@ -42,28 +43,36 @@ SIZE_HEIGHTS = (1080, 720, 540, 360)
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
 AAC = ["-c:a", "aac", "-b:a", "192k"]
 EDGES = ("bottom", "top")
-BAR_COLOR, BAR_THICKNESS = "#4da3ff", 6
+BAR_COLOR, BAR_THICKNESS, MAX_THICKNESS = "#4da3ff", 6, 40
 WATERMARK_SIZE, WATERMARK_OPACITY = 0.06, 0.8  # share of the video's height; 0-1
 MIN_WATERMARK, MAX_WATERMARK = 0.02, 0.3
 CALLOUT_TYPES = ("arrow", "text")
-CALLOUT_COLOR = "#ff3b30"
 CALLOUT_FADE_S = 0.25
-FONT = "Helvetica, Arial, sans-serif"
 SUBTITLE_BAND = 0.2  # burned-in subtitles sit in the bottom 20% of the frame
 AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
+CARD_KEYS = {"title": ("title", "subtitle", "logo"), "closing": ("text", "url")}
+CLICK_SOUND = Path(__file__).resolve().parent.parent / "assets" / "click.wav"
+CLICK_TYPES = ("click", "dblclick", "type")  # a type action clicks its field first
+GLIDE_S = 0.6  # the overlay's cursor glide (assets/overlay.js GLIDE_MS): the click lands after it
+CLICK_LEVEL = 0.5
+MUSIC_LEVEL, MUSIC_DUCK, MAX_DUCK, MUSIC_FADE_S = 0.2, 8, 20, 2.0
+YOUTUBE_MIN_CHAPTERS, YOUTUBE_MIN_CHAPTER_S = 3, 10.0
+# ISO 639-1 -> ISO 639-2/T, the language tag mp4 subtitle tracks carry. A recipe may also
+# give the three-letter code itself.
+ISO639_2 = {
+    "ar": "ara", "bg": "bul", "bn": "ben", "ca": "cat", "cs": "ces", "da": "dan",
+    "de": "deu", "el": "ell", "en": "eng", "es": "spa", "et": "est", "fa": "fas",
+    "fi": "fin", "fr": "fra", "he": "heb", "hi": "hin", "hr": "hrv", "hu": "hun",
+    "id": "ind", "it": "ita", "ja": "jpn", "ko": "kor", "lt": "lit", "lv": "lav",
+    "ms": "msa", "nl": "nld", "no": "nor", "pl": "pol", "pt": "por", "ro": "ron",
+    "ru": "rus", "sk": "slk", "sl": "slv", "sr": "srp", "sv": "swe", "sw": "swa",
+    "ta": "tam", "th": "tha", "tl": "tgl", "tr": "tur", "uk": "ukr", "ur": "urd",
+    "vi": "vie", "zh": "zho",
+}  # fmt: skip
 
 
 class RecipeError(ValueError):
     """Raised when a post recipe is malformed or a time in it cannot be placed."""
-
-
-@dataclass(frozen=True)
-class Cue:
-    """One subtitle cue, in seconds."""
-
-    start_s: float
-    end_s: float
-    text: str
 
 
 @dataclass(frozen=True)
@@ -101,7 +110,7 @@ class Layer:
     """One image overlaid on the video (watermark, callout).
 
     image: the PNG; with ``svg`` set it is the file name the runner renders the SVG to
-    (rsvg-convert, ADR-0001). x, y: ffmpeg overlay expressions. height: scale the image
+    (rsvg-convert, ADR-0010). x, y: ffmpeg overlay expressions. height: scale the image
     to this many pixels. start_s / end_s: its window (None: the whole video), with a
     ``fade_s`` fade in and out.
     """
@@ -376,14 +385,6 @@ def _frame(seconds):
 
 # --- click sounds and music (#20) ------------------------------------------------------
 
-CLICK_SOUND = Path(__file__).resolve().parent.parent / "assets" / "click.wav"
-CLICK_TYPES = ("click", "dblclick", "type")  # a type action clicks its field first
-GLIDE_S = 0.6  # the overlay's cursor glide (assets/overlay.js GLIDE_MS): the click lands after it
-
-
-CLICK_LEVEL = 0.5
-MUSIC_LEVEL, MUSIC_DUCK, MAX_DUCK, MUSIC_FADE_S = 0.2, 8, 20, 2.0
-
 
 def _check_click_sounds(value, where):
     _check_keys(value, where, ("file", "level"))
@@ -464,7 +465,7 @@ def _click_sounds_step(recipe, plan):
 def click_sounds_cmd(src, out, times, sound, level):
     """Mix ``sound`` at ``level`` into the audio at each of ``times``; copy the picture."""
     if not times:
-        return _mix_cmd(src, [], "[0:a]anull[a]", out)
+        return _filter_cmd(src, out, "[0:a]anull[a]", video="0:v")
     count = len(times)
     graph = [f"[1:a]volume={level:.3f},asplit={count}{''.join(f'[c{i}]' for i in range(count))}"]
     graph += [f"[c{i}]adelay={round(t * 1000)}:all=1[d{i}]" for i, t in enumerate(times)]
@@ -472,7 +473,7 @@ def click_sounds_cmd(src, out, times, sound, level):
         f"[0:a]{''.join(f'[d{i}]' for i in range(count))}"
         f"amix=inputs={count + 1}:duration=first:normalize=0[a]"
     )
-    return _mix_cmd(src, ["-i", str(sound)], ";".join(graph), out)
+    return _filter_cmd(src, out, ";".join(graph), ["-i", str(sound)], video="0:v")
 
 
 def _music_step(recipe, plan):
@@ -509,35 +510,7 @@ def music_cmd(src, out, file, level, duck, fade_out_s, total_s):
         f"[m][key]sidechaincompress=threshold=0.02:ratio={duck:g}:attack=20:release=400[ducked];"
         f"[voice][ducked]amix=inputs=2:duration=first:normalize=0[a]"
     )
-    return _mix_cmd(src, ["-stream_loop", "-1", "-i", str(file)], graph, out)
-
-
-def _mix_cmd(src, inputs, graph, out):
-    """An audio-only step: ``graph`` makes ``[a]`` from ``src`` and ``inputs``; the
-    picture is copied as it is."""
-    return [
-        "ffmpeg",
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        str(src),
-        *inputs,
-        "-filter_complex",
-        graph,
-        "-map",
-        "0:v",
-        "-map",
-        "[a]",
-        "-c:v",
-        "copy",
-        *AAC,
-        "-map_metadata",
-        "-1",
-        "-movflags",
-        "+faststart",
-        str(out),
-    ]
+    return _filter_cmd(src, out, graph, ["-stream_loop", "-1", "-i", str(file)], video="0:v")
 
 
 # --- validation ----------------------------------------------------------------------
@@ -590,9 +563,8 @@ def _check_exports(value, where):
 
 def _check_contact_sheet(value, where):
     _check_keys(value, where, ("columns", "interval_s"))
-    columns = value.get("columns", 4)
-    if isinstance(columns, bool) or not isinstance(columns, int) or not 1 <= columns <= MAX_COLUMNS:
-        raise RecipeError(f"{where}.columns must be a whole number from 1 to {MAX_COLUMNS}")
+    if "columns" in value:
+        _check_int(value["columns"], f"{where}.columns", 1, MAX_COLUMNS)
     if "interval_s" in value and (not _is_number(value["interval_s"]) or value["interval_s"] <= 0):
         raise RecipeError(f"{where}.interval_s must be a positive number of seconds")
 
@@ -603,9 +575,8 @@ def _check_progress_bar(value, where):
         raise RecipeError(f"{where}.edge must be one of {', '.join(EDGES)}")
     if "color" in value:
         _check_color(value["color"], f"{where}.color")
-    thickness = value.get("thickness", BAR_THICKNESS)
-    if isinstance(thickness, bool) or not isinstance(thickness, int) or not 1 <= thickness <= 40:
-        raise RecipeError(f"{where}.thickness must be a whole number of pixels from 1 to 40")
+    if "thickness" in value:
+        _check_int(value["thickness"], f"{where}.thickness", 1, MAX_THICKNESS)
 
 
 def _check_watermark(value, where):
@@ -664,11 +635,14 @@ def _check_point(value, where):
 
 
 def _check_color(value, where):
-    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
-        raise RecipeError(f'{where} must be a colour like "#4da3ff", got {value!r}')
+    """A hex colour: "#rrggbb" or "#rgb"."""
+    if not isinstance(value, str) or not re.fullmatch(r"#(?:[0-9a-fA-F]{3}){1,2}", value):
+        raise RecipeError(f'{where} must be a hex colour like "#4da3ff" or "#fff", got {value!r}')
 
 
-CARD_KEYS = {"title": ("title", "subtitle", "logo"), "closing": ("text", "url")}
+def _check_int(value, where, low, high):
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise RecipeError(f"{where} must be a whole number from {low} to {high}")
 
 
 def _check_cards(value, where):
@@ -686,12 +660,8 @@ def _check_cards(value, where):
                 f"{MAX_CARD_S:g}, got {seconds!r}"
             )
         for key in ("background", "color"):
-            if key in card and not (
-                isinstance(card[key], str) and re.fullmatch(r"#(?:[0-9a-fA-F]{3}){1,2}", card[key])
-            ):
-                raise RecipeError(
-                    f'{here}.{key} must be a hex colour like "#1a2b3c", got {card[key]!r}'
-                )
+            if key in card:
+                _check_color(card[key], f"{here}.{key}")
 
 
 def _check_translations(value, where):
@@ -723,9 +693,8 @@ def _check_gif(value, where):
         if key in value:
             check_time(value[key], f"{where}.{key}")
     for key, low, high in (("width", MIN_GIF_WIDTH, MAX_GIF_WIDTH), ("fps", 1, MAX_GIF_FPS)):
-        number = value.get(key, low)
-        if isinstance(number, bool) or not isinstance(number, int) or not low <= number <= high:
-            raise RecipeError(f"{where}.{key} must be a whole number from {low} to {high}")
+        if key in value:
+            _check_int(value[key], f"{where}.{key}", low, high)
 
 
 def _check_poster(value, where):
@@ -826,21 +795,10 @@ def _watermark_step(recipe, plan):
         layer = Layer(mark["image"], x=x, y=y, height=round(size * height), opacity=opacity)
         line = f"watermark\timage {mark['image']}\t{corner}"
     else:
-        font = round(size * height)
-        right = corner.endswith("right")
-        x = width - margin if right else margin
-        y = height - margin - round(font * 0.25) if corner.startswith("bottom") else margin + font
-        layer = Layer(
-            "watermark.png",
-            _svg(
-                f'<text x="{x}" y="{y}" text-anchor="{"end" if right else "start"}" '
-                f'font-family="{FONT}" font-size="{font}" font-weight="700" fill="white" '
-                f'stroke="black" stroke-width="{max(1, font // 16)}" opacity="{opacity:g}">'
-                f"{xml_escape(mark['text'])}</text>",
-                width,
-                height,
-            ),
+        svg = watermark_svg(
+            mark["text"], corner, round(size * height), opacity, margin, width, height
         )
+        layer = Layer("watermark.png", svg)
         line = f'watermark\ttext "{mark["text"]}"\t{corner}'
     return Step("watermark", line, {"layers": (layer,)})
 
@@ -1090,63 +1048,7 @@ def resolve_cards(cards, demo):
     return resolved
 
 
-def card_svg(card, width, height, logo_href=None):
-    """One card as an SVG: its background and its lines centred, the logo above them."""
-    sizes = {"title": 0.08, "subtitle": 0.045, "text": 0.065, "url": 0.045}
-    blocks = []  # (height, svg drawn from y=0)
-    if logo_href:
-        logo_h = round(height * 0.2)
-        blocks.append(
-            (
-                logo_h,
-                f'<image x="{width * 0.2:.0f}" y="0" width="{width * 0.6:.0f}" '
-                f'height="{logo_h}" href="{xml_escape(logo_href)}" '
-                f'preserveAspectRatio="xMidYMid meet"/>',
-            )
-        )
-    for text, role in card["lines"]:
-        font = max(12, round(height * sizes[role]))
-        rows = textwrap.wrap(text, max(10, int(width * 0.85 / (font * 0.55)))) or [""]
-        weight = ' font-weight="700"' if role in ("title", "text") else ""
-        tspans = "".join(
-            f'<tspan x="{width / 2:.0f}" y="{font + row * font * 1.25:.0f}">'
-            f"{xml_escape(line)}</tspan>"
-            for row, line in enumerate(rows)
-        )
-        blocks.append(
-            (
-                round(font * (1.25 * len(rows) + 0.25)),
-                f'<text font-family="{FONT}" font-size="{font}"'
-                f'{weight} text-anchor="middle" fill="{card["color"]}">{tspans}</text>',
-            )
-        )
-    gap = round(height * 0.03)
-    y = (height - sum(h for h, _ in blocks) - gap * (len(blocks) - 1)) / 2
-    body = []
-    for block_h, block in blocks:
-        body.append(f'<g transform="translate(0 {y:.0f})">{block}</g>')
-        y += block_h + gap
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
-        f'<rect width="100%" height="100%" fill="{card["background"]}"/>{"".join(body)}</svg>'
-    )
-
-
 # --- subtitle tracks and chapters ----------------------------------------------------
-
-# ISO 639-1 -> ISO 639-2/T, the language tag mp4 subtitle tracks carry. A recipe may also
-# give the three-letter code itself.
-ISO639_2 = {
-    "ar": "ara", "bg": "bul", "bn": "ben", "ca": "cat", "cs": "ces", "da": "dan",
-    "de": "deu", "el": "ell", "en": "eng", "es": "spa", "et": "est", "fa": "fas",
-    "fi": "fin", "fr": "fra", "he": "heb", "hi": "hin", "hr": "hrv", "hu": "hun",
-    "id": "ind", "it": "ita", "ja": "jpn", "ko": "kor", "lt": "lit", "lv": "lav",
-    "ms": "msa", "nl": "nld", "no": "nor", "pl": "pol", "pt": "por", "ro": "ron",
-    "ru": "rus", "sk": "slk", "sl": "slv", "sr": "srp", "sv": "swe", "sw": "swa",
-    "ta": "tam", "th": "tha", "tl": "tgl", "tr": "tur", "uk": "ukr", "ur": "urd",
-    "vi": "vie", "zh": "zho",
-}  # fmt: skip
-YOUTUBE_MIN_CHAPTERS, YOUTUBE_MIN_CHAPTER_S = 3, 10.0
 
 
 def _chapters(recipe, time_map, edit_map, intro):
@@ -1265,12 +1167,14 @@ def trim_cmd(src, out, kept, source_s):
         )
         joined += f"[v{index}][a{index}]"
     chain.append(f"{joined}concat=n={len(kept)}:v=1:a=1[v][a]")
-    return _encode(src, ";".join(chain), out)
+    return _filter_cmd(src, out, ";".join(chain))
 
 
 def speed_cmd(src, out, speed):
     """Retime the video by its timestamps and the audio by a tempo change that keeps pitch."""
-    return _encode(src, f"[0:v]setpts=PTS/{speed:.6f},fps={FPS}[v];[0:a]atempo={speed:.6f}[a]", out)
+    return _filter_cmd(
+        src, out, f"[0:v]setpts=PTS/{speed:.6f},fps={FPS}[v];[0:a]atempo={speed:.6f}[a]"
+    )
 
 
 def overlay_cmd(src, out, layers):
@@ -1295,68 +1199,20 @@ def overlay_cmd(src, out, layers):
             f"[{last}][l{index}]overlay=x={layer.x}:y={layer.y}:shortest=1{enable}[{label}]",
         ]
         last = label
-    return _overlay_encode(src, [layer.image for layer in layers], ";".join(chain), out)
-
-
-def callout_svg(callout, width, height):
-    """A callout drawn on a transparent ``width`` x ``height`` SVG: an arrow from ``from``
-    to ``to``, or ``text`` in a box at ``position`` (its top-left corner).
-
-    Returns (svg, box): box is (x0, y0, x1, y1), the pixels it covers.
-    """
-    color = callout.get("color", CALLOUT_COLOR)
-    if callout["type"] == "arrow":
-        (x0, y0), (x1, y1) = callout["from"], callout["to"]
-        stroke = max(4, round(height * 0.008))
-        head = stroke * 5
-        length = math.hypot(x1 - x0, y1 - y0) or 1
-        ux, uy = (x1 - x0) / length, (y1 - y0) / length
-        bx, by = x1 - ux * head, y1 - uy * head  # base of the head
-        wing = [
-            (bx - uy * head * 0.6, by + ux * head * 0.6),
-            (bx + uy * head * 0.6, by - ux * head * 0.6),
-        ]
-        points = " ".join(f"{x:.1f},{y:.1f}" for x, y in [(x1, y1), *wing])
-        body = (
-            f'<g stroke-linecap="round" stroke-linejoin="round">'
-            f'<line x1="{x0}" y1="{y0}" x2="{bx:.1f}" y2="{by:.1f}" stroke="white" '
-            f'stroke-width="{stroke + 4}"/><polygon points="{points}" fill="white" '
-            f'stroke="white" stroke-width="4"/>'
-            f'<line x1="{x0}" y1="{y0}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{color}" '
-            f'stroke-width="{stroke}"/><polygon points="{points}" fill="{color}"/></g>'
-        )
-        box = (min(x0, x1) - head, min(y0, y1) - head, max(x0, x1) + head, max(y0, y1) + head)
-    else:
-        x, y = callout["position"]
-        font = max(14, round(height * 0.035))
-        pad = font // 2
-        box_w, box_h = (
-            round(len(callout["text"]) * font * 0.6) + 2 * pad,
-            round(font * 1.3) + 2 * pad,
-        )
-        body = (
-            f'<rect x="{x}" y="{y}" width="{box_w}" height="{box_h}" rx="6" '
-            f'fill="#141418" fill-opacity="0.88" stroke="{color}" stroke-width="3"/>'
-            f'<text x="{x + pad}" y="{y + pad + font}" font-family="{FONT}" '
-            f'font-size="{font}" font-weight="600" fill="white">'
-            f"{xml_escape(callout['text'])}</text>"
-        )
-        box = (x, y, x + box_w, y + box_h)
-    return _svg(body, width, height), box
-
-
-def _svg(body, width, height):
-    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">{body}</svg>'
+    return _filter_cmd(
+        src, out, ";".join(chain), _looped(layer.image for layer in layers), audio="0:a"
+    )
 
 
 def progress_bar_cmd(src, out, edge, color, thickness, width, demo_s):
     """A ``thickness``-pixel bar along ``edge`` that fills from left to right over ``demo_s``."""
     y = "0" if edge == "top" else "H-h"
+    digits = color[1:] if len(color) == 7 else "".join(c * 2 for c in color[1:])  # ffmpeg: no #rgb
     graph = (
-        f"color=c=0x{color[1:]}:s={width}x{thickness}:r={FPS}:d={demo_s:.3f}[bar];"
+        f"color=c=0x{digits}:s={width}x{thickness}:r={FPS}:d={demo_s:.3f}[bar];"
         f"[0:v][bar]overlay=x='-w+w*t/{demo_s:.3f}':y={y}[v]"
     )
-    return _overlay_encode(src, [], graph, out)
+    return _filter_cmd(src, out, graph, audio="0:a")
 
 
 def cards_cmd(src, out, cards, demo_s, pngs):
@@ -1394,7 +1250,7 @@ def cards_cmd(src, out, cards, demo_s, pngs):
             continue
         parts.append(f"[{name}v][{name}a]")
     chain.append(f"{''.join(parts)}concat=n={len(parts)}:v=1:a=1[v][a]")
-    return _encode(src, ";".join(chain), out, inputs)
+    return _filter_cmd(src, out, ";".join(chain), inputs)
 
 
 def _faded(chain, length, fade_in, fade_out):
@@ -1532,85 +1388,23 @@ def gif_warning(size_bytes):
     )
 
 
-def contact_sheet_svg(frames, columns, width, height):
-    """A grid of frames, each labelled with its time: ``frames`` is [(href, time_s)]."""
-    label_h = max(18, height // 8)
-    pad = 8
-    rows = math.ceil(len(frames) / columns)
-    cell_w, cell_h = width + pad, height + label_h + pad
-    parts = []
-    for index, (href, time_s) in enumerate(frames):
-        x, y = pad + (index % columns) * cell_w, pad + (index // columns) * cell_h
-        parts.append(
-            f'<image x="{x}" y="{y}" width="{width}" height="{height}" href="{href}"/>'
-            f'<text x="{x + 4}" y="{y + height + label_h * 0.8:.0f}" '
-            f'font-family="{FONT}" font-size="{label_h * 0.8:.0f}" '
-            f'fill="white">{time_s:.2f}s</text>'
-        )
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{pad + columns * cell_w}" '
-        f'height="{pad + rows * cell_h}"><rect width="100%" height="100%" fill="#202020"/>'
-        f"{''.join(parts)}</svg>"
-    )
-
-
-def _encode(src, graph, out, inputs=()):
-    """``src`` (input 0), then the extra ``inputs`` arguments, through ``graph`` to ``out``."""
+def _filter_cmd(src, out, graph, inputs=(), video="[v]", audio="[a]"):
+    """``src`` (input 0), then the extra ``inputs`` arguments, through ``graph`` to ``out``.
+    video / audio: the stream each comes from; ``0:v`` / ``0:a`` (``src``'s own) is copied
+    as it is, a ``graph`` label is encoded (x264 at FPS, AAC)."""
+    video_codec = ["-c:v", "copy"] if video == "0:v" else ["-r", str(FPS), *X264]
+    audio_codec = ["-c:a", "copy"] if audio == "0:a" else AAC
     return [
-        "ffmpeg",
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        str(src),
-        *inputs,
-        "-filter_complex",
-        graph,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-r",
-        str(FPS),
-        *X264,
-        *AAC,
-        "-map_metadata",
-        "-1",
-        "-movflags",
-        "+faststart",
-        str(out),
-    ]
+        "ffmpeg", "-v", "error", "-y", "-i", str(src), *inputs,
+        "-filter_complex", graph, "-map", video, "-map", audio, *video_codec, *audio_codec,
+        "-map_metadata", "-1", "-movflags", "+faststart", str(out),
+    ]  # fmt: skip
 
 
-def _overlay_encode(src, images, graph, out):
-    """Encode ``graph`` ([0:v] + one looped input per image -> [v]); copy the audio."""
-    inputs = [
+def _looped(images):
+    """Input arguments that loop each still image as a FPS video."""
+    return [
         arg for image in images for arg in ("-loop", "1", "-framerate", str(FPS), "-i", str(image))
-    ]
-    return [
-        "ffmpeg",
-        "-v",
-        "error",
-        "-y",
-        "-i",
-        str(src),
-        *inputs,
-        "-filter_complex",
-        graph,
-        "-map",
-        "[v]",
-        "-map",
-        "0:a",
-        "-r",
-        str(FPS),
-        *X264,
-        "-c:a",
-        "copy",
-        "-map_metadata",
-        "-1",
-        "-movflags",
-        "+faststart",
-        str(out),
     ]
 
 
@@ -1629,28 +1423,3 @@ COMMANDS = {
     "click_sounds": click_sounds_cmd,
     "music": music_cmd,
 }
-
-
-# --- subtitles -----------------------------------------------------------------------
-
-_SRT_TIME = r"(\d+):(\d\d):(\d\d)[,.](\d{3})"
-
-
-def parse_srt(text):
-    """The cues of a SubRip (.srt) document."""
-    cues = []
-    for block in re.split(r"\n\s*\n", text.strip().replace("\r\n", "\n")):
-        lines = block.splitlines()
-        for index, line in enumerate(lines):
-            match = re.match(rf"\s*{_SRT_TIME}\s*-->\s*{_SRT_TIME}", line)
-            if match:
-                h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, match.groups())
-                cues.append(
-                    Cue(
-                        (h1 * 3600 + m1 * 60 + s1) + ms1 / 1000,
-                        (h2 * 3600 + m2 * 60 + s2) + ms2 / 1000,
-                        "\n".join(lines[index + 1 :]),
-                    )
-                )
-                break
-    return tuple(cues)

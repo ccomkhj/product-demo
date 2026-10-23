@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
+from post_draw import card_svg
 from post_plan import (
     Cue,
     RecipeError,
     build_post_plan,
     card_defaults,
-    card_svg,
     cards_cmd,
     chapters_metadata,
     gif_cmd,
@@ -405,7 +405,7 @@ def test_an_unreachable_size_cap_names_the_smallest_reachable_size():
             r"callouts\[0\].position must be \[x, y\]",
         ),
         ({"progress_bar": {"edge": "left"}}, "progress_bar.edge must be one of bottom, top"),
-        ({"progress_bar": {"color": "blue"}}, "progress_bar.color must be a colour"),
+        ({"progress_bar": {"color": "blue"}}, "progress_bar.color must be a hex colour"),
         ({"progress_bar": {"thickness": 0}}, "progress_bar.thickness must be a whole number"),
     ],
 )

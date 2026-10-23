@@ -290,16 +290,7 @@ def normalise_to_wav(source, target, speed=1):
 
 def measure_seconds(path):
     output = _run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
+        proc.ffprobe_cmd(path, "format=duration", output="default=noprint_wrappers=1:nokey=1")
     ).strip()
     try:
         return float(output)

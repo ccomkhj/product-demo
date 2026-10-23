@@ -23,28 +23,27 @@ from pathlib import Path
 
 import proc
 from avatar import DEFAULT_CORNER, DEFAULT_SIZE
-from compose import srt_text, svg_to_png_cmd
+from compose import svg_to_png_cmd
 from demo_spec import read_json_object
+from post_draw import card_svg, contact_sheet_svg
 from post_plan import (
     RecipeError,
     build_post_plan,
     card_defaults,
-    card_svg,
     cards_cmd,
     chapters_cmd,
     chapters_metadata,
-    contact_sheet_svg,
     frame_cmd,
     gif_cmd,
     gif_warning,
     overlay_cmd,
-    parse_srt,
     size_cap_cmds,
     size_cap_encoding,
     subtitle_tracks_cmd,
     validate_recipe,
     youtube_chapters,
 )
+from subtitles import parse_srt, srt_text
 
 CONTACT_WIDTH = 480  # widest frame in a contact sheet
 
@@ -57,24 +56,9 @@ def run(cmd):
     return proc.run(cmd, error=PostError)
 
 
-def probe_cmd(path):
-    return [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=width,height:format=duration",
-        "-of",
-        "json",
-        str(path),
-    ]
-
-
 def probe(path):
     """(duration_s, width, height) of a video."""
-    info = json.loads(run(probe_cmd(path)))
+    info = json.loads(run(proc.ffprobe_cmd(path, "stream=width,height:format=duration", "v")))
     stream = info["streams"][0]
     return float(info["format"]["duration"]), stream["width"], stream["height"]
 
