@@ -24,7 +24,7 @@ function release() { clearTimeout(timer); stream?.getTracks().forEach(track => t
 record.onclick = async () => {
   record.disabled = true; save.disabled = true; blob = null; preview.hidden = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false}});
     recorder = new MediaRecorder(stream);
     const chunks = [];
     recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
