@@ -38,14 +38,15 @@ jobs:
         with:
           node-version: 24
       - run: npm install -g @anthropic-ai/claude-code
-      - name: Install ffmpeg
+      # librsvg's rsvg-convert burns subtitles where ffmpeg has no libass (Homebrew's).
+      - name: Install ffmpeg and librsvg
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            sudo apt-get update && sudo apt-get install -y ffmpeg
+            sudo apt-get update && sudo apt-get install -y ffmpeg librsvg2-bin
           else
-            brew install ffmpeg
+            brew install ffmpeg librsvg
           fi
-      - run: uv run pytest -rs
+      - run: uv run pytest -ra
 
   links:
     runs-on: ubuntu-latest
