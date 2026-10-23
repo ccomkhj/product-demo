@@ -19,7 +19,8 @@ An action may name an `at` phrase from its scene's narration. While recording, t
 marks a `beat` in the timeline right before each such action. Compose cuts the scene at
 its beats, decimates each segment on its own, and holds each segment's first frame until
 the narration reaches its phrase. A phrase's time comes from the same character share as
-the subtitle cues, so an action starts with the cue that mentions it. A segment that runs
+the subtitle cues, so an action starts where its phrase falls inside the cue that mentions it
+(see the amendment below). A segment that runs
 past the next phrase pushes the rest back. The synced scene is then fitted to its
 narration as a whole (hold, speed-up or pad), as before.
 
@@ -33,3 +34,9 @@ narration as a whole (hold, speed-up or pad), as before.
   shifts the phrase a little. Per-word timestamps from the TTS backend would be more
   precise, but `say` doesn't provide them.
 - The agent must run each beat as its own call, between MCP calls, so that it lands in order.
+
+## Amendment (2026-10-23)
+
+An action does not start with its cue: its time is the phrase's own character-share position
+within the narration, so it often starts seconds after its cue does. Compose prints each `at`
+action's time, and the Sync check in `references/verify.md` grabs frames at that time.

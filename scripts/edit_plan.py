@@ -18,6 +18,9 @@ from narration import Narration
 
 MAX_SPEED = 1.5
 FPS = 30  # the final video's frame rate; every scene is cut on a whole frame
+# An action this far past its phrase is late. Anchors are rounded to whole frames, so up
+# to half a frame of difference is rounding, not lateness.
+LATE_AFTER_S = 0.5 / FPS
 
 
 class PlanError(ValueError):
@@ -127,13 +130,13 @@ class Cue:
 class ActionTime:
     """Where compose places one ``at`` action in the final video.
 
-    n: its place among the scene's ``at`` actions, from 1. start_s: when it starts,
+    index: its place among the scene's ``at`` actions, from 1. start_s: when it starts,
     after the holds and the scene's speed. late_s: how far past its phrase that is,
     when an earlier segment ran long (0 otherwise).
     """
 
     scene_id: str
-    n: int
+    index: int
     start_s: float
     phrase: str
     late_s: float
@@ -178,14 +181,14 @@ class Plan:
         actions = []
         for scene in self.scenes:
             frames = 0
-            for n, segment in enumerate(scene.segments):
+            for index, segment in enumerate(scene.segments):
                 start_s = (frames + segment.lead_frames) / FPS / scene.fit.speed
                 frames += segment.lead_frames + segment.frames
-                if n:
+                if index:
                     late_s = start_s - segment.anchor_s
-                    actions.append(ActionTime(scene.id, n, scene.offset_s + start_s,
+                    actions.append(ActionTime(scene.id, index, scene.offset_s + start_s,
                                               segment.phrase,
-                                              late_s if late_s > 0.5 / FPS else 0.0))
+                                              late_s if late_s > LATE_AFTER_S else 0.0))
         return tuple(actions)
 
 

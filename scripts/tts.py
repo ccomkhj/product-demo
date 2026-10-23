@@ -208,9 +208,8 @@ def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=N
         raise TtsError(str(exc)) from exc
     # Speak from copies, so subtitles, transcript and `at` phrases keep the written spelling.
     # Per demo only: pronunciations belong to the product, not to a saved voice profile.
-    pronounce = (spec.get("voice") or {}).get("pronounce")
     config.pop("pronounce", None)
-    scenes = [{**scene, "narration": spoken(scene["narration"], pronounce)}
+    scenes = [{**scene, "narration": spoken(scene["narration"], spec.get("voice"))}
               for scene in spec["scenes"]]
     out_dir.mkdir(parents=True, exist_ok=True)
     durations = {}

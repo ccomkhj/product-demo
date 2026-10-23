@@ -320,7 +320,7 @@ def test_a_mid_sentence_phrase_is_placed_after_its_cue_starts():
     plan = build_plan(synced_spec(CLICK), synced_timeline(6.0), {"home": 8.0}, video)
 
     (action,) = plan.actions
-    assert (action.scene_id, action.n, action.phrase) == ("home", 1, "click")
+    assert (action.scene_id, action.index, action.phrase) == ("home", 1, "click")
     assert action.start_s == pytest.approx(5.6, abs=1 / 30)
     assert action.start_s > plan.cues[1].start_s + 1
     assert action.late_s == 0
