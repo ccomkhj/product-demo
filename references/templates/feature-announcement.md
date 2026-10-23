@@ -17,7 +17,7 @@ Example outline for CSV export: Reports page → choose the requested reporting 
 export → show the actual completion state → invite the viewer to try their own report.
 Confirm the period selector and completion state exist before writing them as facts.
 
-Write plain, short narration. Avoid invented usage numbers, speed claims, or sales metrics.
+Write short narration. Avoid invented usage numbers, speed claims, or sales metrics.
 Use observed entry states as `prerequisites` and visible results as `expected_outcomes`.
 A button click alone does not prove a download completed. If there is no observable
 completion state, describe what can be verified and ask for missing context.
