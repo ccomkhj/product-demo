@@ -30,8 +30,9 @@ def main(argv=None):
     parser.add_argument("timeline", type=Path, help="timeline.jsonl to append to")
     parser.add_argument("event", choices=("rec_start", *SCENE_EVENTS))
     parser.add_argument("scene", nargs="?", help="scene id (required for start/beat/end)")
-    parser.add_argument("--sync-ms", type=int, metavar="MS",
-                        help="rec_start only: the value __demo.sync() returned")
+    parser.add_argument(
+        "--sync-ms", type=int, metavar="MS", help="rec_start only: the value __demo.sync() returned"
+    )
     args = parser.parse_args(argv)
 
     if args.event == "rec_start":

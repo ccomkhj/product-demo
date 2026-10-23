@@ -12,7 +12,7 @@ REFERENCE = Path(__file__).resolve().parent.parent / "references" / "demo-spec.m
 def worked_example():
     text = REFERENCE.read_text(encoding="utf-8")
     blocks = re.findall(r"```json\n(.*?)```", text, flags=re.DOTALL)
-    blocks = [block for block in blocks if "\"scenes\"" in block]
+    blocks = [block for block in blocks if '"scenes"' in block]
     assert len(blocks) == 1, "expected one complete worked demo spec"
     return json.loads(blocks[0])
 
@@ -26,7 +26,17 @@ def test_worked_example_validates():
 def test_worked_example_uses_every_documented_top_level_field():
     spec = worked_example()
 
-    for field in ("title", "product", "audience", "viewport", "voice", "scenes", "purpose", "outcome", "target_duration_s"):
+    for field in (
+        "title",
+        "product",
+        "audience",
+        "viewport",
+        "voice",
+        "scenes",
+        "purpose",
+        "outcome",
+        "target_duration_s",
+    ):
         assert field in spec, field
 
 

@@ -24,7 +24,9 @@ def test_registry_falls_back_to_dot_config_in_home(tmp_path, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME")
     monkeypatch.setenv("HOME", str(tmp_path))
     save_photo(tmp_path / ".config" / "product-demo")
-    assert voice_config.saved_photo() == (tmp_path / ".config" / "product-demo" / "me.png").resolve()
+    assert (
+        voice_config.saved_photo() == (tmp_path / ".config" / "product-demo" / "me.png").resolve()
+    )
 
 
 def test_old_registry_is_copied_once_and_kept(isolated_config):

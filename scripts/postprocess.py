@@ -23,8 +23,14 @@ from pathlib import Path
 import proc
 from compose import srt_text, svg_to_png_cmd
 from demo_spec import read_json_object
-from post_plan import (RecipeError, build_post_plan, contact_sheet_svg, frame_cmd, parse_srt,
-                       validate_recipe)
+from post_plan import (
+    RecipeError,
+    build_post_plan,
+    contact_sheet_svg,
+    frame_cmd,
+    parse_srt,
+    validate_recipe,
+)
 
 CONTACT_WIDTH = 480  # widest frame in a contact sheet
 
@@ -38,8 +44,18 @@ def run(cmd):
 
 
 def probe_cmd(path):
-    return ["ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)]
+    return [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height:format=duration",
+        "-of",
+        "json",
+        str(path),
+    ]
 
 
 def probe(path):
@@ -50,6 +66,7 @@ def probe(path):
 
 
 # --- runners: one per step op ---------------------------------------------------------
+
 
 def _run_video_step(step, video, out_prefix, work_dir):
     out = work_dir / f"{step.op}.mp4"
@@ -67,12 +84,14 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
         run(frame_cmd(video, at_s, frame_w, png))
         frames.append((png.name, at_s))
     svg = work_dir / "contact.svg"
-    svg.write_text(contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h),
-                   encoding="utf-8")
+    svg.write_text(
+        contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h), encoding="utf-8"
+    )
     out = Path(f"{out_prefix}-contact.png")
     if not shutil.which("rsvg-convert"):
-        raise PostError("the contact sheet needs rsvg-convert for its frame times "
-                        "(`brew install librsvg`)")
+        raise PostError(
+            "the contact sheet needs rsvg-convert for its frame times (`brew install librsvg`)"
+        )
     run(svg_to_png_cmd(svg, out))
     return out
 
@@ -82,15 +101,10 @@ RUNNERS = {
     "trim": _run_video_step,
     "speed": _run_video_step,
     # watermark, callouts, progress_bar (#18)
-
     # cards (#19)
-
     # subtitle_tracks, chapters (#21)
-
     # click_sounds, music (#20)
-
     # size_cap, gif, poster (#22)
-
     "contact_sheet": _run_contact_sheet,
 }
 
@@ -158,10 +172,13 @@ def _plan(recipe, demo_dir, slug):
         edit_map = read_json_object(edit_map_path, "edit map", PostError)
     else:
         edit_map = None
-        warnings.append(f"no edit map ({edit_map_path.name}), so scene-anchored times are "
-                        f"unavailable; re-run compose to write it")
-    plan = build_post_plan(recipe, probe(source)[0], parse_srt(srt.read_text(encoding="utf-8")),
-                           edit_map)
+        warnings.append(
+            f"no edit map ({edit_map_path.name}), so scene-anchored times are "
+            f"unavailable; re-run compose to write it"
+        )
+    plan = build_post_plan(
+        recipe, probe(source)[0], parse_srt(srt.read_text(encoding="utf-8")), edit_map
+    )
     return plan, source, [*warnings, *plan.warnings]
 
 
