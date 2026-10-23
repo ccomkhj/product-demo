@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import math
+import shutil
 import struct
 import subprocess
 import threading
@@ -15,6 +16,11 @@ import pytest
 import own_voice
 import voice_config
 from demo_spec import choose_backend
+
+# Registering a voice converts the recording with ffmpeg.
+pytestmark = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg/ffprobe"
+)
 
 
 @pytest.fixture

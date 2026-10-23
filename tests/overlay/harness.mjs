@@ -93,19 +93,36 @@ export async function startBrowser() {
     { stdio: "ignore" },
   );
 
+  let ws;
+  async function close() {
+    ws?.close();
+    proc.kill("SIGKILL");
+    server.close();
+    await sleep(200);
+    rmSync(profile, { recursive: true, force: true });
+  }
+
+  // A cold Chrome on a CI runner can take over 10 s to open its DevTools port.
   const portFile = join(profile, "DevToolsActivePort");
-  for (let i = 0; i < 100 && !existsSync(portFile); i++) await sleep(100);
-  const port = readFileSync(portFile, "utf8").split("\n")[0];
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const pageTarget = targets.find((t) => t.type === "page");
-  const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
-  await new Promise((r, j) => {
-    ws.addEventListener("open", r, { once: true });
-    ws.addEventListener("error", j, { once: true });
-  });
-  const cdp = new Cdp(ws);
-  await cdp.send("Page.enable");
-  await cdp.send("Runtime.enable");
+  for (let i = 0; i < 300 && !existsSync(portFile); i++) await sleep(100);
+  let cdp;
+  try {
+    const port = readFileSync(portFile, "utf8").split("\n")[0];
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    const pageTarget = targets.find((t) => t.type === "page");
+    ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
+    await new Promise((r, j) => {
+      ws.addEventListener("open", r, { once: true });
+      ws.addEventListener("error", j, { once: true });
+    });
+    cdp = new Cdp(ws);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+  } catch (err) {
+    // Leave nothing running, or node waits on Chrome and the server instead of exiting.
+    await close();
+    throw err;
+  }
 
   const page = {
     origin,
@@ -128,6 +145,12 @@ export async function startBrowser() {
     inject() {
       return this.eval(OVERLAY_SOURCE);
     },
+    // Stretch the page's timers so slow CDP round trips (CI runners) cannot outlast
+    // short-lived overlay state; their order, and so what the test checks, is unchanged.
+    slowTimers(factor = 10) {
+      return this.eval(`{ const st = setTimeout;
+        window.setTimeout = (f, ms = 0, ...a) => st(f, ms * ${factor}, ...a); }`);
+    },
     async click(x, y, clickCount = 1) {
       for (let n = 1; n <= clickCount; n++) {
         const base = { x, y, button: "left", clickCount: n };
@@ -144,14 +167,6 @@ export async function startBrowser() {
       return cdp.once("Page.loadEventFired");
     },
   };
-
-  async function close() {
-    ws.close();
-    proc.kill("SIGKILL");
-    server.close();
-    await sleep(200);
-    rmSync(profile, { recursive: true, force: true });
-  }
 
   return { page, close };
 }

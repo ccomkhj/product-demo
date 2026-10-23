@@ -1,4 +1,5 @@
 import json
+import shutil
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,10 @@ import qwen3_tts
 import tts
 from demo_spec import choose_backend
 from voice_config import QWEN_MODEL, resolve_voice_config, validate_voice
+
+needs_ffmpeg = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg/ffprobe"
+)
 
 
 @pytest.fixture
@@ -121,6 +126,7 @@ def test_worker_failure_names_scene(tmp_path):
     assert not (tmp_path / "manifest.json").exists()
 
 
+@needs_ffmpeg
 def test_qwen_pipeline_one_worker_and_normalized_output(voice, tmp_path, monkeypatch):
     monkeypatch.setattr(tts, "check_platform", lambda: None)
     original_run = tts._run
@@ -164,6 +170,7 @@ def test_qwen_pipeline_one_worker_and_normalized_output(voice, tmp_path, monkeyp
             assert (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) == (48000, 1, 2)
 
 
+@needs_ffmpeg
 def test_preflight_qwen_is_local(voice, tmp_path, monkeypatch):
     import preflight
 

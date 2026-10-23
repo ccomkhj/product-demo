@@ -241,6 +241,14 @@ def recorder_server(replace=False):
             self.end_headers()
             self.wfile.write(data)
 
+        def discard_body(self):
+            # Closing with the body unread makes macOS reset the connection before the
+            # client reads the response.
+            length = self.headers.get("Content-Length", "0")
+            if length.isdigit() and 0 < int(length) <= MAX_UPLOAD:
+                self.connection.settimeout(15)
+                self.rfile.read(int(length))
+
         def valid_host(self):
             return self.headers.get("Host") == f"127.0.0.1:{self.server.server_port}"
 
@@ -257,6 +265,7 @@ def recorder_server(replace=False):
                 or self.path != f"/{token}/save"
                 or self.headers.get("Origin") != origin
             ):
+                self.discard_body()
                 self.respond(403, json.dumps({"error": "Invalid recording request"}))
                 return
             try:
