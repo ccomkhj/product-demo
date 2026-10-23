@@ -1,5 +1,12 @@
 # product-demo
 
+[![CI](https://github.com/ccomkhj/product-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/ccomkhj/product-demo/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/ccomkhj/product-demo/main/pyproject.toml)](pyproject.toml)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://claude.com/claude-code)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License](https://img.shields.io/github/license/ccomkhj/product-demo)](LICENSE)
+
 **Ship the release. Skip the screen recording.**
 
 A [Claude Code](https://claude.com/claude-code) plugin that turns a sentence about what you
