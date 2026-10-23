@@ -26,6 +26,9 @@ from demo_spec import read_json_object
 from post_plan import (
     RecipeError,
     build_post_plan,
+    card_defaults,
+    card_svg,
+    cards_cmd,
     contact_sheet_svg,
     frame_cmd,
     gif_cmd,
@@ -87,17 +90,42 @@ def _run_contact_sheet(step, video, out_prefix, work_dir):
         png = work_dir / f"contact-{index:03d}.png"
         run(frame_cmd(video, at_s, frame_w, png))
         frames.append((png.name, at_s))
-    svg = work_dir / "contact.svg"
-    svg.write_text(
-        contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h), encoding="utf-8"
-    )
     out = Path(f"{out_prefix}-contact.png")
-    if not shutil.which("rsvg-convert"):
-        raise PostError(
-            "the contact sheet needs rsvg-convert for its frame times (`brew install librsvg`)"
-        )
-    run(svg_to_png_cmd(svg, out))
+    _render_svg(
+        contact_sheet_svg(frames, step.params["columns"], frame_w, frame_h),
+        work_dir / "contact.svg",
+        out,
+        "the contact sheet needs rsvg-convert for its frame times",
+    )
     return out
+
+
+def _run_cards(step, video, out_prefix, work_dir):
+    _, width, height = probe(video)
+    pngs = {}
+    for name, card in step.params["cards"].items():
+        logo = None
+        if "logo" in card:  # rsvg-convert only loads images next to the SVG
+            logo = f"logo-{name}{Path(card['logo']).suffix}"
+            shutil.copyfile(Path(out_prefix).parent / card["logo"], work_dir / logo)
+        pngs[name] = work_dir / f"card-{name}.png"
+        _render_svg(
+            card_svg(card, width, height, logo),
+            work_dir / f"card-{name}.svg",
+            pngs[name],
+            "cards need rsvg-convert for their text",
+        )
+    out = work_dir / "cards.mp4"
+    run(cards_cmd(video, out, pngs=pngs, **step.params))
+    return out
+
+
+def _render_svg(svg, svg_path, png, need):
+    """Write ``svg`` to ``svg_path`` and convert it to ``png``; ``need``: why rsvg-convert."""
+    if not shutil.which("rsvg-convert"):
+        raise PostError(f"{need} (`brew install librsvg`)")
+    svg_path.write_text(svg, encoding="utf-8")
+    run(svg_to_png_cmd(svg_path, png))
 
 
 def _run_size_cap(step, video, out_prefix, work_dir):
@@ -136,7 +164,7 @@ RUNNERS = {
     "trim": _run_video_step,
     "speed": _run_video_step,
     # watermark, callouts, progress_bar (#18)
-    # cards (#19)
+    "cards": _run_cards,
     # subtitle_tracks, chapters (#21)
     # click_sounds, music (#20)
     "size_cap": _run_size_cap,
@@ -213,8 +241,17 @@ def _plan(recipe, demo_dir, slug):
             f"no edit map ({edit_map_path.name}), so scene-anchored times are "
             f"unavailable; re-run compose to write it"
         )
+    logo = recipe.get("cards", {}).get("title", {}).get("logo")
+    if logo and not (demo_dir / logo).is_file():
+        raise PostError(f"cards.title.logo not found: {demo_dir / logo}")
+    spec_path = demo_dir / "demo.json"
+    spec = read_json_object(spec_path, "demo spec", PostError) if spec_path.is_file() else {}
     plan = build_post_plan(
-        recipe, probe(source)[0], parse_srt(srt.read_text(encoding="utf-8")), edit_map
+        recipe,
+        probe(source)[0],
+        parse_srt(srt.read_text(encoding="utf-8")),
+        edit_map,
+        card_defaults(spec, slug),
     )
     return plan, source, [*warnings, *plan.warnings]
 

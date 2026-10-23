@@ -48,7 +48,22 @@ tempo change that keeps the pitch; subtitles are retimed with it.
 
 <!-- watermark, callouts, progress_bar (#18) -->
 
-<!-- cards (#19) -->
+## `cards`
+
+A title card before the demo and/or a closing card after it, each a still with silence
+(music, if any, plays under it). Each card fades in and out, and the demo fades where it
+meets a card. `"cards": {"title": {}, "closing": {}}` is enough: text defaults come from
+`demo.json` in the demo folder. Needs `rsvg-convert`.
+
+- `title`: `title` (default: the demo's title, else the slug), `subtitle`, `logo` (image
+  file in the demo folder, drawn above the title).
+- `closing`: `text` (call to action, no default), `url` (default: the last scene's `url`).
+- Both: `seconds` 1 to 10 (default 3), `background` (default `"#111111"`), `color` (text,
+  default `"#ffffff"`), hex colours.
+
+The title card's length shifts everything after it: subtitles, and every recipe time
+(still given in source seconds) lands that much later in the output. The progress bar
+covers only the demo, not the cards.
 
 <!-- translations, chapters (#21) -->
 
