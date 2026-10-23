@@ -9,8 +9,9 @@ Usage:
 
 Reads audio/<scene-id>.wav next to the spec, as written by tts.py. Prints one line per
 scene: id, ok|check, word-match ratio, and the differences (`+ "heard but not in the
-narration"`, `- "in the narration but not heard"`, `"expected" -> "heard"`). Exits 1 when any scene is `check`. Runs whisper locally on
-Apple Silicon via MLX; the first run downloads the pinned model.
+narration"`, `- "in the narration but not heard"`, `"expected" -> "heard"`). Exits 1
+when any scene is `check`. Runs whisper locally on Apple Silicon via MLX; the first run
+downloads the pinned model.
 """
 
 import argparse

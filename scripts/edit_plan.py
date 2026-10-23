@@ -65,10 +65,10 @@ class Segment:
 
     trim_start/trim_end: its window in raw-video seconds. anchor_s: when, from the
     scene start, the narration reaches its action's ``at`` phrase (0 for the first
-    segment), and phrase that phrase ("" for the first segment). frames: its length
-    once frozen frames are dropped. lead_frames: how long its first frame is held
-    before it plays, so that it starts on its anchor (or right after the previous
-    segment, if that runs late).
+    segment). frames: its length once frozen frames are dropped. lead_frames: how long
+    its first frame is held before it plays, so that it starts on its anchor (or right
+    after the previous segment, if that runs late). phrase: that ``at`` phrase ("" for
+    the first segment).
     """
 
     trim_start: float
@@ -184,11 +184,11 @@ class Plan:
             for index, segment in enumerate(scene.segments):
                 start_s = (frames + segment.lead_frames) / FPS / scene.fit.speed
                 frames += segment.lead_frames + segment.frames
-                if index:
-                    late_s = start_s - segment.anchor_s
-                    actions.append(ActionTime(scene.id, index, scene.offset_s + start_s,
-                                              segment.phrase,
-                                              late_s if late_s > LATE_AFTER_S else 0.0))
+                if not index:
+                    continue  # the first segment starts the scene, not an action
+                late_s = start_s - segment.anchor_s
+                actions.append(ActionTime(scene.id, index, scene.offset_s + start_s,
+                                          segment.phrase, late_s if late_s > LATE_AFTER_S else 0.0))
         return tuple(actions)
 
 
