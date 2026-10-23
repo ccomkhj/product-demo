@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from post_plan import (
@@ -724,3 +726,171 @@ def test_card_svg_draws_its_colours_and_escaped_text():
 def test_invalid_cards_fail_with_clear_messages(cards, message):
     with pytest.raises(RecipeError, match=message):
         plan({"cards": cards}, demo=DEMO)
+
+
+# --- click sounds (#20) ----------------------------------------------------------------
+
+
+def click_step(result):
+    [step] = [step for step in result.steps if step.op == "click_sounds"]
+    return step
+
+
+def test_a_click_sound_plays_one_cursor_glide_after_each_known_click():
+    step = click_step(plan({"click_sounds": {}}))
+
+    # report's clicks start at 4.0 and 7.5; intro's point is not a click
+    assert step.params["times"] == (4.6, 8.1)
+    assert step.line == "click_sounds\t2 clicks"
+
+
+def test_click_times_go_through_the_time_map_and_clicks_in_a_cut_are_dropped_and_listed():
+    result = plan(
+        {
+            "click_sounds": {},
+            "trim": {"start": 2.0, "cuts": [{"from": 4.0, "to": 7.0}]},
+            "speed": 2.0,
+        }
+    )
+
+    # 4.6 is cut; 8.1 -> (8.1 - 2 - 3) / 2
+    assert click_step(result).params["times"] == (1.55,)
+    assert click_step(result).line == "click_sounds\t1 clicks\t1 unplaceable"
+    assert result.warnings == (
+        "no click sound for scene 'report' action 0 (click at 4.600s): inside a cut",
+    )
+
+
+def test_clicks_without_a_known_start_are_listed_as_unplaceable():
+    edit_map = {
+        **EDIT_MAP,
+        "scenes": [
+            {
+                **EDIT_MAP["scenes"][1],
+                "actions": [
+                    *EDIT_MAP["scenes"][1]["actions"],
+                    {"index": 1, "type": "type"},
+                    {"index": 3, "type": "key"},
+                ],
+            }
+        ],
+    }
+
+    result = plan({"click_sounds": {}}, edit_map=edit_map)
+
+    assert click_step(result).params["times"] == (4.6, 8.1)
+    assert result.warnings == (
+        "no click sound for scene 'report' action 1 (type): start unknown "
+        "(not the scene's first action and no at phrase)",
+    )
+
+
+def test_click_sounds_default_to_the_bundled_sound_at_half_level():
+    step = click_step(plan({"click_sounds": {}}))
+
+    assert step.params["sound"].endswith("assets/click.wav")
+    assert Path(step.params["sound"]).is_file()
+    assert step.params["level"] == 0.5
+
+
+def test_click_sounds_mix_a_custom_sound_at_each_click_time_over_the_narration():
+    step = click_step(plan({"click_sounds": {"file": "/demo/tick.wav", "level": 0.3}}))
+
+    args = step.cmd("in.mp4", "out.mp4")
+    assert args[args.index("-i", args.index("in.mp4")) + 1] == "/demo/tick.wav"
+    graph = args[args.index("-filter_complex") + 1]
+    assert graph == (
+        "[1:a]volume=0.300,asplit=2[c0][c1];"
+        "[c0]adelay=4600:all=1[d0];[c1]adelay=8100:all=1[d1];"
+        "[0:a][d0][d1]amix=inputs=3:duration=first:normalize=0[a]"
+    )
+    # the picture is copied, not re-encoded
+    assert args[args.index("-c:v") + 1] == "copy"
+    assert args[-1] == "out.mp4"
+
+
+def test_music_is_looped_to_the_output_length_ducked_under_the_narration_and_faded_out():
+    result = plan(
+        {
+            "music": {"file": "/demo/song.mp3", "level": 0.3, "duck": 10, "fade_out_s": 1.5},
+            "speed": 2.0,
+        },
+        edit_map=None,
+    )
+    [step] = [step for step in result.steps if step.op == "music"]
+
+    assert step.line == "music\tsong.mp3\tlevel 0.30\tduck 10:1\tfade out 1.50s"
+    args = step.cmd("in.mp4", "out.mp4")
+    # looped forever, cut to the 6 s output
+    assert args[args.index("/demo/song.mp3") - 3 : args.index("/demo/song.mp3")] == [
+        "-stream_loop",
+        "-1",
+        "-i",
+    ]
+    graph = args[args.index("-filter_complex") + 1]
+    assert graph == (
+        "[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=0.300,"
+        "atrim=duration=6.000,afade=t=out:st=4.500:d=1.500[m];"
+        "[0:a]asplit=2[voice][key];"
+        "[m][key]sidechaincompress=threshold=0.02:ratio=10:attack=20:release=400[ducked];"
+        "[voice][ducked]amix=inputs=2:duration=first:normalize=0[a]"
+    )
+    assert args[args.index("-c:v") + 1] == "copy"
+
+
+def test_music_defaults():
+    [step] = plan({"music": {"file": "song.mp3"}}).steps
+
+    assert step.params == {
+        "file": "song.mp3",
+        "level": 0.2,
+        "duck": 8,
+        "fade_out_s": 2.0,
+        "total_s": 12.0,
+    }
+
+
+def test_click_sounds_run_before_the_music():
+    result = plan({"music": {"file": "song.mp3"}, "click_sounds": {}})
+
+    assert [step.op for step in result.steps] == ["click_sounds", "music"]
+
+
+@pytest.mark.parametrize(
+    "recipe, message",
+    [
+        ({"click_sounds": {"volume": 1}}, "unknown key 'volume' in click_sounds"),
+        ({"click_sounds": {"level": 1.5}}, r"click_sounds.level must be a number from 0 to 1"),
+        ({"click_sounds": {"file": ""}}, r"click_sounds.file must be an audio file"),
+        ({"music": {}}, r"music.file must be an audio file"),
+        ({"music": {"file": "a.mp3", "level": -0.1}}, r"music.level must be a number from 0 to 1"),
+        ({"music": {"file": "a.mp3", "duck": 0.5}}, r"music.duck must be a number from 1"),
+        ({"music": {"file": "a.mp3", "fade_out_s": -1}}, r"music.fade_out_s must be"),
+        ({"music": {"file": "a.mp3", "fade_out_s": 13}}, r"music.fade_out_s .* longer than the"),
+        ({"music": {"file": "https://example.com/a.mp3"}}, "never downloaded"),
+    ],
+)
+def test_invalid_click_sounds_and_music_fail_with_clear_messages(recipe, message):
+    with pytest.raises(RecipeError, match=message):
+        plan(recipe)
+
+
+def test_click_sounds_without_an_edit_map_ask_to_re_run_compose():
+    with pytest.raises(RecipeError, match="click_sounds.*re-run compose"):
+        plan({"click_sounds": {}}, edit_map=None)
+
+
+def test_music_plays_under_both_cards_and_clicks_shift_with_the_title_card():
+    result = plan(
+        {
+            "cards": {"title": {"seconds": 2}, "closing": {"seconds": 3}},
+            "click_sounds": {},
+            "music": {"file": "song.mp3"},
+        },
+        demo=DEMO,
+    )
+
+    # music runs after the cards, so it covers the title and closing cards too
+    assert [step.op for step in result.steps] == ["cards", "click_sounds", "music"]
+    assert result.steps[2].params["total_s"] == pytest.approx(SOURCE_S + 5)
+    assert result.steps[1].params["times"] == (6.6, 10.1)

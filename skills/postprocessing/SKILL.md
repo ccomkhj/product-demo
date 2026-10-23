@@ -40,6 +40,9 @@ most 480 px wide) by the video's width / the frame's width, or Read one full-siz
 Keep callouts out of the bottom 20% (burned-in subtitles) and away from the presenter
 bubble; the run warns when they overlap.
 
+Music: never download or generate it. Ask the user for an audio file they have the rights
+to, and put its name (next to the recipe) in `music.file`.
+
 ## 3. Run
 
 ```
@@ -54,7 +57,9 @@ trim  removed <s>s in <n> ranges  kept <s>s
 speed  <x>x
 watermark  text "<text>" | image <file>  <corner>
 callouts  <n>  <type> <start>s-<end>s, ...
-progress_bar  <edge> <n>px  0.000s-<s>s
+progress_bar  <edge> <n>px  <start>s-<end>s
+click_sounds  <n> clicks  [<n> unplaceable]
+music  <file>  level <l>  duck <r>:1  fade out <s>s
 contact_sheet  <n> frames  <png path>
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>
@@ -62,7 +67,8 @@ subtitles  <n> cues  <.srt path>
 
 Warnings go to stderr (`postprocess: warning: ...`): a cut that splits a subtitle cue (a cut
 mid-sentence; offer to move it to a cue boundary), a callout over the subtitle band or the
-presenter bubble (offer to move it), or a missing edit map. On
+presenter bubble (offer to move it), a click that gets no sound (list them to the user
+with the reason), or a missing edit map. On
 `postprocess: error: ...` nothing was written: fix the recipe and re-run. A demo without
 `<slug>.editmap.json` cannot use scene anchors; tell the user to re-run compose
 (`/product-demo:run`, re-compose the demo) to get one.

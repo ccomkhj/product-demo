@@ -19,6 +19,7 @@ import math
 import re
 import textwrap
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from avatar import CORNERS, Avatar, geometry
@@ -71,14 +72,15 @@ class Step:
 
     op: its name (a ``STEPS`` key). line: its line of the run output. params: what its
     command builder (``COMMANDS[op]``) or runner needs. export: True when it writes an
-    extra file from the finished video instead of changing the video.
+    extra file from the finished video instead of changing the video. warnings: its
+    warnings, added to the plan's.
     """
 
     op: str
     line: str
     params: dict = field(default_factory=dict)
     export: bool = False
-    warnings: tuple = ()  # merged into the plan's warnings
+    warnings: tuple = ()
 
     def cmd(self, src, out):
         """The ffmpeg arguments of a video step: read ``src``, write ``out``."""
@@ -230,9 +232,7 @@ def build_post_plan(recipe, source_s, cues, edit_map, demo=None, frame=None, bub
     plan = PostPlan(time_map, tuple(retimed), tuple(warnings), (), edit_map, cards, frame, bubble)
     steps = tuple(step for build in STEPS.values() if (step := build(recipe, plan)))
     return replace(
-        plan,
-        steps=steps,
-        warnings=plan.warnings + tuple(w for step in steps for w in step.warnings),
+        plan, steps=steps, warnings=(*plan.warnings, *(w for step in steps for w in step.warnings))
     )
 
 
@@ -304,6 +304,172 @@ def _time_map(recipe, source_s, edit_map):
 
 def _frame(seconds):
     return round(seconds * FPS) / FPS
+
+
+# --- click sounds and music (#20) ------------------------------------------------------
+
+CLICK_SOUND = Path(__file__).resolve().parent.parent / "assets" / "click.wav"
+CLICK_TYPES = ("click", "dblclick", "type")  # a type action clicks its field first
+GLIDE_S = 0.6  # the overlay's cursor glide (assets/overlay.js GLIDE_MS): the click lands after it
+
+
+CLICK_LEVEL = 0.5
+MUSIC_LEVEL, MUSIC_DUCK, MAX_DUCK, MUSIC_FADE_S = 0.2, 8, 20, 2.0
+
+
+def _check_click_sounds(value, where):
+    _check_keys(value, where, ("file", "level"))
+    _check_file(value, where)
+    _check_level(value, where, "level")
+
+
+def _check_music(value, where):
+    _check_keys(value, where, ("file", "level", "duck", "fade_out_s"))
+    _check_file(value, where, required=True)
+    _check_level(value, where, "level")
+    if "duck" in value and (not _is_number(value["duck"]) or not 1 <= value["duck"] <= MAX_DUCK):
+        raise RecipeError(
+            f"{where}.duck must be a number from 1 (no ducking) to {MAX_DUCK}, "
+            f"got {value['duck']!r}"
+        )
+    if "fade_out_s" in value and (not _is_number(value["fade_out_s"]) or value["fade_out_s"] < 0):
+        raise RecipeError(f"{where}.fade_out_s must be a number of seconds (>= 0)")
+
+
+def _check_file(value, where, required=False):
+    name = value.get("file")
+    if (required or "file" in value) and (not isinstance(name, str) or not name.strip()):
+        raise RecipeError(f"{where}.file must be an audio file name next to the recipe")
+    if isinstance(name, str) and re.match(r"[a-z][a-z0-9+.-]*://", name, re.IGNORECASE):
+        raise RecipeError(
+            f"{where}.file must be a local file: audio is never downloaded; "
+            f"use a file you have the rights to"
+        )
+
+
+def _check_level(value, where, key):
+    if key in value and (not _is_number(value[key]) or not 0 <= value[key] <= 1):
+        raise RecipeError(f"{where}.{key} must be a number from 0 to 1, got {value[key]!r}")
+
+
+def _click_sounds_step(recipe, plan):
+    if "click_sounds" not in recipe:
+        return None
+    clicks = recipe["click_sounds"]
+    if plan.edit_map is None:
+        raise RecipeError(
+            "click_sounds needs the click times in the edit map; "
+            "re-run compose to write <slug>.editmap.json"
+        )
+    times, unplaced = [], []
+    for scene in plan.edit_map["scenes"]:
+        for action in scene["actions"]:
+            if action["type"] not in CLICK_TYPES:
+                continue
+            what = f"scene '{scene['id']}' action {action['index']}"
+            if "start_s" not in action:
+                unplaced.append(
+                    f"{what} ({action['type']}): start unknown "
+                    f"(not the scene's first action and no at phrase)"
+                )
+                continue
+            click_s = action["start_s"] + GLIDE_S
+            try:
+                times.append(round(plan.time_map.output_s(click_s), 3))
+            except RecipeError:
+                unplaced.append(f"{what} ({action['type']} at {click_s:.3f}s): inside a cut")
+    line = f"click_sounds\t{len(times)} clicks"
+    if unplaced:
+        line += f"\t{len(unplaced)} unplaceable"
+    return Step(
+        "click_sounds",
+        line,
+        {
+            "times": tuple(times),
+            "sound": clicks.get("file", str(CLICK_SOUND)),
+            "level": clicks.get("level", CLICK_LEVEL),
+        },
+        warnings=tuple(f"no click sound for {item}" for item in unplaced),
+    )
+
+
+def click_sounds_cmd(src, out, times, sound, level):
+    """Mix ``sound`` at ``level`` into the audio at each of ``times``; copy the picture."""
+    if not times:
+        return _mix_cmd(src, [], "[0:a]anull[a]", out)
+    count = len(times)
+    graph = [f"[1:a]volume={level:.3f},asplit={count}{''.join(f'[c{i}]' for i in range(count))}"]
+    graph += [f"[c{i}]adelay={round(t * 1000)}:all=1[d{i}]" for i, t in enumerate(times)]
+    graph.append(
+        f"[0:a]{''.join(f'[d{i}]' for i in range(count))}"
+        f"amix=inputs={count + 1}:duration=first:normalize=0[a]"
+    )
+    return _mix_cmd(src, ["-i", str(sound)], ";".join(graph), out)
+
+
+def _music_step(recipe, plan):
+    if "music" not in recipe:
+        return None
+    music = recipe["music"]
+    params = {
+        "file": music["file"],
+        "level": music.get("level", MUSIC_LEVEL),
+        "duck": music.get("duck", MUSIC_DUCK),
+        "fade_out_s": float(music.get("fade_out_s", MUSIC_FADE_S)),
+        "total_s": round(plan.total_s, 3),
+    }
+    if params["fade_out_s"] > params["total_s"]:
+        raise RecipeError(
+            f"music.fade_out_s {params['fade_out_s']:g} is longer than the "
+            f"{params['total_s']:.3f}s video"
+        )
+    return Step(
+        "music",
+        f"music\t{Path(params['file']).name}\tlevel {params['level']:.2f}\t"
+        f"duck {params['duck']:g}:1\tfade out {params['fade_out_s']:.2f}s",
+        params,
+    )
+
+
+def music_cmd(src, out, file, level, duck, fade_out_s, total_s):
+    """Loop ``file`` to ``total_s`` at ``level``, fade it out, duck it by sidechain
+    compression keyed on the narration (ratio ``duck``), and mix it under; copy the picture."""
+    graph = (
+        f"[1:a]{AUDIO_FORMAT},volume={level:.3f},atrim=duration={total_s:.3f},"
+        f"afade=t=out:st={total_s - fade_out_s:.3f}:d={fade_out_s:.3f}[m];"
+        f"[0:a]asplit=2[voice][key];"
+        f"[m][key]sidechaincompress=threshold=0.02:ratio={duck:g}:attack=20:release=400[ducked];"
+        f"[voice][ducked]amix=inputs=2:duration=first:normalize=0[a]"
+    )
+    return _mix_cmd(src, ["-stream_loop", "-1", "-i", str(file)], graph, out)
+
+
+def _mix_cmd(src, inputs, graph, out):
+    """An audio-only step: ``graph`` makes ``[a]`` from ``src`` and ``inputs``; the
+    picture is copied as it is."""
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        str(src),
+        *inputs,
+        "-filter_complex",
+        graph,
+        "-map",
+        "0:v",
+        "-map",
+        "[a]",
+        "-c:v",
+        "copy",
+        *AAC,
+        "-map_metadata",
+        "-1",
+        "-movflags",
+        "+faststart",
+        str(out),
+    ]
 
 
 # --- validation ----------------------------------------------------------------------
@@ -521,7 +687,8 @@ VALIDATORS = {
     "progress_bar": _check_progress_bar,
     "cards": _check_cards,
     # translations, chapters (#21)
-    # click_sounds, music (#20)
+    "click_sounds": _check_click_sounds,
+    "music": _check_music,
     "exports": _check_exports,
 }
 
@@ -760,7 +927,8 @@ STEPS = {
     "progress_bar": _progress_bar_step,
     "cards": _cards_step,
     # subtitle_tracks, chapters (#21)
-    # click_sounds, music (#20)
+    "click_sounds": _click_sounds_step,
+    "music": _music_step,
     "size_cap": _size_cap_step,
     "gif": _gif_step,
     "poster": _poster_step,
@@ -1225,6 +1393,8 @@ COMMANDS = {
     "callouts": overlay_cmd,
     "progress_bar": progress_bar_cmd,
     "cards": cards_cmd,
+    "click_sounds": click_sounds_cmd,
+    "music": music_cmd,
 }
 
 

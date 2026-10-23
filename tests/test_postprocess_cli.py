@@ -287,6 +287,118 @@ def test_a_missing_card_logo_fails_before_any_output(tmp_path):
     assert not (demo / "smoke-post.mp4").exists()
 
 
+# --- click sounds and music (#20) ------------------------------------------------------
+
+
+def volume_db(path):
+    """(mean, max) volume of a file's audio, in dB."""
+    err = subprocess.run(
+        ["ffmpeg", "-v", "info", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+    return tuple(
+        float(err.split(f"{key}: ")[1].split(" dB")[0]) for key in ("mean_volume", "max_volume")
+    )
+
+
+def add_song(demo):
+    """A 1 s stereo song.wav (shorter than the video, so it loops) in the demo folder."""
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=880:sample_rate=44100:duration=1",
+        "-ac",
+        "2",
+        demo / "song.wav",
+    )
+
+
+@needs_ffmpeg
+def test_click_sounds_and_looped_music_are_mixed_into_the_audio(tmp_path):
+    # the click at 2.6 s is cut; the one at 4.6 s plays; the 1 s song loops under all 5 s
+    demo = make_demo(
+        tmp_path,
+        {
+            "trim": {"cuts": [{"from": 2.5, "to": 3.5}]},
+            "click_sounds": {},
+            "music": {"file": "song.wav", "level": 0.8},
+        },
+    )
+    add_song(demo)
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    assert "click_sounds\t1 clicks\t1 unplaceable" in result.stdout
+    assert "music\tsong.wav\tlevel 0.80\tduck 8:1\tfade out 2.00s" in result.stdout
+    assert (
+        "no click sound for scene 'two' action 0 (click at 2.600s): inside a cut" in result.stderr
+    )
+    info = probe(demo / "smoke-post.mp4")
+    [audio] = [s for s in info["streams"] if s["codec_type"] == "audio"]
+    assert float(audio["duration"]) == pytest.approx(5.0, abs=0.05)
+    # the click peaks well above the narration, which is not made quieter
+    source_mean, source_max = volume_db(demo / "smoke.mp4")
+    post_mean, post_max = volume_db(demo / "smoke-post.mp4")
+    assert post_max > source_max + 3 and post_mean > source_mean - 0.5
+
+
+@needs_ffmpeg
+def test_music_is_ducked_under_the_narration(tmp_path):
+    def mean_db(duck):
+        demo = make_demo(
+            tmp_path / str(duck), {"music": {"file": "song.wav", "level": 0.8, "duck": duck}}
+        )
+        add_song(demo)
+        result = run_post(demo / "post.json")
+        assert result.returncode == 0, result.stderr
+        return volume_db(demo / "smoke-post.mp4")[0]
+
+    # the source's narration (a tone) never stops, so ducked music stays quiet throughout
+    assert mean_db(1) > mean_db(20) + 1
+
+
+@needs_ffmpeg
+def test_a_missing_music_file_fails_before_any_output(tmp_path):
+    demo = make_demo(tmp_path, {"music": {"file": "missing.mp3"}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "music file not found" in result.stderr and "missing.mp3" in result.stderr
+    assert not (demo / "smoke-post.mp4").exists()
+
+
+@needs_ffmpeg
+@needs_rsvg
+def test_music_plays_under_the_title_and_closing_cards(tmp_path):
+    demo = make_demo(
+        tmp_path,
+        {
+            "cards": {"title": {"title": "Smoke", "seconds": 2}, "closing": {"text": "Bye"}},
+            "music": {"file": "song.wav", "level": 0.8, "fade_out_s": 0.5},
+        },
+    )
+    add_song(demo)
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    # 2 s title + 6 s demo + 3 s closing, the music under all of it
+    assert printed_total(result.stdout) == pytest.approx(11.0)
+    info = probe(demo / "smoke-post.mp4")
+    [audio] = [s for s in info["streams"] if s["codec_type"] == "audio"]
+    assert float(audio["duration"]) == pytest.approx(11.0, abs=0.05)
+    assert (audio["sample_rate"], audio["channels"]) == ("48000", 2)
+    # the cards' audio is silent, so only the music can be heard in them
+    title = demo / "title.wav"
+    ffmpeg("-i", demo / "smoke-post.mp4", "-t", "1.5", "-vn", title)
+    assert volume_db(title)[0] > -40
+
+
 def pixel(video, at_s, x, y):
     """(r, g, b) of one pixel of ``video``'s frame at ``at_s``."""
     return tuple(

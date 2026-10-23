@@ -343,6 +343,9 @@ def edit_map(demo_dir):
 @needs_ffmpeg
 def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
     write_beat_demo(tmp_path)
+    spec = json.loads((tmp_path / "demo.json").read_text())
+    spec["scenes"][0]["actions"].append({"type": "dblclick", "target": "c"})
+    (tmp_path / "demo.json").write_text(json.dumps(spec))
 
     result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
 
@@ -359,6 +362,7 @@ def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
                 "actions": [
                     {"index": 0, "type": "point", "start_s": 0.0},
                     {"index": 1, "type": "click", "start_s": 4.133, "at": "Second"},
+                    {"index": 2, "type": "dblclick"},  # start unknown: no start_s
                 ],
             }
         ],
