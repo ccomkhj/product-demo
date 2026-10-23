@@ -33,6 +33,9 @@ adding a cut or a speed never moves other times. Prefer scene anchors
 scene or an action; the scene ids and `at` phrases are in `<slug>.editmap.json`. To find
 source seconds for "the slow page load", make a contact sheet of the source (step 4).
 
+Music: never download or generate it. Ask the user for an audio file they have the rights
+to, and put its name (next to the recipe) in `music.file`.
+
 ## 3. Run
 
 ```
@@ -45,13 +48,16 @@ operation applied, then the totals:
 ```
 trim  removed <s>s in <n> ranges  kept <s>s
 speed  <x>x
+click_sounds  <n> clicks  [<n> unplaceable]
+music  <file>  level <l>  duck <r>:1  fade out <s>s
 contact_sheet  <n> frames  <png path>
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>
 ```
 
 Warnings go to stderr (`postprocess: warning: ...`): a cut that splits a subtitle cue (a cut
-mid-sentence; offer to move it to a cue boundary), or a missing edit map. On
+mid-sentence; offer to move it to a cue boundary), a click that gets no sound (list them
+to the user with the reason), or a missing edit map. On
 `postprocess: error: ...` nothing was written: fix the recipe and re-run. A demo without
 `<slug>.editmap.json` cannot use scene anchors; tell the user to re-run compose
 (`/product-demo:run`, re-compose the demo) to get one.
