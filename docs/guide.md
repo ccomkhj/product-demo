@@ -34,10 +34,21 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 /product-demo We shipped CSV export on the Reports page. Show a customer how to export last month's report.
 ```
 
-1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in.
+1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in. Voice, presenter, video size and subtitles come from your saved settings, with no questions.
 2. **You approve the script** before anything is recorded.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
 4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
+
+### Configure
+
+```
+/product-demo --configure
+```
+
+Asks every setting (voice, own-voice recording, speed, presenter, video size, subtitles,
+and purpose and length if you describe a demo too) and saves the answers as the defaults
+for later `/product-demo` runs. Run it again to change them. The defaults stay in the
+ignored `.voices/config.json`.
 
 ### Purposes
 

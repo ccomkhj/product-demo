@@ -154,7 +154,7 @@ def test_photo_is_saved_beside_the_registry_and_replaced(registry):
     assert not own_voice.status()['photo']
     own_voice.register(recording())
     first = own_voice.register_photo(PHOTO)
-    assert own_voice.status() == {'ready': True, 'profile': 'own_voice', 'photo': True}
+    assert own_voice.status() == {'ready': True, 'profile': 'own_voice', 'photo': True, 'defaults': {}}
     assert voice_config.saved_photo() == first.resolve()
     assert first.parent == registry.parent and first.read_bytes() == PHOTO.read_bytes()
     second = own_voice.register_photo(PHOTO)
@@ -176,3 +176,34 @@ def test_photo_without_a_voice_and_a_non_image_is_rejected(registry, tmp_path):
 def test_missing_photo_needs_setup(registry):
     with pytest.raises(ValueError, match='own_photo needs setup'):
         voice_config.saved_photo()
+
+
+def test_defaults_are_saved_merged_and_reported(registry, capsys):
+    assert own_voice.status()['defaults'] == {}
+    own_voice.register(recording())
+    before = json.loads(registry.read_text())['own_voice']
+    assert own_voice.main(['--save-defaults', json.dumps({
+        'voice': {'backend': 'kokoro', 'voice': 'am_michael', 'speed': 1.1}, 'avatar': False})]) == 0
+    assert json.loads(capsys.readouterr().out)['defaults']['avatar'] is False
+    own_voice.save_defaults({'burn_subs': False, 'viewport': {'width': 1280, 'height': 720}})
+    assert own_voice.status()['defaults'] == {
+        'voice': {'backend': 'kokoro', 'voice': 'am_michael', 'speed': 1.1}, 'avatar': False,
+        'burn_subs': False, 'viewport': {'width': 1280, 'height': 720}}
+    assert json.loads(registry.read_text())['own_voice'] == before
+
+
+@pytest.mark.parametrize('settings', [
+    {'colour': 'red'},
+    {'burn_subs': 'yes'},
+    {'voice': {'backend': 'robot'}},
+    {'voice': {'speed': 3}},
+    {'voice': {'backend': 'qwen3', 'profile': 'own_voice', 'pronounce': {'OOS': 'out of stock'}}},
+    {'avatar': {'profile': 'own_photo', 'corner': 'middle'}},
+    {'viewport': {'width': 0, 'height': 720}},
+    [],
+])
+def test_invalid_defaults_are_not_saved(registry, settings):
+    with pytest.raises(ValueError):
+        own_voice.save_defaults(settings)
+    assert not registry.exists()
+    assert own_voice.main(['--save-defaults', json.dumps(settings)]) == 1

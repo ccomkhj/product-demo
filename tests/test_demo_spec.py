@@ -36,6 +36,13 @@ def test_valid_spec_is_accepted_with_default_viewport():
     assert [s["id"] for s in result["scenes"]] == ["home", "details"]
 
 
+@pytest.mark.parametrize("viewport", [{"width": 1920}, {"width": 0, "height": 1080},
+                                      {"width": 19.2, "height": 1080}, "1920x1080"])
+def test_malformed_viewport_is_rejected(viewport):
+    with pytest.raises(SpecError, match="viewport"):
+        validate_spec(make_spec(viewport=viewport))
+
+
 def test_explicit_viewport_is_kept():
     result = validate_spec(make_spec(viewport={"width": 1080, "height": 1920}))
 

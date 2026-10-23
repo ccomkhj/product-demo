@@ -1,6 +1,7 @@
 ---
 name: product-demo
-description: Narrated product-demo video from a short interview, recorded live in the Chrome DevTools MCP browser with a visible cursor, clicks and key presses, voiced and subtitled. Use when the user wants a product demo, walkthrough or screen-recorded tour of a web app, or wants to re-narrate or re-compose an existing demo folder.
+description: Narrated product-demo video from a short interview, recorded live in the Chrome DevTools MCP browser with a visible cursor, clicks and key presses, voiced and subtitled. Use when the user wants a product demo, walkthrough or screen-recorded tour of a web app, or wants to re-narrate or re-compose an existing demo folder, or to configure its voice, presenter or subtitles.
+argument-hint: "[--configure] <what to demo>"
 ---
 
 # Product demo
@@ -18,6 +19,16 @@ its workspace roots, which is normally that directory. The scripts need Python 3
 (`uv run --project <skill dir>` picks a 3.11+ interpreter from any working directory). `rsvg-convert` (librsvg) is optional: it is needed only for `--burn-subs` on an
 ffmpeg without libass (see `docs/adr/0001-burn-subs-rsvg-fallback.md`).
 
+## Modes
+
+- **Default** (`/product-demo <request>`): ask no setting questions. Settings come from the
+  request, then the saved defaults, then the built-in defaults (see **Settings**). The
+  gates still apply: missing pages or URLs (step 1), script approval (step 2), manual
+  sign-in (step 3), and a missing own voice (see **Settings**).
+- **Configure** (`--configure` in the arguments, or the user asks to change the saved
+  settings): follow `references/configure.md` before step 1. It asks every setting,
+  records the voice if chosen, and saves the answers as the new defaults.
+
 ## 1. Interview
 
 Infer the purpose from the request and read only the selected template:
@@ -30,8 +41,8 @@ Infer the purpose from the request and read only the selected template:
 | Custom | No template required | User's choice |
 
 Explicit user structure and duration override template suggestions (a 60-second
-announcement stays 60 seconds). If purpose is unclear, ask one concise purpose question
-alongside other missing details; allow custom. Do not add a separate template approval.
+announcement stays 60 seconds). If purpose is unclear, use custom with no target. Do not
+add a separate template approval.
 Ask only for missing product, audience, viewer outcome, and ordered pages. For each page:
 the URL, what to do there, the key message, and whether it needs a login. Never invent
 URLs, UI controls, or sales metrics. Pick a short slug. If `demos/<slug>/` already exists,
@@ -43,9 +54,8 @@ are known.
 
 ## 2. Spec and transcript approval
 
-Unless the user explicitly chooses another voice, follow **Local cloned narration** below
-before writing the spec: reuse registered `own_voice`, or complete its one-time recording
-setup if missing. Do not ask which voice to use when `own_voice` is ready.
+Resolve the voice, presenter, viewport and subtitle policy with **Settings** below before
+writing the spec.
 
 Write `demos/<slug>/demo.json` following `references/demo-spec.md`. Narration is plain
 spoken sentences, pitched at the audience and carrying each page's key message. Describe
@@ -166,11 +176,9 @@ It prints one line per scene with its fit (hold, speed-up or pad) and lengths, a
 line per synced action with its start time, then a `total` line, and writes `<slug>.mp4`,
 `<slug>.srt` and `transcript.md` (output format in
 `references/verify.md`). The subtitles are burned into the video too, so the words show
-wherever it plays; pass `--no-burn-subs` only when the user wants a clean video with the
-`.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble in
-its corner and prints an `avatar` line. Add one when `own_voice.py --status` reports
-`photo: true` (see **Local cloned narration**), or when the user asks for a presenter or
-gives a photo (`references/demo-spec.md`).
+wherever it plays; pass `--no-burn-subs` when **Settings** resolved to a clean video with
+the `.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble
+in its corner and prints an `avatar` line.
 
 ## 7. Verify
 
@@ -202,37 +210,46 @@ the actions keep pace with the voice.
 In every case, finish with step 7 and meet its Done-when before handing the new video over:
 new audio or new fitting can break length, overlay effects or sync just like a new take.
 
-## Local cloned narration
+## Settings
 
-For the default personal-voice workflow (or an explicit request for their own voice), first run:
+Run once per demo, before writing the spec:
 
 ```bash
 uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --status
 ```
 
-If it reports `ready: true`, set `"voice": {"backend": "qwen3", "profile": "own_voice"}`
-in the demo spec and proceed. **Do not ask whether they have a recording, ask them to
-record again, or ask permission to reuse the registered voice.** Preserve any explicit
-per-demo model or language preferences. Explicit per-demo reference recordings remain
-supported and do not require registering a profile.
+It prints `ready` (own voice registered), `photo` (presenter photo saved) and `defaults`
+(saved by `references/configure.md`). For each setting, the user's request wins, then
+`defaults`, then the fallback:
 
-If it also reports `photo: true`, add `"avatar": {"profile": "own_photo"}` too, in the
-corner the scenes' actions don't use, unless the user asks for no presenter. When the user
-gives a photo to keep, save it once with `own_voice.py --photo <path>`; it replaces any
-earlier one. When the user asks to record their voice again, run `own_voice.py --replace`;
-the new recording replaces the old one only once it is saved.
+| Setting | `defaults` field | Fallback |
+|---------|------------------|----------|
+| Voice | `voice` (copy into the spec) | `ready: true` → `{"backend": "qwen3", "profile": "own_voice"}`; otherwise the **missing own voice** gate |
+| Presenter | `avatar` (`false` = none; else copy into the spec) | `photo: true` → `{"profile": "own_photo"}`; otherwise none |
+| Video size | `viewport` (copy into the spec) | 1920×1080 |
+| Subtitles | `burn_subs` → `--burn-subs` / `--no-burn-subs` on preflight and compose | burned in |
 
-If the profile is missing or unusable, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`.
-It opens a local recording page and waits. Tell the user to click Record, read the
-passage, pause a moment, stop, check the transcript matches word-for-word, and click Save
-my voice. A recording that ends mid-speech is rejected, because Qwen would speak the
-missing words at the start of every scene. The user controls microphone
-permission and recording; never press Record on their behalf. The command registers the
-validated audio and transcript in the ignored `.voices/config.json` and exits after save.
-Use `--no-open` and share the printed URL when opening a browser is unavailable.
-Wait for successful registration before generating narration; do not fall back to a paid
-backend. Recheck `--status` after a cancelled or failed recording.
+Place a presenter without a saved `corner` in the corner the scenes' actions don't use.
 
-This setup is only needed once. Future demos reuse the registered profile automatically.
-Do not ask for a new reference or a separate voice approval on each demo. The ordinary
-script approval still applies. See `references/demo-spec.md#local-voice-cloning`.
+**Missing own voice** (no saved `voice`, `ready: false`): ask one AskUserQuestion with two
+options, "Record my voice now (Recommended)" and "Use the free Kokoro voice". On Kokoro,
+save the choice so later demos skip the question:
+`own_voice.py --save-defaults '{"voice": {"backend": "kokoro"}}'`. On record, run the
+recorder below.
+
+**Recorder**: `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`
+(`--replace` to record over a registered voice). It opens a local recording page and waits.
+Tell the user to click Record, read the passage, pause a moment, stop, check the transcript
+matches word-for-word, and click Save my voice. A recording that ends mid-speech is
+rejected, because Qwen would speak the missing words at the start of every scene. The user
+controls microphone permission and recording; never press Record on their behalf. The
+command registers the validated audio and transcript in the ignored `.voices/config.json`
+and exits after save. Use `--no-open` and share the printed URL when opening a browser is
+unavailable. Done when `--status` reports `ready: true`; recheck it after a cancelled or
+failed recording.
+
+A registered voice is reused silently on every demo: no reuse, re-record or voice-approval
+question (the script approval still applies). Preserve explicit per-demo model or language
+preferences; explicit per-demo reference recordings need no registered profile. When the
+user gives a photo to keep, save it with `own_voice.py --photo <path>`; it replaces any
+earlier one. See `references/demo-spec.md#local-voice-cloning`.

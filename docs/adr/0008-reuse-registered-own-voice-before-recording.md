@@ -1,6 +1,6 @@
 # 0008: Reuse the registered own_voice before recording
 
-Status: accepted (2026-10-22).
+Status: accepted (2026-10-22), amended by ADR-0009 (2026-10-23).
 
 ## Context
 
@@ -30,3 +30,9 @@ No audio is uploaded to an external service. The local registry and recordings a
 excluded from Git. A broken or absent registration invokes setup rather than paid TTS.
 Basic validation cannot prove that the transcript is correct or that the voice resembles
 the user; the recording page asks the user to check what they said.
+
+## Amendment (2026-10-23)
+
+When no voice is saved and `own_voice` is missing, the agent asks one question: record now,
+or use the free Kokoro voice. Choosing Kokoro saves it as the default voice (ADR-0009), so
+the question is not asked again. Paid backends are still never chosen silently.

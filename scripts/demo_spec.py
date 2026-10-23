@@ -52,7 +52,11 @@ def validate_spec(spec):
         raise SpecError(str(exc)) from exc
     _validate_metadata(result)
     _validate_avatar(result)
-    result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
+    viewport = result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
+    if not isinstance(viewport, dict) or not all(
+            isinstance(viewport.get(side), int) and not isinstance(viewport[side], bool)
+            and viewport[side] > 0 for side in ("width", "height")):
+        raise SpecError("viewport must be { \"width\", \"height\" } in positive whole pixels")
     scenes = result.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise SpecError("demo spec must have a 'scenes' list with at least one scene")
