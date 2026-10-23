@@ -61,6 +61,11 @@ burning in subtitles.
 **Fit**:
 How compose matches a scene to its narration: hold, speed-up or pad.
 
+**Edit map**:
+The `<slug>.editmap.json` compose writes next to the video: total length, each scene's
+start and end, and the actions whose start compose knows. Post-processing's only link to
+the demo's structure.
+
 **Own voice**:
 The user's registered recording, cloned by the qwen3 backend.
 _Avoid_: custom voice
