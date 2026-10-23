@@ -1,6 +1,6 @@
 ---
 name: postprocessing
-description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, title and closing cards, translated subtitle tracks and chapters, click sounds and background music, and export a size-capped mp4, a GIF, a poster frame or a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
+description: Edit a finished product-demo video (speed, trims, cards, watermark, music, subtitles, GIF and more) without touching the original.
 argument-hint: "[demo slug] [what to change]"
 ---
 
