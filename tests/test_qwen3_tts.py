@@ -40,7 +40,8 @@ def test_bad_clone_config(voice, tmp_path, field, value):
         resolve_voice_config({**voice, field: value}, 'qwen3', tmp_path)
 
 
-@pytest.mark.parametrize('voice', [[], 'bad', {'reference_text': 3}])
+@pytest.mark.parametrize('voice', [[], 'bad', {'reference_text': 3}, {'speed': '1.2'},
+                                   {'speed': True}, {'speed': 0.4}, {'speed': 2.5}])
 def test_bad_types(voice):
     with pytest.raises(ValueError):
         validate_voice(voice)

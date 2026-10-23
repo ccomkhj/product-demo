@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Reuse a registered own_voice, or serve a local microphone recorder; --photo saves own_photo."""
+"""Reuse a registered own_voice, or serve a local microphone recorder; --replace records a new
+one, --photo saves own_photo."""
 
 import argparse
 import base64
@@ -56,6 +57,13 @@ def write_registry(data, temporary):
     pending.replace(PROFILE_CONFIG)
 
 
+def remove_replaced(name):
+    """Delete a recording or photo the registry no longer points at, but only inside .voices."""
+    directory = PROFILE_CONFIG.parent
+    if name and (directory / name).resolve().parent == directory.resolve():
+        (directory / name).unlink(missing_ok=True)
+
+
 def register_photo(source):
     """Copy a decodable image beside the registry as own_photo, replacing an earlier one."""
     source = Path(source).expanduser()
@@ -73,14 +81,13 @@ def register_photo(source):
         shutil.copyfile(source, directory / name)
         data['own_photo'] = {'image': name}
         write_registry(data, temporary)
-    if previous and (directory / previous).resolve().parent == directory.resolve():
-        (directory / previous).unlink(missing_ok=True)
+    remove_replaced(previous)
     return directory / name
 
 
-def register(payload):
-    """Validate audio before atomically registering it. Never replace a usable profile."""
-    if status()['ready']:
+def register(payload, replace=False):
+    """Validate audio before atomically registering it. Replace a usable profile only on request."""
+    if status()['ready'] and not replace:
         raise ValueError('own_voice is already registered; the existing recording was kept')
     if not isinstance(payload, dict):
         raise ValueError('Expected a recording and transcript')
@@ -114,16 +121,22 @@ def register(payload):
         rms = math.sqrt(sum(value * value for value in samples) / len(samples))
         if rms < 30:
             raise ValueError('The recording is too quiet. Check your microphone and try again')
+        # A clip cut off mid-word makes qwen3 speak the missing words at the start of every scene.
+        tail = samples[-int(0.3 * 24000):]
+        if math.sqrt(sum(value * value for value in tail) / len(tail)) > 0.25 * rms:
+            raise ValueError('The recording ends mid-speech. Pause a moment after your last word, then press Stop')
         data = read_registry()
+        previous = data.get('own_voice', {}).get('reference_audio') if isinstance(data.get('own_voice'), dict) else None
         name = f'own_voice-{uuid.uuid4().hex}.wav'
         target.replace(directory / name)
         data['own_voice'] = {'backend': 'qwen3', 'model': QWEN_MODEL,
                              'reference_audio': name, 'reference_text': transcript.strip(),
                              'language': 'English'}
         write_registry(data, temporary)
+    remove_replaced(previous)
 
 
-def recorder_server():
+def recorder_server(replace=False):
     token = secrets.token_urlsafe(32)
     page = Path(__file__).with_name('own_voice.html').read_text()
     page = page.replace('__TOKEN__', token).replace('__READING__', READING)
@@ -163,7 +176,7 @@ def recorder_server():
                 if not 0 < length <= MAX_UPLOAD:
                     raise ValueError('Empty or oversized recording')
                 self.connection.settimeout(15)
-                register(json.loads(self.rfile.read(length)))
+                register(json.loads(self.rfile.read(length)), replace)
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 self.respond(400, json.dumps({'error': str(exc)}))
                 return
@@ -179,6 +192,7 @@ def recorder_server():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--status', action='store_true', help='check registration without recording')
+    parser.add_argument('--replace', action='store_true', help='record a new voice over the registered one')
     parser.add_argument('--no-open', action='store_true', help='print the recorder URL without opening it')
     parser.add_argument('--photo', metavar='PATH', help='save this photo as own_photo, the presenter bubble')
     args = parser.parse_args(argv)
@@ -192,9 +206,9 @@ def main(argv=None):
         return 0
     result = status()
     print(json.dumps(result), flush=True)
-    if result['ready'] or args.status:
+    if args.status or (result['ready'] and not args.replace):
         return 0 if result['ready'] else 1
-    server, url = recorder_server()
+    server, url = recorder_server(args.replace)
     print(f'Record your voice: {url}', flush=True)
     if not args.no_open:
         webbrowser.open(url)

@@ -161,7 +161,7 @@ Initial setup downloads dependencies and weights; cached generation works offlin
 Kokoro remains the default when no explicit backend or API key is configured.
 
 To set up your reusable voice, run `uv run python scripts/own_voice.py`. If `own_voice` is
-already registered and valid, it returns immediately. Otherwise a local browser page
-lets you record and save it. Future demos can use
+already registered and valid, it returns immediately; add `--replace` to record a new one.
+Otherwise a local browser page lets you record and save it. Future demos can use
 `"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.
 The recording and registry stay in the ignored `.voices/` directory.
