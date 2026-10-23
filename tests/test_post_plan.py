@@ -1,7 +1,9 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from edit_map import MapAction, from_dict
 from post_draw import card_svg
 from post_plan import (
     Cue,
@@ -18,28 +20,30 @@ from post_plan import (
 )
 
 SOURCE_S = 12.0
-EDIT_MAP = {
-    "total_s": 12.0,
-    "scenes": [
-        {
-            "id": "intro",
-            "title": "Intro",
-            "start_s": 0.0,
-            "end_s": 4.0,
-            "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
-        },
-        {
-            "id": "report",
-            "title": "Report",
-            "start_s": 4.0,
-            "end_s": 12.0,
-            "actions": [
-                {"index": 0, "type": "click", "start_s": 4.0},
-                {"index": 2, "type": "click", "start_s": 7.5, "at": "Export"},
-            ],
-        },
-    ],
-}
+EDIT_MAP = from_dict(
+    {
+        "total_s": 12.0,
+        "scenes": [
+            {
+                "id": "intro",
+                "title": "Intro",
+                "start_s": 0.0,
+                "end_s": 4.0,
+                "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
+            },
+            {
+                "id": "report",
+                "title": "Report",
+                "start_s": 4.0,
+                "end_s": 12.0,
+                "actions": [
+                    {"index": 0, "type": "click", "start_s": 4.0},
+                    {"index": 2, "type": "click", "start_s": 7.5, "at": "Export"},
+                ],
+            },
+        ],
+    }
+)
 CUES = (
     Cue(0.0, 2.0, "Welcome."),
     Cue(2.0, 4.0, "This is the intro."),
@@ -521,11 +525,11 @@ def test_a_callout_over_the_subtitle_band_while_a_cue_shows_warns():
 
 def test_a_callout_over_the_subtitle_band_is_fine_without_burned_in_subtitles():
     low = label(0.5, 1.5, position=(400, 650))
-    clean = {**EDIT_MAP, "subtitles_burned": False}
+    clean = replace(EDIT_MAP, subtitles_burned=False)
 
     assert overlay_plan({"callouts": [low]}, edit_map=clean).warnings == ()
     assert overlay_plan(
-        {"callouts": [low]}, edit_map={**EDIT_MAP, "subtitles_burned": True}
+        {"callouts": [low]}, edit_map=replace(EDIT_MAP, subtitles_burned=True)
     ).warnings
 
 
@@ -744,14 +748,16 @@ def test_invalid_cards_fail_with_clear_messages(cards, message):
 # --- chapters --------------------------------------------------------------------------
 
 LONG_S = 40.0
-LONG_MAP = {
-    "total_s": LONG_S,
-    "subtitles_burned": False,
-    "scenes": [
-        {"id": s, "title": s.title(), "start_s": a, "end_s": b, "actions": []}
-        for s, a, b in (("login", 0.0, 12.0), ("search", 12.0, 25.0), ("export", 25.0, 40.0))
-    ],
-}
+LONG_MAP = from_dict(
+    {
+        "total_s": LONG_S,
+        "subtitles_burned": False,
+        "scenes": [
+            {"id": s, "title": s.title(), "start_s": a, "end_s": b, "actions": []}
+            for s, a, b in (("login", 0.0, 12.0), ("search", 12.0, 25.0), ("export", 25.0, 40.0))
+        ],
+    }
+)
 
 
 def chapters(p):
@@ -886,8 +892,8 @@ def test_subtitle_tracks_cmd_muxes_each_srt_as_a_tagged_text_track():
 
 
 def test_translations_over_burned_in_subtitles_warn():
-    burned = {**EDIT_MAP, "subtitles_burned": True}
-    clean = {**EDIT_MAP, "subtitles_burned": False}
+    burned = replace(EDIT_MAP, subtitles_burned=True)
+    clean = replace(EDIT_MAP, subtitles_burned=False)
     recipe = {"translations": ["ko"]}
 
     for edit_map in (burned, None):
@@ -930,19 +936,9 @@ def test_click_times_go_through_the_time_map_and_clicks_in_a_cut_are_dropped_and
 
 
 def test_clicks_without_a_known_start_are_listed_as_unplaceable():
-    edit_map = {
-        **EDIT_MAP,
-        "scenes": [
-            {
-                **EDIT_MAP["scenes"][1],
-                "actions": [
-                    *EDIT_MAP["scenes"][1]["actions"],
-                    {"index": 1, "type": "type"},
-                    {"index": 3, "type": "key"},
-                ],
-            }
-        ],
-    }
+    report = EDIT_MAP.scene("report")
+    actions = (*report.actions, MapAction(1, "type"), MapAction(3, "key"))
+    edit_map = replace(EDIT_MAP, scenes=(replace(report, actions=actions),))
 
     result = plan({"click_sounds": {}}, edit_map=edit_map)
 

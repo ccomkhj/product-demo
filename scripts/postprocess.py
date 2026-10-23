@@ -26,6 +26,8 @@ import proc
 from avatar import DEFAULT_CORNER, DEFAULT_SIZE
 from compose import svg_to_png_cmd
 from demo_spec import read_json_object
+from edit_map import EditMapError
+from edit_map import read as read_edit_map
 from post_draw import card_svg, contact_sheet_svg
 from post_plan import (
     RecipeError,
@@ -290,13 +292,13 @@ def _plan(recipe, demo_dir):
     if not srt.is_file():
         raise PostError(f"subtitles not found: {srt}; re-run compose to write them")
     warnings = []
-    edit_map_path = demo_paths.edit_map(source)
-    if edit_map_path.is_file():
-        edit_map = read_json_object(edit_map_path, "edit map", PostError)
-    else:
-        edit_map = None
+    try:
+        edit_map = read_edit_map(source)
+    except EditMapError as exc:
+        raise PostError(str(exc)) from None
+    if edit_map is None:
         warnings.append(
-            f"no edit map ({edit_map_path.name}), so scene-anchored times are "
+            f"no edit map ({demo_paths.edit_map(source).name}), so scene-anchored times are "
             f"unavailable; re-run compose to write it"
         )
     images = {
