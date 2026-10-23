@@ -49,13 +49,9 @@ The old `/product-demo` command and the skills.sh install are gone; reinstall as
 It asks what's missing, you approve the script, and you get `<slug>.mp4`, `<slug>.srt` and
 `transcript.md` in `demos/<slug>/`.
 
-Edit a finished demo without touching the original with `/product-demo:postprocessing` ([guide](docs/postprocessing.md)):
-
-```
-/product-demo:postprocessing csv-export: make it 1.25x
-/product-demo:postprocessing csv-export: add a title card
-/product-demo:postprocessing csv-export: add our logo logo.png as a watermark
-```
+To edit a finished demo without touching the original, run `/product-demo:postprocessing`. It
+lists what it can do (speed, trims, title card, watermark, music, subtitles, GIF, ...) and you pick
+in plain words ([guide](docs/postprocessing.md)).
 
 Run `/product-demo:run --configure` once to set up voice (or record your own), presenter and subtitles with the agent.
 
