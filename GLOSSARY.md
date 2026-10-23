@@ -83,6 +83,15 @@ the time map, retimed cues, warnings and the steps in their fixed order.
 Source time to output time: the kept ranges after trim and cuts, then the speed, then a
 title card's offset.
 
+**Subtitle band**:
+The bottom 20% of the frame, where burned-in subtitles sit. A callout there warns only
+when the edit map says the subtitles are burned in (missing: burned).
+
+**Registry**:
+The per-user `~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set)
+holding `own_voice`, `own_photo` and the defaults; an old `.voices/` one is copied there once.
+_Avoid_: profile config
+
 **Own voice**:
 The user's registered recording, cloned by the qwen3 backend.
 _Avoid_: custom voice

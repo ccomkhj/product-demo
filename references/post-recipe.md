@@ -24,7 +24,7 @@ Every time is in the **source** video (`<slug>.mp4`), never the output, either:
   is the scene's start. Ids and phrases are in `<slug>.editmap.json`; anchors need it.
 
 A time before 0, past the end of the source, or (for operations after trim) inside a cut
-is an error.
+is an error. Colours are hex, `"#rrggbb"` or `"#rgb"`.
 
 ## `source`
 
@@ -69,12 +69,13 @@ A list of arrows and text labels, each shown in its own window and faded in and 
 - `{"type": "arrow", "from": [x, y], "to": [x, y], "start": t, "end": t}`: the head is at `to`.
 - `{"type": "text", "text": "Click Export", "position": [x, y], "start": t, "end": t}`:
   a dark box whose top-left corner is at `position`. Keep the text short (one line).
-- `color`: optional, `"#rrggbb"` (default `#ff3b30`): the arrow, or the box's border.
+- `color`: optional, a hex colour (default `#ff3b30`): the arrow, or the box's border.
 
 `start` and `end` are recipe times (scene anchors stay put across cuts and speed). A
 window edge inside a cut is an error. Warns when a callout reaches into the burned-in
-subtitle band (the bottom 20%) while a cue is showing, or covers the presenter bubble
-(from `demo.json`'s `avatar`). Needs `rsvg-convert`.
+subtitle band (the bottom 20%) while a cue is showing (only when the subtitles are burned
+in: the edit map's `subtitles_burned`, missing counts as burned), or covers the presenter
+bubble (from `demo.json`'s `avatar`). Needs `rsvg-convert`.
 
 ## `progress_bar`
 
@@ -82,7 +83,7 @@ A thin bar along an edge that fills from left to right over the demo. It covers 
 demo: overlays are drawn before the cards are added, so cards have no bar.
 
 - `edge`: `bottom` (default) or `top`.
-- `color`: `"#rrggbb"`, default `#4da3ff`.
+- `color`: a hex colour, default `#4da3ff`.
 - `thickness`: pixels, `1` to `40`, default `6`.
 
 ## `cards`
@@ -168,7 +169,8 @@ Extra files made from the finished `<slug>-post.mp4`, each named `<slug>-post…
 at the bitrate that fits the cap (95% of it, audio 64 kb/s). The resolution stays unless
 the bitrate would drop below a readable floor (0.015 bits per pixel per frame); then it
 steps down through 1080, 720, 540 and 360 px high. Below the floor at 360 px the run fails
-with the smallest reachable size: cut the video shorter or raise the cap.
+with the smallest reachable size: cut the video shorter or raise the cap. It keeps every
+subtitle track and the chapters.
 
 ### `gif`
 

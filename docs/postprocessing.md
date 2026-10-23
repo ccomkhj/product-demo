@@ -146,7 +146,8 @@ v2'."
 Arrows and short text labels, each shown for its own window and faded in and out.
 Positions are pixels of the original video, from the top-left; the agent picks them from a
 contact sheet or a full-size frame. The default colour is red (`#ff3b30`). The run warns
-when a callout reaches into the subtitle band (bottom 20%) or covers the presenter bubble.
+when a callout reaches into the subtitle band (bottom 20%) of burned-in subtitles, or
+covers the presenter bubble.
 
 ### Progress bar
 
@@ -253,7 +254,8 @@ sheet."
 
 - **Size cap**: a second mp4 under the cap. It lowers the bitrate first and the resolution
   only when text would get unreadable (1080, 720, 540, 360 px). If the cap is out of reach
-  even at 360 px, the run fails with the smallest size it could reach.
+  even at 360 px, the run fails with the smallest size it could reach. It keeps every
+  subtitle track and the chapters.
 - **GIF**: looping, with its own palette so UI colours do not band. Default the whole
   video, 640 px wide, 10 fps. Over 10 MB warns.
 - **Poster**: one full-size frame. Default the middle of the first scene left after the
@@ -290,15 +292,17 @@ uv run python scripts/postprocess.py demos/csv-export/post.json
 ```
 
 It checks the whole recipe before any encoding. A typo, an unknown key or an out-of-range
-value fails in a second, and nothing is written. It prints one line per operation, then
-the total length and the output paths.
+value fails in a second, and nothing is written. A later failure (an ffmpeg step, a size
+cap it cannot meet) can leave the outputs of the steps before it; fix it and re-run, which
+overwrites them. It prints one line per operation, then the total length and the output
+paths.
 
 ## Warnings
 
 Warnings do not stop the run (`postprocess: warning: ...`). The agent passes them on:
 
 - a cut splits a subtitle (mid-sentence)
-- a callout over the subtitle band or the presenter bubble
+- a callout over the band of burned-in subtitles, or over the presenter bubble
 - a click that gets no sound
 - no edit map, so no scene anchors
 - translated tracks over burned-in subtitles
@@ -310,7 +314,8 @@ Warnings do not stop the run (`postprocess: warning: ...`). The agent passes the
 - `ffmpeg`, and [`uv`](https://docs.astral.sh/uv/) with Python 3.11+, as for
   `/product-demo:run`.
 - `rsvg-convert` (`brew install librsvg`) for anything with drawn text: a text watermark,
-  callouts, cards and the contact sheet. An image watermark does not need it.
+  callouts, cards and the contact sheet (ADR-0010). An image watermark does not need it;
+  without it only a recipe that draws text fails, with the install hint.
 - `<slug>.editmap.json` for scene anchors, chapters and click sounds.
 
 ## Limits

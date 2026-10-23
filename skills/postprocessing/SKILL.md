@@ -1,6 +1,6 @@
 ---
 name: postprocessing
-description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, translated subtitle tracks and chapters, and review it as a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
+description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, title and closing cards, translated subtitle tracks and chapters, click sounds and background music, and export a size-capped mp4, a GIF, a poster frame or a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
 argument-hint: "<demo slug or folder> <what to change>"
 ---
 
@@ -14,7 +14,8 @@ the user can always start over.
 The plugin root is `${CLAUDE_PLUGIN_ROOT}`: scripts and references live there. In the
 reference files, the plugin-root variable (`CLAUDE_PLUGIN_ROOT`) stands for this same
 directory. Run the script through `uv` exactly as written below (it needs Python 3.11+ and
-`ffmpeg`; `rsvg-convert` from librsvg for text: the contact sheet, a text watermark, callouts).
+`ffmpeg`; `rsvg-convert` from librsvg for drawn text: cards, callouts, a text watermark and
+the contact sheet).
 
 ## 1. Find the demo and its recipe
 
@@ -78,10 +79,14 @@ speed  <x>x
 watermark  text "<text>" | image <file>  <corner>
 callouts  <n>  <type> <start>s-<end>s, ...
 progress_bar  <edge> <n>px  <start>s-<end>s
-click_sounds  <n> clicks  [<n> unplaceable]
-music  <file>  level <l>  duck <r>:1  fade out <s>s
+cards  [title <s>s]  [closing <s>s]
 subtitle_tracks  original, <lang>, ...
 chapters  <n> chapters  <YouTube list path>
+click_sounds  <n> clicks  [<n> unplaceable]
+music  <file>  level <l>  duck <r>:1  fade out <s>s
+size_cap  <cap> MB  <mp4 path>
+gif  <start>s-<end>s  <width>px <fps>fps  <gif path>
+poster  <time>s  <png path>
 contact_sheet  <n> frames  <png path>
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>
@@ -89,11 +94,13 @@ subtitles  <n> cues  <.srt path>
 
 Warnings go to stderr (`postprocess: warning: ...`): a cut that splits a subtitle cue (a cut
 mid-sentence; offer to move it to a cue boundary), a callout over the subtitle band or the
-presenter bubble (offer to move it), a click that gets no sound (list them to the user
-with the reason), a missing edit map, translations over burned-in subtitles, or chapters
+presenter bubble (offer to move it; the band only counts when the subtitles are burned in), a click that gets no sound (list them to the user
+with the reason), a missing edit map, translations over burned-in subtitles, chapters
 YouTube would ignore (fewer than 3, or one under 10 s; mention it, the mp4 chapters still
-work). On
-`postprocess: error: ...` nothing was written: fix the recipe and re-run. A demo without
+work), or a GIF over 10 MB. A `postprocess: error: ...` from the recipe or input checks
+comes before any output; one from a later step (ffmpeg, a size cap it cannot meet) can
+leave the earlier steps' `<slug>-post*` files. Either way, fix it and re-run, which
+overwrites them. A demo without
 `<slug>.editmap.json` cannot use scene anchors; tell the user to re-run compose
 (`/product-demo:run`, re-compose the demo) to get one.
 
@@ -104,6 +111,10 @@ work). On
 - Frames: add `"exports": {"contact_sheet": {}}` (or keep it) and Read
   `<slug>-post-contact.png`; each frame is labelled with its output time. Check the moments
   that changed: the frames either side of each cut, that nothing important was cut, and that each watermark, callout (inside its window) and progress bar shows where expected.
+- Cards: the frames inside the title card (0 to its `seconds`) and the closing card (its
+  last `seconds`) show the card's text, logo and colours, readable and not cut off. If the
+  sheet has no frame inside a card, make a per-moment contact sheet at the card moments
+  (`${CLAUDE_PLUGIN_ROOT}/references/verify.md`) on `<slug>-post.mp4`.
   For a closer look at one moment, use the per-moment contact sheet recipe in
   `${CLAUDE_PLUGIN_ROOT}/references/verify.md` on `<slug>-post.mp4`.
 - For a contact sheet of the source (to pick cut times), run with a recipe holding only
