@@ -17,3 +17,6 @@ __pycache__/
 # Personal voice recordings and local registry
 .voices/
 .longhaul/
+
+# macOS
+.DS_Store
