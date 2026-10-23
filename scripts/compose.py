@@ -247,8 +247,8 @@ def cue_svg(text, width, height, reserve=0):
 
 def edit_map(spec, plan):
     """The edit map: the total length and, per scene, its id, title, start and end in the
-    final video, plus every action whose start compose knows (the scene's first action and
-    each ``at`` action) with its index in the scene's actions, its type and its start.
+    final video, plus every action with its index in the scene's actions, its type and,
+    when compose knows it (the scene's first action and each ``at`` action), its start.
 
     Times are in seconds, rounded to the millisecond like compose's printed lines.
     """
@@ -263,8 +263,6 @@ def edit_map(spec, plan):
                 entry.update(start_s=round(at_starts[(scene.id, at_count)], 3), at=action["at"])
             elif index == 0:
                 entry["start_s"] = round(scene.offset_s, 3)
-            else:
-                continue  # its start is not known
             actions.append(entry)
         scenes.append({"id": scene.id, "title": scene.title, "start_s": round(scene.offset_s, 3),
                        "end_s": round(scene.end_s, 3), "actions": actions})

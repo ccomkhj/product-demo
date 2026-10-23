@@ -87,7 +87,8 @@ RUNNERS = {
 
     # subtitle_tracks, chapters (#21)
 
-    # click_sounds, music (#20)
+    "click_sounds": _run_video_step,
+    "music": _run_video_step,
 
     # size_cap, gif, poster (#22)
 
@@ -138,12 +139,27 @@ def main(argv=None):
     return 0
 
 
+def _with_audio_files(recipe, demo_dir):
+    """The recipe with its audio files (music, a custom click sound) as paths from the
+    recipe's folder; PostError when one is missing."""
+    recipe = dict(recipe)
+    for key in ("click_sounds", "music"):
+        if "file" in recipe.get(key, {}):
+            path = demo_dir / recipe[key]["file"]
+            if not path.is_file():
+                raise PostError(f"{key} file not found: {path}; music is never downloaded, "
+                                f"so give a file you have the rights to")
+            recipe[key] = {**recipe[key], "file": str(path)}
+    return recipe
+
+
 def _plan(recipe, demo_dir, slug):
     """Validate the recipe, read the source's length, cues and edit map; build the plan.
 
     Returns (plan, source, warnings).
     """
     validate_recipe(recipe)
+    recipe = _with_audio_files(recipe, demo_dir)
     source = demo_dir / recipe.get("source", f"{slug}.mp4")
     if not source.is_file():
         raise PostError(f"source video not found: {source}; run compose first")
