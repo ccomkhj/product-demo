@@ -16,9 +16,29 @@ malformed spec fails before any audio or recording is made.
 | `outcome` | no | Non-empty description of what the viewer should understand or accomplish. |
 | `target_duration_s` | no | Finite positive number (not a boolean). Editorial target, not a rendering limit. No automatic default for existing specs. |
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
-| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai`, `elevenlabs` or `qwen3` (see local cloning below); leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. Optional `speed` (0.5 to 2, default 1) changes the narration tempo for any backend, keeping pitch. |
+| `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai`, `elevenlabs` or `qwen3` (see local cloning below); leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. Optional `speed` (0.5 to 2, default 1) changes the narration tempo for any backend, keeping pitch. Optional `pronounce` respells misread words for the voice only (see pronunciation below). |
 | `avatar` | no | `{ "image" or "profile", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `"profile": "own_photo"` uses the photo saved with `own_voice.py --photo` instead (see local voice cloning). `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
+
+## Pronunciation
+
+When a backend misreads a term the narration must keep spelled as written (a brand name,
+an acronym), add `voice.pronounce`: whole words, case-sensitive, mapped to what the voice
+should say. It works with every backend and belongs to the demo, not to a saved voice
+profile.
+
+```json
+"voice": { "backend": "kokoro", "pronounce": { "OOS": "O-O-S" } }
+```
+
+Only the synthesised text changes: subtitles, the transcript and `at` phrases keep the
+written spelling. Each word is replaced once ("OOS" inside "BOOST" is left alone, and a
+replacement is never replaced again); where keys overlap, the longest wins.
+
+Known limit: cue and `at` timing is a share of the *written* scene text (ADR-0002), so an
+expansion makes every later cue and action in that scene early by about extra characters ÷
+scene characters × audio length (9 / 300 × 20 s ≈ 0.6 s). Prefer respellings of similar
+length (`{"OOS": "O-O-S"}`); for a long expansion, rewrite the narration instead.
 
 ## Local voice cloning
 

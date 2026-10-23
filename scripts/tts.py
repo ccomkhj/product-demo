@@ -15,6 +15,7 @@ ELEVENLABS_API_KEY). `qwen3` clones a local reference voice on Apple Silicon via
 `voice.voice` in the spec picks the voice: a `say -v` name, a
 Kokoro voice (default af_heart), an OpenAI voice name (default alloy) or an ElevenLabs
 voice ID. `voice.speed` (0.5-2, default 1) speeds every backend up or down, keeping pitch.
+`voice.pronounce` respells whole words for the voice only; the spec text is unchanged.
 
 Stdlib only (HTTP via urllib); needs ffmpeg/ffprobe on PATH (and macOS `say` for
 the say backend, uv for the kokoro backend, which runs scripts/kokoro_tts.py).
@@ -33,6 +34,7 @@ from pathlib import Path
 
 import proc
 from demo_spec import BACKENDS, SpecError, choose_backend, load_spec
+from narration import spoken
 from voice_config import check_platform, probe_reference, resolve_voice_config
 
 SAMPLE_RATE = 48000  # every narration WAV is 48 kHz mono 16-bit PCM; compose resamples to it
@@ -204,10 +206,16 @@ def generate(spec, backend, out_dir, env, transport=urllib_transport, spec_dir=N
         config = resolve_voice_config(spec.get("voice"), backend, spec_dir or Path.cwd())
     except (ValueError, OSError) as exc:
         raise TtsError(str(exc)) from exc
+    # Speak from copies, so subtitles, transcript and `at` phrases keep the written spelling.
+    # Per demo only: pronunciations belong to the product, not to a saved voice profile.
+    pronounce = (spec.get("voice") or {}).get("pronounce")
+    config.pop("pronounce", None)
+    scenes = [{**scene, "narration": spoken(scene["narration"], pronounce)}
+              for scene in spec["scenes"]]
     out_dir.mkdir(parents=True, exist_ok=True)
     durations = {}
     with tempfile.TemporaryDirectory(prefix="tts-") as tmp:
-        for scene_id, raw in synthesize(spec["scenes"], config, Path(tmp), env, transport):
+        for scene_id, raw in synthesize(scenes, config, Path(tmp), env, transport):
             wav = out_dir / f"{scene_id}.wav"
             normalise_to_wav(raw, wav, config.get("speed", 1))
             durations[scene_id] = round(measure_seconds(wav), 3)

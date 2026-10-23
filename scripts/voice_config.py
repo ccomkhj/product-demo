@@ -25,6 +25,10 @@ def validate_voice(voice):
     # ffmpeg's atempo filter takes 0.5-2.0 in a single pass.
     if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.5 <= speed <= 2:
         raise ValueError("voice.speed must be a number from 0.5 to 2")
+    pronounce = voice.get("pronounce", {})
+    if not isinstance(pronounce, dict) or not all(
+            isinstance(text, str) and text.strip() for pair in pronounce.items() for text in pair):
+        raise ValueError("voice.pronounce must map nonempty words to nonempty spoken text")
 
 
 def resolve_voice_config(voice, backend, spec_dir):
