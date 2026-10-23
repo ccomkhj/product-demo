@@ -6,6 +6,8 @@ import pytest
 import voice_config
 
 PHOTO = Path(__file__).resolve().parent.parent / "assets" / "avatars" / "huijo.png"
+# Read at import, before the autouse fixture swaps in temporary folders.
+SHIPPED_LEGACY_DIRS = voice_config.LEGACY_DIRS
 
 
 def save_photo(directory):
@@ -30,7 +32,7 @@ def test_registry_falls_back_to_dot_config_in_home(tmp_path, monkeypatch):
 
 
 def test_old_registry_is_copied_once_and_kept(isolated_config):
-    old = voice_config.LEGACY_DIR
+    old = voice_config.LEGACY_DIRS[-1]
     save_photo(old)
     new = isolated_config / "config" / "product-demo"
     assert voice_config.saved_photo() == (new / "me.png").resolve()
@@ -38,6 +40,25 @@ def test_old_registry_is_copied_once_and_kept(isolated_config):
 
     (old / "config.json").write_text(json.dumps({"own_photo": {"image": "gone.png"}}))
     assert voice_config.saved_photo() == (new / "me.png").resolve()
+
+
+def test_registry_of_an_old_skill_install_is_copied(tmp_path, monkeypatch, isolated_config):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(voice_config, "LEGACY_DIRS", SHIPPED_LEGACY_DIRS)
+    save_photo(tmp_path / ".claude" / "skills" / "product-demo" / ".voices")
+    new = isolated_config / "config" / "product-demo"
+    assert voice_config.saved_photo() == (new / "me.png").resolve()
+
+
+def test_first_old_registry_with_a_config_wins(isolated_config):
+    empty, first, second = voice_config.LEGACY_DIRS
+    empty.mkdir(parents=True)
+    for old in (first, second):
+        save_photo(old)
+        (old / "from.txt").write_text(old.parent.name)
+    new = isolated_config / "config" / "product-demo"
+    assert voice_config.saved_photo() == (new / "me.png").resolve()
+    assert (new / "from.txt").read_text() == first.parent.name
 
 
 def test_no_old_registry_means_nothing_is_set_up(isolated_config):

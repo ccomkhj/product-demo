@@ -139,7 +139,7 @@ To set up your reusable voice, run `uv run python scripts/own_voice.py`. If `own
 already registered and valid, it returns immediately; add `--replace` to record a new one.
 Otherwise a local browser page lets you record and save it. Future demos can use
 `"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.
-The recording and registry stay in `~/.config/product-demo/` (under `$XDG_CONFIG_HOME` when set); an old `.voices/` registry is copied there once.
+The recording and registry stay in `~/.config/product-demo/` (under `$XDG_CONFIG_HOME` when set); an old `.voices/` registry (from a skill install in `~/.claude/skills/product-demo/` or `~/.agents/skills/product-demo/`, or a plugin checkout) is copied there once.
 
 ## Presenter bubble
 

@@ -49,7 +49,7 @@ local Record / Stop / Preview / Save page. Read the displayed passage, correct t
 transcript if needed, and save. The recording is validated and converted to WAV.
 No recording starts until you click Record and allow microphone access.
 
-`~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set) registers `own_voice`; recordings live beside it, so they survive plugin updates. An old `.voices/` registry in the skill folder is copied there once.
+`~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set) registers `own_voice`; recordings live beside it, so they survive plugin updates. An old `.voices/` registry (from a skill install in `~/.claude/skills/product-demo/` or `~/.agents/skills/product-demo/`, or a plugin checkout) is copied there once.
 Use `"voice": {"backend": "qwen3", "profile": "own_voice"}` in any demo to reuse it
 without another recording prompt. `profile: own_voice` also selects Qwen when backend
 is omitted; an explicit CLI or spec backend still wins. `--status` reports readiness

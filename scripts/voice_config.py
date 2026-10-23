@@ -7,18 +7,28 @@ import platform
 import shutil
 from pathlib import Path
 
-# Where the registry lived before it moved to a per-user folder; copied from once.
-LEGACY_DIR = Path(__file__).resolve().parents[1] / ".voices"
+# Where the registry lived before it moved to a per-user folder: an old skill install
+# (`git clone` into ~/.claude/skills, `npx skills add`), then a plugin checkout. The first
+# one holding a config.json is copied from, once.
+LEGACY_DIRS = (
+    Path("~/.claude/skills/product-demo/.voices"),
+    Path("~/.agents/skills/product-demo/.voices"),
+    Path(__file__).resolve().parents[1] / ".voices",
+)
 
 
 def profile_config():
     """The registry of own_voice, own_photo and defaults: ``config.json`` in
     ``$XDG_CONFIG_HOME/product-demo`` (fallback ``~/.config/product-demo``), outside the
     plugin folder so it survives updates. The first call copies an old ``.voices`` registry
-    there; the old copy stays."""
+    (``LEGACY_DIRS``) there; the old copy stays."""
     directory = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "product-demo"
-    if not directory.exists() and (LEGACY_DIR / "config.json").is_file():
-        shutil.copytree(LEGACY_DIR, directory)
+    if not directory.exists():
+        old = next(
+            (d for d in map(Path.expanduser, LEGACY_DIRS) if (d / "config.json").is_file()), None
+        )
+        if old:
+            shutil.copytree(old, directory)
     return directory / "config.json"
 
 
