@@ -152,3 +152,37 @@ def test_contact_sheet_export_is_written_with_its_frames(tmp_path):
     # 3 columns x 2 rows of 320 px frames
     assert stream["width"] > 3 * 320 and stream["height"] > 2 * 240
     assert printed_total(result.stdout) == pytest.approx(SOURCE_S)
+
+
+@needs_ffmpeg
+@needs_rsvg
+def test_title_and_closing_cards_lengthen_the_video_and_shift_the_subtitles(tmp_path):
+    demo = make_demo(tmp_path, {"speed": 2.0, "cards": {
+        "title": {"seconds": 2, "subtitle": "A smoke test", "logo": "logo.png"},
+        "closing": {"background": "#ffffff", "color": "#000000"}}})
+    (demo / "demo.json").write_text(json.dumps(
+        {"title": "Smoke", "scenes": [{"id": "one", "url": "https://example.com/one"},
+                                      {"id": "two", "url": "https://example.com/two"}]}))
+    ffmpeg("-f", "lavfi", "-i", "color=c=red:s=64x32", "-frames:v", "1", demo / "logo.png")
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    assert "cards\ttitle 2.000s\tclosing 3.000s" in result.stdout.splitlines()
+    # 2 s title + 6 s at 2x + 3 s closing
+    assert printed_total(result.stdout) == pytest.approx(8.0)
+    info = probe(demo / "smoke-post.mp4")
+    assert float(info["format"]["duration"]) == pytest.approx(8.0, abs=1 / 30 + 0.05)
+    assert (demo / "smoke-post.srt").read_text().startswith(
+        "1\n00:00:02,000 --> 00:00:03,000\nFirst scene.\n")
+
+
+@needs_ffmpeg
+def test_a_missing_card_logo_fails_before_any_output(tmp_path):
+    demo = make_demo(tmp_path, {"cards": {"title": {"title": "Smoke", "logo": "nope.png"}}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "logo not found" in result.stderr
+    assert not (demo / "smoke-post.mp4").exists()
