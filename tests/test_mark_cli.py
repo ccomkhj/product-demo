@@ -21,15 +21,23 @@ def test_mark_appends_wall_clock_events_for_a_recording(tmp_path):
     timeline = tmp_path / "timeline.jsonl"
     before = int(time.time() * 1000)
 
-    for args in (["rec_start"], ["start", "home"], ["beat", "home"], ["end", "home"],
-                 ["start", "more"]):
+    for args in (
+        ["rec_start"],
+        ["start", "home"],
+        ["beat", "home"],
+        ["end", "home"],
+        ["start", "more"],
+    ):
         result = run_mark(timeline, *args)
         assert result.returncode == 0, result.stderr
 
     after = int(time.time() * 1000)
     events = read_events(timeline)
     assert [(e.get("scene"), e["event"]) for e in events] == [
-        (None, "rec_start"), ("home", "start"), ("home", "beat"), ("home", "end"),
+        (None, "rec_start"),
+        ("home", "start"),
+        ("home", "beat"),
+        ("home", "end"),
         ("more", "start"),
     ]
     stamps = [e["t_ms"] for e in events]

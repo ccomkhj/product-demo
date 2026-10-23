@@ -5,6 +5,16 @@ import subprocess
 STDERR_LINES = 5  # how much of a failing tool's stderr goes into the error message
 
 
+def ffprobe_cmd(path, entries, stream=None, output="json", options=()):
+    """ffprobe arguments printing ``entries`` (``-show_entries``) of ``path`` as ``output``
+    (``-of``). stream: only the first stream of that kind ("v", "a"). options: more flags."""
+    select = ["-select_streams", f"{stream}:0"] if stream else []
+    return [
+        "ffprobe", "-v", "error", *select, *options,
+        "-show_entries", entries, "-of", output, str(path),
+    ]  # fmt: skip
+
+
 def run(cmd, *, error, cwd=None):
     """Run ``cmd`` and return its stdout.
 

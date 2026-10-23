@@ -4,10 +4,16 @@ Details behind the [README](../README.md).
 
 ## Install
 
-From [skills.sh](https://skills.sh):
+The repository is a Claude Code plugin and its own marketplace. In Claude Code:
 
 ```
-npx skills add ccomkhj/product-demo
+/plugin marketplace add ccomkhj/product-demo
+/plugin install product-demo@product-demo
+```
+
+Then add the browser MCP server:
+
+```
 claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
 ```
 
@@ -15,11 +21,15 @@ The chrome-devtools MCP server needs the Node version in `chrome-devtools-mcp`'s
 (`npm view chrome-devtools-mcp engines`, currently `^20.19 || ^22.12 || >=23`); older Node
 fails with `CONNECTION_CLOSED`.
 
-Or clone it directly:
+To work on a local clone, add the clone as the marketplace instead:
+`/plugin marketplace add /path/to/product-demo`.
 
-```
-git clone https://github.com/ccomkhj/product-demo ~/.claude/skills/product-demo
-```
+The manifest has no fixed version, so every commit is an update. To get it, run
+`/plugin marketplace update product-demo`, or uninstall and install the plugin again.
+
+**Breaking change:** the skill used to be `/product-demo`; it is now `/product-demo:run`
+(configure: `/product-demo:run --configure`). The skills.sh install and the
+`~/.claude/skills/product-demo` clone are no longer supported; remove them and install the plugin.
 
 Needs Python 3.11+ (run the scripts with `uv run python`; stock macOS `python3` is 3.9),
 `ffmpeg` and [`uv`](https://docs.astral.sh/uv/). uv runs the free Kokoro voice, which
@@ -31,7 +41,7 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 ## Use it
 
 ```
-/product-demo We shipped CSV export on the Reports page. Show a customer how to export last month's report.
+/product-demo:run We shipped CSV export on the Reports page. Show a customer how to export last month's report.
 ```
 
 1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in. Voice, presenter, video size and subtitles come from your saved settings, with no questions.
@@ -39,23 +49,47 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
 4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
 
+More ways to start:
+
+```text
+/product-demo:run --configure
+/product-demo:run Make a 30-second feature announcement for CSV export on https://app.example.com/reports. Use the presenter avatar me.png.
+/product-demo:run Show how to invite a teammate from Settings, in my own voice.
+/product-demo:run Re-compose demos/csv-export without burned-in subtitles.
+```
+
+### Post-processing
+
+```text
+/product-demo:postprocessing csv-export: make it 1.25x and cut the first two seconds
+/product-demo:postprocessing csv-export: add a title card and a closing card with our URL
+/product-demo:postprocessing csv-export: add logo.png as a watermark and a progress bar
+/product-demo:postprocessing csv-export: Korean subtitles and chapters for YouTube
+/product-demo:postprocessing csv-export: a GIF of the export scene and a version under 10 MB
+```
+
+Edits a composed demo without touching `<slug>.mp4`, `<slug>.srt` or `transcript.md`. The agent
+writes the edits as a post recipe, `demos/<slug>/post.json`, runs `scripts/postprocess.py` and
+hands over `<slug>-post.mp4` and `<slug>-post.srt`. Change one value later and re-run: the rest
+comes out the same. Every operation, with examples: [post-processing](postprocessing.md).
+
 ### Configure
 
 ```
-/product-demo --configure
+/product-demo:run --configure
 ```
 
 Asks every setting (voice, own-voice recording, speed, presenter, video size, subtitles,
 and purpose and length if you describe a demo too) and saves the answers as the defaults
-for later `/product-demo` runs. Run it again to change them. The defaults stay in the
-ignored `.voices/config.json`.
+for later `/product-demo:run` runs. Run it again to change them. The defaults stay in the
+per-user `~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set), so they survive plugin updates.
 
 ### Purposes
 
 ```text
-/product-demo Make a 30-second feature announcement for CSV export on our Reports page.
-/product-demo Make a customer tutorial showing how to export last month's report.
-/product-demo Make a sales walkthrough of reporting for a finance team.
+/product-demo:run Make a 30-second feature announcement for CSV export on our Reports page.
+/product-demo:run Make a customer tutorial showing how to export last month's report.
+/product-demo:run Make a sales walkthrough of reporting for a finance team.
 ```
 
 Suggested targets are 30, 90, and 120 seconds respectively. Your structure and duration
@@ -65,7 +99,7 @@ draft the script; it does not invent product behavior or sales claims.
 
 ## Preflight and readiness
 
-Run local checks separately from the skill directory:
+Run local checks separately from a clone of this repository:
 
 ```bash
 uv run python scripts/preflight.py /path/to/demos/export/demo.json
@@ -105,7 +139,7 @@ To set up your reusable voice, run `uv run python scripts/own_voice.py`. If `own
 already registered and valid, it returns immediately; add `--replace` to record a new one.
 Otherwise a local browser page lets you record and save it. Future demos can use
 `"voice": {"backend": "qwen3", "profile": "own_voice"}` without asking again.
-The recording and registry stay in the ignored `.voices/` directory.
+The recording and registry stay in `~/.config/product-demo/` (under `$XDG_CONFIG_HOME` when set); an old `.voices/` registry (from a skill install in `~/.claude/skills/product-demo/` or `~/.agents/skills/product-demo/`, or a plugin checkout) is copied there once.
 
 ## Presenter bubble
 
@@ -137,7 +171,9 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 
 | Path | What it is |
 |------|------------|
-| `SKILL.md` | The skill's instructions: interview, approval, narration, recording, compose and verify |
+| `.claude-plugin/` | Plugin and marketplace manifests (no fixed version: each commit is an update) |
+| `skills/run/SKILL.md` | The `run` skill: interview, approval, narration, recording, compose and verify |
+| `skills/postprocessing/SKILL.md` | The `postprocessing` skill: post recipe, run, verify |
 | `references/` | Demo spec format, browser recording recipes and verification recipes |
 | `references/templates/` | Announcement, tutorial and sales script guidance |
 | `scripts/preflight.py` | Local readiness and measured narration duration checks |
@@ -146,6 +182,8 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/check_audio.py` | Transcribes `qwen3` narration with local whisper to catch leaked or misspoken words |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
+| `scripts/post_plan.py` | Post plan: validates the post recipe, time map, retimed cues, steps (no ffmpeg) |
+| `scripts/postprocess.py` | Runs the post plan: writes `<slug>-post.mp4`, `.srt` and exports |
 | `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |
 | `assets/overlay.js` | The visible cursor, click ripples, keycaps, badges and sync flash |
 | `docs/sample/` | The README's sample demo (spec, video, subtitles), also the reference end-to-end test |

@@ -18,9 +18,9 @@ needs_ffmpeg = pytest.mark.skipif(
 
 SCENES = [
     # (id, raw window in s, narration length in s)
-    ("frozen", (0.5, 6.5), 3.0),   # 2.5 s of motion + 3.5 s frozen -> decimates to ~2.5 s: hold
-    ("brisk", (7.0, 9.5), 2.0),    # 2.5 s of motion vs 2.0 s audio: speed up 1.25x
-    ("long", (9.5, 12.0), 1.0),    # 2.5 s vs 1.0 s: capped at 1.5x, audio padded
+    ("frozen", (0.5, 6.5), 3.0),  # 2.5 s of motion + 3.5 s frozen -> decimates to ~2.5 s: hold
+    ("brisk", (7.0, 9.5), 2.0),  # 2.5 s of motion vs 2.0 s audio: speed up 1.25x
+    ("long", (9.5, 12.0), 1.0),  # 2.5 s vs 1.0 s: capped at 1.5x, audio padded
 ]
 EXPECTED_TOTAL = 3.0 + 2.0 + 2.5 / 1.5
 NARRATION = {
@@ -54,7 +54,9 @@ def ffmpeg(*args):
 def probe(path):
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     return json.loads(out)
 
@@ -64,8 +66,13 @@ def write_demo(demo_dir, rec_start_ms=1_700_000_000_000):
         "title": "Smoke",
         "viewport": {"width": 320, "height": 240},
         "scenes": [
-            {"id": sid, "title": sid.title(), "url": "https://example.com", "actions": [],
-             "narration": NARRATION[sid]}
+            {
+                "id": sid,
+                "title": sid.title(),
+                "url": "https://example.com",
+                "actions": [],
+                "narration": NARRATION[sid],
+            }
             for sid, _, _ in SCENES
         ],
     }
@@ -85,14 +92,34 @@ def make_media(demo_dir, audio):
     # 12 s raw: 3 s of motion, a 4 s frozen stretch, then 5 s of motion. testsrc2
     # changes every frame (plain testsrc only every other one), so mpdecimate keeps all motion.
     ffmpeg(
-        "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=3",
-        "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=5",
-        "-filter_complex", "[0:v]tpad=stop_mode=clone:stop_duration=4[a];[a][1:v]concat=n=2:v=1:a=0",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", demo_dir / "raw.mp4",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240:rate=30:duration=3",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240:rate=30:duration=5",
+        "-filter_complex",
+        "[0:v]tpad=stop_mode=clone:stop_duration=4[a];[a][1:v]concat=n=2:v=1:a=0",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        demo_dir / "raw.mp4",
     )
     for sid, _, secs in SCENES:
-        ffmpeg("-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={secs}",
-               "-ac", "1", "-c:a", "pcm_s16le", audio / f"{sid}.wav")
+        ffmpeg(
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:sample_rate=48000:duration={secs}",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            audio / f"{sid}.wav",
+        )
 
 
 def default_out(demo_dir):
@@ -102,7 +129,9 @@ def default_out(demo_dir):
 
 def run_compose(*args):
     return subprocess.run(
-        [sys.executable, str(COMPOSE), *map(str, args)], capture_output=True, text=True,
+        [sys.executable, str(COMPOSE), *map(str, args)],
+        capture_output=True,
+        text=True,
     )
 
 
@@ -113,9 +142,13 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     if with_readiness:
         path = tmp_path / "demo.json"
         spec = json.loads(path.read_text())
-        spec.update(purpose="feature-announcement", outcome="Explain the workflow", target_duration_s=30)
+        spec.update(
+            purpose="feature-announcement", outcome="Explain the workflow", target_duration_s=30
+        )
         spec["scenes"][0]["prerequisites"] = [{"type": "visible_text", "text": "Reports"}]
-        spec["scenes"][0]["expected_outcomes"] = [{"type": "visible_target", "target": "the result"}]
+        spec["scenes"][0]["expected_outcomes"] = [
+            {"type": "visible_target", "target": "the result"}
+        ]
         path.write_text(json.dumps(spec))
     make_media(tmp_path, audio)
 
@@ -141,22 +174,55 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     headings = [line for line in transcript.splitlines() if line.startswith("## ")]
     assert headings == ["## Frozen", "## Brisk", "## Long"]
     assert all(text in transcript for text in NARRATION.values())
+    # the edit map lays the scenes end to end, ending on compose's printed total
+    scenes = edit_map(tmp_path)["scenes"]
+    assert [(s["id"], s["title"], s["actions"]) for s in scenes] == [
+        ("frozen", "Frozen", []),
+        ("brisk", "Brisk", []),
+        ("long", "Long", []),
+    ]
+    assert [(s["start_s"], s["end_s"]) for s in scenes[:2]] == [(0.0, 3.0), (3.0, 5.0)]
+    assert scenes[2]["start_s"] == 5.0
+    total = next(line for line in result.stdout.splitlines() if line.startswith("total\t"))
+    assert total.startswith(f"total\t{scenes[2]['end_s']:.3f}s\t")
+    assert edit_map(tmp_path)["total_s"] == scenes[2]["end_s"]
 
 
 def bottom_and_top_difference(a, b, width=320, height=240, at=0.5):
     """Mean absolute luma difference between two videos' frames at ``at`` s: (bottom, top)."""
     frames = []
     for path in (a, b):
-        frames.append(subprocess.run(
-            ["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
-             "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-            capture_output=True, check=True,
-        ).stdout)
+        frames.append(
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-ss",
+                    str(at),
+                    "-i",
+                    str(path),
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "gray",
+                    "-",
+                ],
+                capture_output=True,
+                check=True,
+            ).stdout
+        )
     rows = len(frames[0]) // width
     assert rows == height
+
     def mean_diff(first_row, last_row):
         span = slice(first_row * width, last_row * width)
-        return sum(abs(x - y) for x, y in zip(frames[0][span], frames[1][span])) / len(frames[0][span])
+        return sum(abs(x - y) for x, y in zip(frames[0][span], frames[1][span])) / len(
+            frames[0][span]
+        )
+
     return mean_diff(height * 3 // 4, height), mean_diff(0, height // 4)
 
 
@@ -181,9 +247,26 @@ def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
 
 def gray_frame(path, at):
     return subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(path), "-frames:v", "1",
-         "-vf", "scale=80:60", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-        capture_output=True, check=True,
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-ss",
+            f"{at:.3f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=80:60",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
     ).stdout
 
 
@@ -192,27 +275,52 @@ def frame_difference(path, a, b):
     return sum(abs(x - y) for x, y in zip(first, second)) / len(first)
 
 
-@needs_ffmpeg
-def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phrase(tmp_path):
+def write_beat_demo(tmp_path):
     audio = write_demo(tmp_path)
     make_media(tmp_path, audio)
     # One scene over the whole raw video: 2.5 s of motion, frozen, then motion from
     # 7 s. The beat at 7 s starts the click; "Second" is reached at 16/32 of 8 s = 4 s.
     spec = json.loads((tmp_path / "demo.json").read_text())
-    spec["scenes"] = [{"id": "frozen", "url": "https://example.com",
-                       "narration": "First part, then. Second part now.",
-                       "actions": [{"type": "point", "target": "a"},
-                                   {"type": "click", "target": "b", "at": "Second"}]}]
+    spec["scenes"] = [
+        {
+            "id": "frozen",
+            "url": "https://example.com",
+            "narration": "First part, then. Second part now.",
+            "actions": [
+                {"type": "point", "target": "a"},
+                {"type": "click", "target": "b", "at": "Second"},
+            ],
+        }
+    ]
     (tmp_path / "demo.json").write_text(json.dumps(spec))
-    (tmp_path / "timeline.jsonl").write_text("".join(json.dumps(e) + "\n" for e in [
-        {"event": "rec_start", "t_ms": 0},
-        {"scene": "frozen", "event": "start", "t_ms": 500},
-        {"scene": "frozen", "event": "beat", "t_ms": 7_000},
-        {"scene": "frozen", "event": "end", "t_ms": 9_000},
-    ]))
+    (tmp_path / "timeline.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in [
+                {"event": "rec_start", "t_ms": 0},
+                {"scene": "frozen", "event": "start", "t_ms": 500},
+                {"scene": "frozen", "event": "beat", "t_ms": 7_000},
+                {"scene": "frozen", "event": "end", "t_ms": 9_000},
+            ]
+        )
+    )
     (audio / "durations.json").write_text(json.dumps({"frozen": 8.0}))
-    ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=8",
-           "-ac", "1", "-c:a", "pcm_s16le", audio / "frozen.wav")
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=48000:duration=8",
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        audio / "frozen.wav",
+    )
+
+
+@needs_ffmpeg
+def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phrase(tmp_path):
+    write_beat_demo(tmp_path)
 
     result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
 
@@ -228,15 +336,57 @@ def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phra
     assert lines[1] == 'at\tfrozen\t1\t4.133s\t"Second"'
 
 
+def edit_map(demo_dir):
+    return json.loads((demo_dir / f"{demo_dir.name}.editmap.json").read_text())
+
+
+@needs_ffmpeg
+def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
+    write_beat_demo(tmp_path)
+    spec = json.loads((tmp_path / "demo.json").read_text())
+    spec["scenes"][0]["actions"].append({"type": "dblclick", "target": "c"})
+    (tmp_path / "demo.json").write_text(json.dumps(spec))
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    # the same times compose prints: 'at frozen 1 4.133s "Second"' and 'total 8.000s'
+    assert edit_map(tmp_path) == {
+        "total_s": 8.0,
+        "subtitles_burned": False,
+        "scenes": [
+            {
+                "id": "frozen",
+                "title": "frozen",
+                "start_s": 0.0,
+                "end_s": 8.0,
+                "actions": [
+                    {"index": 0, "type": "point", "start_s": 0.0},
+                    {"index": 1, "type": "click", "start_s": 4.133, "at": "Second"},
+                    {"index": 2, "type": "dblclick"},  # start unknown: no start_s
+                ],
+            }
+        ],
+    }
+    assert 'at\tfrozen\t1\t4.133s\t"Second"' in result.stdout
+    assert "total\t8.000s\t" in result.stdout
+
+
 def test_first_flash_is_the_first_frame_that_is_magenta_throughout():
     from compose import first_flash_s
 
     def frame(n, pts, umin, vmin):
-        return (f"frame:{n}    pts:{n}       pts_time:{pts}\n"
-                f"lavfi.signalstats.UMIN={umin}\nlavfi.signalstats.VMIN={vmin}\n")
+        return (
+            f"frame:{n}    pts:{n}       pts_time:{pts}\n"
+            f"lavfi.signalstats.UMIN={umin}\nlavfi.signalstats.VMIN={vmin}\n"
+        )
 
-    stats = frame(0, 0, 128, 128) + frame(1, 0.5, 202, 100) + frame(2, 1.25, 201, 221) + \
-        frame(3, 1.5, 202, 222)
+    stats = (
+        frame(0, 0, 128, 128)
+        + frame(1, 0.5, 202, 100)
+        + frame(2, 1.25, 201, 221)
+        + frame(3, 1.5, 202, 222)
+    )
 
     assert first_flash_s(stats) == 1.25
     assert first_flash_s(frame(0, 0, 128, 128)) is None
@@ -250,9 +400,21 @@ def test_compose_lines_the_timeline_up_on_the_sync_flash(tmp_path):
     # later in it. The flash was painted at wall time 1_699_999_999_000, so raw time 0
     # is that, and rec_start's own (later) t_ms no longer matters.
     raw, spliced = tmp_path / "raw.mp4", tmp_path / "spliced.mp4"
-    ffmpeg("-f", "lavfi", "-i", "color=c=0xff00ff:s=320x240:r=30:d=0.4", "-i", raw,
-           "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0",
-           "-c:v", "libx264", "-pix_fmt", "yuv420p", spliced)
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=0xff00ff:s=320x240:r=30:d=0.4",
+        "-i",
+        raw,
+        "-filter_complex",
+        "[0:v][1:v]concat=n=2:v=1:a=0",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        spliced,
+    )
     spliced.replace(raw)
     timeline = tmp_path / "timeline.jsonl"
     events = [json.loads(line) for line in timeline.read_text().splitlines()]
@@ -267,7 +429,8 @@ def test_compose_lines_the_timeline_up_on_the_sync_flash(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "sync\tflash at 0.000s" in result.stdout
     assert float(probe(default_out(tmp_path))["format"]["duration"]) == pytest.approx(
-        EXPECTED_TOTAL, abs=0.15)
+        EXPECTED_TOTAL, abs=0.15
+    )
     assert "hold" in result.stdout and "speedup" in result.stdout and "pad" in result.stdout
 
 
@@ -302,11 +465,14 @@ def test_compose_reports_timeline_errors_without_a_traceback(tmp_path):
     assert not default_out(tmp_path).exists()
 
 
-@pytest.mark.parametrize("content, expected", [
-    (None, "run tts.py first"),
-    ("{not json", "durations"),
-    ("[3.0, 2.0]", "scene id -> seconds"),
-])
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        (None, "run tts.py first"),
+        ("{not json", "durations"),
+        ("[3.0, 2.0]", "scene id -> seconds"),
+    ],
+)
 def test_compose_reports_unreadable_durations_without_a_traceback(tmp_path, content, expected):
     audio = write_demo(tmp_path)
     durations = audio / "durations.json"
@@ -327,7 +493,8 @@ def test_compose_reports_unreadable_durations_without_a_traceback(tmp_path, cont
 def test_compose_reports_bad_durations_without_a_traceback(tmp_path, seconds):
     audio = write_demo(tmp_path)
     (audio / "durations.json").write_text(
-        json.dumps({"frozen": 3.0, "brisk": seconds, "long": 1.0}))
+        json.dumps({"frozen": 3.0, "brisk": seconds, "long": 1.0})
+    )
 
     result = run_compose(tmp_path / "demo.json")
 
@@ -349,18 +516,43 @@ def with_avatar(demo_dir, **fields):
 
 def corner_differences(a, b, width=320, height=240, at=1.0):
     """Mean absolute luma difference between two videos' frames at ``at`` s, per quarter-corner."""
-    frames = [subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
-         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-        capture_output=True, check=True,
-    ).stdout for path in (a, b)]
+    frames = [
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-ss",
+                str(at),
+                "-i",
+                str(path),
+                "-frames:v",
+                "1",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "gray",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        ).stdout
+        for path in (a, b)
+    ]
+
     def mean_diff(x0, y0):
-        pixels = [(y * width + x) for y in range(y0, y0 + height // 4)
-                  for x in range(x0, x0 + width // 4)]
+        pixels = [
+            (y * width + x) for y in range(y0, y0 + height // 4) for x in range(x0, x0 + width // 4)
+        ]
         return sum(abs(frames[0][p] - frames[1][p]) for p in pixels) / len(pixels)
+
     right, bottom = width * 3 // 4, height * 3 // 4
-    return {"top-left": mean_diff(0, 0), "top-right": mean_diff(right, 0),
-            "bottom-left": mean_diff(0, bottom), "bottom-right": mean_diff(right, bottom)}
+    return {
+        "top-left": mean_diff(0, 0),
+        "top-right": mean_diff(right, 0),
+        "bottom-left": mean_diff(0, bottom),
+        "bottom-right": mean_diff(right, bottom),
+    }
 
 
 @needs_ffmpeg
@@ -423,16 +615,22 @@ def test_subtitles_wrap_clear_of_a_bottom_bubble():
 
 def test_avatar_profile_uses_the_saved_photo(tmp_path, monkeypatch):
     import compose
-    import voice_config
-    monkeypatch.setattr(voice_config, "PROFILE_CONFIG", tmp_path / ".voices" / "config.json")
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     spec = {"avatar": {"profile": "own_photo", "corner": "top-left", "size": 0.3}}
     with pytest.raises(compose.ComposeError, match="own_photo needs setup"):
         compose.spec_avatar(spec, tmp_path)
-    (tmp_path / ".voices").mkdir()
-    (tmp_path / ".voices" / "me.png").write_bytes(PHOTO.read_bytes())
-    (tmp_path / ".voices" / "config.json").write_text(json.dumps({"own_photo": {"image": "me.png"}}))
+    (tmp_path / "product-demo").mkdir()
+    (tmp_path / "product-demo" / "me.png").write_bytes(PHOTO.read_bytes())
+    (tmp_path / "product-demo" / "config.json").write_text(
+        json.dumps({"own_photo": {"image": "me.png"}})
+    )
     avatar = compose.spec_avatar(spec, tmp_path)
-    assert (avatar.image, avatar.corner, avatar.size) == ((tmp_path / ".voices" / "me.png").resolve(), "top-left", 0.3)
+    assert (avatar.image, avatar.corner, avatar.size) == (
+        (tmp_path / "product-demo" / "me.png").resolve(),
+        "top-left",
+        0.3,
+    )
 
 
 def test_an_action_line_names_its_time_and_phrase_and_how_late_it_is():

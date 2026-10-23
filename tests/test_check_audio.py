@@ -3,8 +3,10 @@ import pytest
 from check_audio import compare
 
 NARRATION = "Open the orders page and pick the late delivery from last week."
-WORDS = ("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike "
-         "november oscar papa quebec romeo sierra tango").split()
+WORDS = (
+    "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike "
+    "november oscar papa quebec romeo sierra tango"
+).split()
 
 
 def test_leaked_reference_words_at_the_start_are_flagged():
@@ -71,6 +73,7 @@ def test_large_numbers_become_words_on_both_sides():
 
 def test_the_platform_error_names_the_audio_check(monkeypatch):
     import voice_config
+
     monkeypatch.setattr(voice_config.platform, "machine", lambda: "x86_64")
     with pytest.raises(ValueError, match="^check_audio requires native Apple Silicon"):
         voice_config.check_platform("check_audio")

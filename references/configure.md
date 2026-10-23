@@ -1,12 +1,12 @@
-# Configure mode (`/product-demo --configure`)
+# Configure mode (`/product-demo:run --configure`)
 
 Asks every setting with AskUserQuestion, records the voice if chosen, and saves the
-answers as the defaults that default mode reads (see **Settings** in `SKILL.md`).
+answers as the defaults that default mode reads (see **Settings** in `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md`).
 
 ## 1. Current state
 
 ```bash
-uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --status
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --status
 ```
 
 Mark the current value of each setting (from `defaults`, else the **Settings** fallback)
@@ -47,14 +47,14 @@ holds. "Other" is always available for a free answer (a path, a voice ID, a size
 
 ## 3. Act
 
-- Own voice, not registered or "Record again": run the **Recorder** in `SKILL.md`
+- Own voice, not registered or "Record again": run the **Recorder** in `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md`
   (`--replace` for "Record again"). Done when `--status` reports `ready: true`.
 - A new photo: `own_voice.py --photo <path>`.
 
 ## 4. Save
 
 ```bash
-uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --save-defaults '<json>'
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --save-defaults '<json>'
 ```
 
 `<json>` holds `voice`, `avatar`, `viewport` and `burn_subs`, written as spec fields:
@@ -75,6 +75,6 @@ spec, never into the defaults. Done when the command prints the status with the 
 
 ## 5. Continue
 
-When the request describes a demo, continue at step 1 of `SKILL.md` with these answers
+When the request describes a demo, continue at step 1 of `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md` with these answers
 (the interview then asks only for missing pages). Otherwise report the saved settings and
 stop.

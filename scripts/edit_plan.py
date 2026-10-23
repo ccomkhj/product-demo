@@ -169,10 +169,14 @@ class Plan:
         cues = []
         for scene in self.scenes:
             for start, end, sentence in Narration(scene.narration).cue_shares():
-                cues.append(Cue(scene.id,
-                                min(scene.offset_s + scene.audio_s * start, scene.end_s),
-                                min(scene.offset_s + scene.audio_s * end, scene.end_s),
-                                sentence))
+                cues.append(
+                    Cue(
+                        scene.id,
+                        min(scene.offset_s + scene.audio_s * start, scene.end_s),
+                        min(scene.offset_s + scene.audio_s * end, scene.end_s),
+                        sentence,
+                    )
+                )
         return tuple(cues)
 
     @property
@@ -187,8 +191,15 @@ class Plan:
                 if not index:
                     continue  # the first segment starts the scene, not an action
                 late_s = start_s - segment.anchor_s
-                actions.append(ActionTime(scene.id, index, scene.offset_s + start_s,
-                                          segment.phrase, late_s if late_s > LATE_AFTER_S else 0.0))
+                actions.append(
+                    ActionTime(
+                        scene.id,
+                        index,
+                        scene.offset_s + start_s,
+                        segment.phrase,
+                        late_s if late_s > LATE_AFTER_S else 0.0,
+                    )
+                )
         return tuple(actions)
 
 
@@ -206,8 +217,7 @@ def build_plan(spec, timeline, durations, video):
 
     Raises PlanError when they don't line up; errors raised by ``video`` pass through.
     """
-    windows, flash_s = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]},
-                                      video)
+    windows, flash_s = _scene_windows(timeline, {scene["id"] for scene in spec["scenes"]}, video)
     scenes = []
     for scene in spec["scenes"]:
         scene_id = scene["id"]
@@ -216,21 +226,36 @@ def build_plan(spec, timeline, durations, video):
         audio_s = _duration(durations, scene_id)
         trim_start, trim_end, beats = windows[scene_id]
         phrases = [action["at"] for action in scene.get("actions", []) if "at" in action]
-        anchors = [audio_s * share
-                   for share in Narration(scene["narration"]).phrase_shares(phrases)]
+        anchors = [
+            audio_s * share for share in Narration(scene["narration"]).phrase_shares(phrases)
+        ]
         if len(beats) != len(anchors):
-            raise PlanError(f"scene '{scene_id}' has {len(beats)} beat markers but "
-                            f"{len(anchors)} actions with an 'at' phrase; mark a beat right "
-                            f"before each such action")
+            raise PlanError(
+                f"scene '{scene_id}' has {len(beats)} beat markers but "
+                f"{len(anchors)} actions with an 'at' phrase; mark a beat right "
+                f"before each such action"
+            )
         bounds = [trim_start, *beats, trim_end]
-        segments = tuple(Segment(start, end, anchor, _frames(end - start), phrase=phrase)
-                         for start, end, anchor, phrase
-                         in zip(bounds, bounds[1:], [0.0, *anchors], ["", *phrases]))
-        scenes.append(ScenePlan(
-            id=scene_id, title=scene.get("title") or scene_id, narration=scene["narration"],
-            trim_start=trim_start, trim_end=trim_end, audio_s=audio_s, video_s=0.0,
-            fit=fit(0.0, audio_s), offset_s=0.0, segments=segments,
-        ))
+        segments = tuple(
+            Segment(start, end, anchor, _frames(end - start), phrase=phrase)
+            for start, end, anchor, phrase in zip(
+                bounds, bounds[1:], [0.0, *anchors], ["", *phrases]
+            )
+        )
+        scenes.append(
+            ScenePlan(
+                id=scene_id,
+                title=scene.get("title") or scene_id,
+                narration=scene["narration"],
+                trim_start=trim_start,
+                trim_end=trim_end,
+                audio_s=audio_s,
+                video_s=0.0,
+                fit=fit(0.0, audio_s),
+                offset_s=0.0,
+                segments=segments,
+            )
+        )
     return _lay_out([_measure(scene, video) for scene in scenes], flash_s)
 
 
@@ -266,8 +291,10 @@ def _scene_windows(timeline, spec_ids, video):
     """
     rec_starts = [i for i, e in enumerate(timeline) if e.get("event") == "rec_start"]
     if not rec_starts:
-        raise PlanError("timeline has no rec_start marker; run `mark.py TIMELINE rec_start` "
-                        "right after starting the screencast")
+        raise PlanError(
+            "timeline has no rec_start marker; run `mark.py TIMELINE rec_start` "
+            "right after starting the screencast"
+        )
     rec_start = timeline[rec_starts[-1]]
     origin_ms, flash_s = _t_ms(rec_start), None
     if rec_start.get("sync_ms") is not None:
@@ -276,12 +303,14 @@ def _scene_windows(timeline, spec_ids, video):
             raise PlanError(f"rec_start has a non-numeric sync_ms {sync!r}")
         flash_s = video.flash_s()
         if flash_s is None:
-            raise PlanError("no sync flash found in the raw video; run __demo.sync() right "
-                            "after screencast_start, then mark rec_start with --sync-ms")
+            raise PlanError(
+                "no sync flash found in the raw video; run __demo.sync() right "
+                "after screencast_start, then mark rec_start with --sync-ms"
+            )
         origin_ms = sync - flash_s * 1000
 
     marks, beats = {}, {}
-    for event in timeline[rec_starts[-1] + 1:]:
+    for event in timeline[rec_starts[-1] + 1 :]:
         kind = event.get("event")
         if kind not in ("start", "beat", "end"):
             raise PlanError(f"timeline event {event!r} has unknown event type {kind!r}")
@@ -310,8 +339,9 @@ def _scene_windows(timeline, spec_ids, video):
         if start_ms < origin_ms:
             raise PlanError(f"scene '{scene_id}' starts before rec_start")
         if end_ms == start_ms:
-            raise PlanError(f"scene '{scene_id}' has zero length: end equals start "
-                            f"(t_ms={start_ms})")
+            raise PlanError(
+                f"scene '{scene_id}' has zero length: end equals start (t_ms={start_ms})"
+            )
         if end_ms < start_ms:
             raise PlanError(
                 f"scene '{scene_id}' ends (t_ms={end_ms}) before it starts (t_ms={start_ms})"
@@ -319,8 +349,11 @@ def _scene_windows(timeline, spec_ids, video):
         scene_beats = sorted(beats.get(scene_id, []))
         if any(not start_ms <= beat_ms <= end_ms for beat_ms in scene_beats):
             raise PlanError(f"scene '{scene_id}' has a beat marker outside its start and end")
-        windows[scene_id] = ((start_ms - origin_ms) / 1000, (end_ms - origin_ms) / 1000,
-                             tuple((beat_ms - origin_ms) / 1000 for beat_ms in scene_beats))
+        windows[scene_id] = (
+            (start_ms - origin_ms) / 1000,
+            (end_ms - origin_ms) / 1000,
+            tuple((beat_ms - origin_ms) / 1000 for beat_ms in scene_beats),
+        )
     return windows, flash_s
 
 
@@ -330,11 +363,14 @@ def _duration(durations, scene_id):
         raise PlanError(f"scene '{scene_id}' is missing from the durations file")
     seconds = durations[scene_id]
     if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
-        raise PlanError(f"scene '{scene_id}' has a non-numeric duration {seconds!r} "
-                        f"in the durations file; re-run tts.py")
+        raise PlanError(
+            f"scene '{scene_id}' has a non-numeric duration {seconds!r} "
+            f"in the durations file; re-run tts.py"
+        )
     if not math.isfinite(seconds) or seconds <= 0:
-        raise PlanError(f"scene '{scene_id}' has duration {seconds!r}; it must be positive "
-                        f"(re-run tts.py)")
+        raise PlanError(
+            f"scene '{scene_id}' has duration {seconds!r}; it must be positive (re-run tts.py)"
+        )
     return float(seconds)
 
 
@@ -351,13 +387,18 @@ def _frames(seconds):
 
 def _measure(scene, video):
     """The scene with each segment's frames measured in ``video``; PlanError if none are left."""
-    segments = tuple(replace(segment, frames=video.frames(segment.trim_start, segment.trim_end))
-                     if segment.frames else segment  # shorter than a frame: nothing to cut
-                     for segment in scene.segments)
+    segments = tuple(
+        replace(segment, frames=video.frames(segment.trim_start, segment.trim_end))
+        if segment.frames
+        else segment  # shorter than a frame: nothing to cut
+        for segment in scene.segments
+    )
     if not any(segment.frames for segment in segments):
-        raise PlanError(f"scene '{scene.id}' has no video frames in its trim window "
-                        f"{scene.trim_start:.3f}-{scene.trim_end:.3f}s; is it past the end of "
-                        f"the raw recording?")
+        raise PlanError(
+            f"scene '{scene.id}' has no video frames in its trim window "
+            f"{scene.trim_start:.3f}-{scene.trim_end:.3f}s; is it past the end of "
+            f"the raw recording?"
+        )
     return replace(scene, segments=segments)
 
 
@@ -381,8 +422,13 @@ def _lay_out(scenes, flash_s):
     for scene in scenes:
         segments, frames = _sync(scene.segments)
         video_s = frames / FPS
-        scene = replace(scene, segments=segments, video_s=video_s,
-                        fit=fit(video_s, scene.audio_s), offset_s=offset)
+        scene = replace(
+            scene,
+            segments=segments,
+            video_s=video_s,
+            fit=fit(video_s, scene.audio_s),
+            offset_s=offset,
+        )
         laid_out.append(scene)
         offset += scene.scene_s
     return Plan(tuple(laid_out), flash_s)

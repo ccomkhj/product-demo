@@ -10,7 +10,7 @@ This extends ADR-0007's initial per-demo configuration with one repository-local
 
 ## Decision
 
-Store the `own_voice` entry in ignored `.voices/config.json`, with a local WAV beside it.
+Store the `own_voice` entry in the per-user `~/.config/product-demo/config.json` (honouring `XDG_CONFIG_HOME`; formerly the ignored in-repo `.voices/`, copied from once), with a local WAV beside it.
 Demos select `voice.profile: own_voice`; absent an explicit backend this selects Qwen
 before API-key auto-detection. CLI and explicit spec backends retain precedence.
 Profile paths resolve against the registry; per-demo model/language overrides are retained.

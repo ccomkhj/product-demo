@@ -1,0 +1,8 @@
+{
+  "name": "product-demo",
+  "description": "Narrated product-demo videos recorded live in the Chrome DevTools MCP browser, voiced and subtitled.",
+  "author": { "name": "Huijo Kim" },
+  "homepage": "https://github.com/ccomkhj/product-demo",
+  "repository": "https://github.com/ccomkhj/product-demo",
+  "license": "Apache-2.0"
+}

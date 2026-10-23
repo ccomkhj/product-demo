@@ -9,8 +9,8 @@ checks are agent instructions using the existing Chrome MCP tools, not Python au
 After script approval and before TTS:
 
 ```bash
-uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json
-uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json --json
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/preflight.py demos/<slug>/demo.json
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/preflight.py demos/<slug>/demo.json --json
 ```
 
 Use `--backend say|kokoro|openai|elevenlabs|qwen3` when overriding the spec, and carry that choice
@@ -32,7 +32,7 @@ error. JSON contains `schema_version`, `scope: "local"`, `ready`, `selected_back
 After TTS, run again with the same options and measured durations:
 
 ```bash
-uv run --project <skill dir> python <skill dir>/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
+uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/preflight.py demos/<slug>/demo.json --durations demos/<slug>/audio/durations.json
 ```
 
 Every current scene needs a positive finite duration; extra scene entries are ignored.

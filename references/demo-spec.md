@@ -42,24 +42,24 @@ length (`{"OOS": "O-O-S"}`); for a long expansion, rewrite the narration instead
 
 ## Local voice cloning
 
-For a reusable personal voice, run `uv run --project <skill dir> python <skill dir>/scripts/own_voice.py`. It checks the local
+For a reusable personal voice, run `uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py`. It checks the local
 registry first and exits immediately when a usable voice exists (`--replace` records a new
 one over it). Otherwise it opens a
 local Record / Stop / Preview / Save page. Read the displayed passage, correct the
 transcript if needed, and save. The recording is validated and converted to WAV.
 No recording starts until you click Record and allow microphone access.
 
-The ignored `.voices/config.json` registers `own_voice`; recordings live beside it.
+`~/.config/product-demo/config.json` (under `$XDG_CONFIG_HOME` when set) registers `own_voice`; recordings live beside it, so they survive plugin updates. An old `.voices/` registry (from a skill install in `~/.claude/skills/product-demo/` or `~/.agents/skills/product-demo/`, or a plugin checkout) is copied there once.
 Use `"voice": {"backend": "qwen3", "profile": "own_voice"}` in any demo to reuse it
 without another recording prompt. `profile: own_voice` also selects Qwen when backend
 is omitted; an explicit CLI or spec backend still wins. `--status` reports readiness
 without opening the recorder, and `--no-open` prints the local URL instead of opening it.
 A missing/broken profile requires setup rather than silently selecting another voice.
-Profile paths resolve relative to `.voices/config.json`; per-demo overrides resolve
+Profile paths resolve relative to that `config.json`; per-demo overrides resolve
 relative to the demo spec. Model and language overrides are allowed. To supply a different
 reference in a demo, omit the profile and supply both reference fields explicitly.
 
-`uv run --project <skill dir> python <skill dir>/scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
+`uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --photo me.png` saves a presenter photo beside the voice as
 `own_photo`, replacing any earlier one; `--status` reports it as `photo: true`. Use
 `"avatar": {"profile": "own_photo"}` in any demo to draw it. A missing photo fails compose
 with a setup hint rather than leaving the bubble out.

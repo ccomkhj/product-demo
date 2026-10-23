@@ -55,11 +55,14 @@ def test_openai_sends_voice_and_narration_and_writes_wavs(tmp_path):
     transport = FakeTransport()
     env = {"OPENAI_API_KEY": "sk-test"}
 
-    durations = generate(spec_with_voice("openai", "coral"), "openai", tmp_path, env,
-                         transport=transport)
+    durations = generate(
+        spec_with_voice("openai", "coral"), "openai", tmp_path, env, transport=transport
+    )
 
     assert [r["json"]["input"] for r in transport.requests] == [
-        "Welcome to the demo.", "Thanks for watching."]
+        "Welcome to the demo.",
+        "Thanks for watching.",
+    ]
     first = transport.requests[0]
     assert first["url"] == "https://api.openai.com/v1/audio/speech"
     assert first["headers"]["Authorization"] == "Bearer sk-test"
@@ -78,11 +81,14 @@ def test_elevenlabs_sends_voice_and_narration_and_writes_wavs(tmp_path):
     transport = FakeTransport()
     env = {"ELEVENLABS_API_KEY": "el-test"}
 
-    durations = generate(spec_with_voice("elevenlabs", "voice123"), "elevenlabs", tmp_path,
-                         env, transport=transport)
+    durations = generate(
+        spec_with_voice("elevenlabs", "voice123"), "elevenlabs", tmp_path, env, transport=transport
+    )
 
     assert [r["json"]["text"] for r in transport.requests] == [
-        "Welcome to the demo.", "Thanks for watching."]
+        "Welcome to the demo.",
+        "Thanks for watching.",
+    ]
     first = transport.requests[0]
     assert first["url"].startswith("https://api.elevenlabs.io/v1/text-to-speech/voice123")
     assert first["headers"]["xi-api-key"] == "el-test"
@@ -95,9 +101,11 @@ def test_elevenlabs_sends_voice_and_narration_and_writes_wavs(tmp_path):
 
 @pytest.mark.parametrize(
     "backend, key, env",
-    [("openai", "OPENAI_API_KEY", {}),
-     ("elevenlabs", "ELEVENLABS_API_KEY", {"ELEVENLABS_API_KEY": "   "}),
-     ("openai", "OPENAI_API_KEY", {"ELEVENLABS_API_KEY": "el-test"})],
+    [
+        ("openai", "OPENAI_API_KEY", {}),
+        ("elevenlabs", "ELEVENLABS_API_KEY", {"ELEVENLABS_API_KEY": "   "}),
+        ("openai", "OPENAI_API_KEY", {"ELEVENLABS_API_KEY": "el-test"}),
+    ],
 )
 def test_missing_api_key_fails_before_any_request(tmp_path, backend, key, env):
     transport = FakeTransport()
@@ -111,8 +119,7 @@ def test_missing_api_key_fails_before_any_request(tmp_path, backend, key, env):
 
 @pytest.mark.parametrize(
     "backend, env",
-    [("openai", {"OPENAI_API_KEY": "sk-test"}),
-     ("elevenlabs", {"ELEVENLABS_API_KEY": "el-test"})],
+    [("openai", {"OPENAI_API_KEY": "sk-test"}), ("elevenlabs", {"ELEVENLABS_API_KEY": "el-test"})],
 )
 def test_non_2xx_response_names_backend_scene_and_status(tmp_path, backend, env):
     transport = FakeTransport(status=401, body=b'{"error": {"message": "Invalid API key"}}')
@@ -136,8 +143,9 @@ def local_server():
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             body = self.rfile.read(int(self.headers["Content-Length"]))
-            received.append({"path": self.path, "auth": self.headers["Authorization"],
-                             "body": body})
+            received.append(
+                {"path": self.path, "auth": self.headers["Authorization"], "body": body}
+            )
             status, reply = (200, body) if self.path == "/ok" else (401, b"denied")
             self.send_response(status)
             self.send_header("Content-Length", str(len(reply)))
@@ -159,7 +167,9 @@ def test_urllib_transport_posts_and_returns_status_for_success_and_errors(local_
     base, received = local_server
 
     assert urllib_transport(f"{base}/ok", {"Authorization": "Bearer x"}, b"hello") == (
-        200, b"hello")
+        200,
+        b"hello",
+    )
     assert urllib_transport(f"{base}/nope", {}, b"{}") == (401, b"denied")
     assert received[0] == {"path": "/ok", "auth": "Bearer x", "body": b"hello"}
 

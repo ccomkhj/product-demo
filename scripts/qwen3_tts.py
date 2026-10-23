@@ -6,9 +6,9 @@
 
 import argparse
 import json
-from pathlib import Path
 import sys
 import wave
+from pathlib import Path
 
 from voice_config import QWEN_MODEL, QWEN_REVISION, check_platform, pinned_snapshot
 
@@ -54,10 +54,12 @@ def synthesize(request, out_dir, loader=load_local_model, writer=write_audio):
     for index, scene in enumerate(request["scenes"]):
         name = f"{index}.wav"
         try:
-            results = model.generate(text=scene["narration"].strip(),
-                                     ref_audio=config["reference_audio"],
-                                     ref_text=config["reference_text"],
-                                     lang_code=config["language"])
+            results = model.generate(
+                text=scene["narration"].strip(),
+                ref_audio=config["reference_audio"],
+                ref_text=config["reference_text"],
+                lang_code=config["language"],
+            )
             writer(results, out_dir / name)
         except Exception as exc:
             raise RuntimeError(f"scene {scene['id']!r}: {exc}") from exc
