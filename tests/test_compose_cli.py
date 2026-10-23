@@ -141,6 +141,15 @@ def test_compose_writes_fitted_30fps_video_with_audio(tmp_path, with_readiness):
     headings = [line for line in transcript.splitlines() if line.startswith("## ")]
     assert headings == ["## Frozen", "## Brisk", "## Long"]
     assert all(text in transcript for text in NARRATION.values())
+    # the edit map lays the scenes end to end, ending on compose's printed total
+    scenes = edit_map(tmp_path)["scenes"]
+    assert [(s["id"], s["title"], s["actions"]) for s in scenes] == [
+        ("frozen", "Frozen", []), ("brisk", "Brisk", []), ("long", "Long", [])]
+    assert [(s["start_s"], s["end_s"]) for s in scenes[:2]] == [(0.0, 3.0), (3.0, 5.0)]
+    assert scenes[2]["start_s"] == 5.0
+    total = next(line for line in result.stdout.splitlines() if line.startswith("total\t"))
+    assert total.startswith(f"total\t{scenes[2]['end_s']:.3f}s\t")
+    assert edit_map(tmp_path)["total_s"] == scenes[2]["end_s"]
 
 
 def bottom_and_top_difference(a, b, width=320, height=240, at=0.5):
@@ -192,8 +201,7 @@ def frame_difference(path, a, b):
     return sum(abs(x - y) for x, y in zip(first, second)) / len(first)
 
 
-@needs_ffmpeg
-def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phrase(tmp_path):
+def write_beat_demo(tmp_path):
     audio = write_demo(tmp_path)
     make_media(tmp_path, audio)
     # One scene over the whole raw video: 2.5 s of motion, frozen, then motion from
@@ -214,6 +222,11 @@ def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phra
     ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=8",
            "-ac", "1", "-c:a", "pcm_s16le", audio / "frozen.wav")
 
+
+@needs_ffmpeg
+def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phrase(tmp_path):
+    write_beat_demo(tmp_path)
+
     result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
 
     assert result.returncode == 0, result.stderr
@@ -226,6 +239,32 @@ def test_a_beat_holds_the_rest_of_the_scene_until_the_narration_reaches_its_phra
     lines = result.stdout.splitlines()
     assert lines[0].startswith("frozen\thold")
     assert lines[1] == 'at\tfrozen\t1\t4.133s\t"Second"'
+
+
+def edit_map(demo_dir):
+    return json.loads((demo_dir / f"{demo_dir.name}.editmap.json").read_text())
+
+
+@needs_ffmpeg
+def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
+    write_beat_demo(tmp_path)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    # the same times compose prints: 'at frozen 1 4.133s "Second"' and 'total 8.000s'
+    assert edit_map(tmp_path) == {
+        "total_s": 8.0,
+        "scenes": [{
+            "id": "frozen", "title": "frozen", "start_s": 0.0, "end_s": 8.0,
+            "actions": [
+                {"index": 0, "type": "point", "start_s": 0.0},
+                {"index": 1, "type": "click", "start_s": 4.133, "at": "Second"},
+            ],
+        }],
+    }
+    assert 'at\tfrozen\t1\t4.133s\t"Second"' in result.stdout
+    assert "total\t8.000s\t" in result.stdout
 
 
 def test_first_flash_is_the_first_frame_that_is_magenta_throughout():
