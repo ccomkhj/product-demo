@@ -35,6 +35,8 @@ The chrome-devtools MCP server needs the Node version in `chrome-devtools-mcp`'s
 (`npm view chrome-devtools-mcp engines`, currently `^20.19 || ^22.12 || >=23`); older Node
 fails with `CONNECTION_CLOSED`.
 
+Update with `/plugin marketplace update product-demo` (or uninstall and install again).
+
 **Breaking change:** the skill is now `/product-demo:run` (and `/product-demo:run --configure`).
 The old `/product-demo` command and the skills.sh install are gone; reinstall as a plugin.
 
@@ -47,9 +49,13 @@ The old `/product-demo` command and the skills.sh install are gone; reinstall as
 It asks what's missing, you approve the script, and you get `<slug>.mp4`, `<slug>.srt` and
 `transcript.md` in `demos/<slug>/`.
 
-To edit a finished demo without touching the original (speed, trims, cuts), ask
-`/product-demo:postprocessing`, e.g. `/product-demo:postprocessing csv-export: 1.25x, cut the first 2 s`.
-It writes `<slug>-post.mp4` and `<slug>-post.srt`.
+Edit a finished demo without touching the original with `/product-demo:postprocessing` ([guide](docs/postprocessing.md)):
+
+```
+/product-demo:postprocessing csv-export: make it 1.25x
+/product-demo:postprocessing csv-export: add a title card
+/product-demo:postprocessing csv-export: add our logo logo.png as a watermark
+```
 
 Run `/product-demo:run --configure` once to set up voice (or record your own), presenter and subtitles with the agent.
 

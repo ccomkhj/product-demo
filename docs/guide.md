@@ -24,7 +24,8 @@ fails with `CONNECTION_CLOSED`.
 To work on a local clone, add the clone as the marketplace instead:
 `/plugin marketplace add /path/to/product-demo`.
 
-The manifest has no fixed version, so every commit is an update (`/plugin marketplace update product-demo`).
+The manifest has no fixed version, so every commit is an update. To get it, run
+`/plugin marketplace update product-demo`, or uninstall and install the plugin again.
 
 **Breaking change:** the skill used to be `/product-demo`; it is now `/product-demo:run`
 (configure: `/product-demo:run --configure`). The skills.sh install and the
@@ -48,19 +49,29 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
 4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
 
+More ways to start:
+
+```text
+/product-demo:run --configure
+/product-demo:run Make a 30-second feature announcement for CSV export on https://app.example.com/reports. Use the presenter avatar me.png.
+/product-demo:run Show how to invite a teammate from Settings, in my own voice.
+/product-demo:run Re-compose demos/csv-export without burned-in subtitles.
+```
+
 ### Post-processing
 
-```
+```text
 /product-demo:postprocessing csv-export: make it 1.25x and cut the first two seconds
+/product-demo:postprocessing csv-export: add a title card and a closing card with our URL
+/product-demo:postprocessing csv-export: add logo.png as a watermark and a progress bar
+/product-demo:postprocessing csv-export: Korean subtitles and chapters for YouTube
+/product-demo:postprocessing csv-export: a GIF of the export scene and a version under 10 MB
 ```
 
 Edits a composed demo without touching `<slug>.mp4`, `<slug>.srt` or `transcript.md`. The agent
-writes the edits as a post recipe, `demos/<slug>/post.json` (format:
-[`references/post-recipe.md`](../references/post-recipe.md)), runs `scripts/postprocess.py` and
+writes the edits as a post recipe, `demos/<slug>/post.json`, runs `scripts/postprocess.py` and
 hands over `<slug>-post.mp4` and `<slug>-post.srt`. Change one value later and re-run: the rest
-comes out the same. Times in the recipe are against the original video or a scene, read from
-the `<slug>.editmap.json` compose writes; demos composed before the edit map need a re-compose
-for scene-anchored times.
+comes out the same. Every operation, with examples: [post-processing](postprocessing.md).
 
 ### Configure
 
@@ -161,7 +172,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | Path | What it is |
 |------|------------|
 | `.claude-plugin/` | Plugin and marketplace manifests (no fixed version: each commit is an update) |
-| `skills/run/SKILL.md` | The `run` skill: interview, approval, narration, recording, compose and verify: interview, approval, narration, recording, compose and verify |
+| `skills/run/SKILL.md` | The `run` skill: interview, approval, narration, recording, compose and verify |
 | `skills/postprocessing/SKILL.md` | The `postprocessing` skill: post recipe, run, verify |
 | `references/` | Demo spec format, browser recording recipes and verification recipes |
 | `references/templates/` | Announcement, tutorial and sales script guidance |
