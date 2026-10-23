@@ -1,6 +1,6 @@
 """The README's sample (docs/sample/) is the reference end-to-end demo: its spec must stay valid.
 
-Re-record it with `/product-demo` from the sample's spec to check the whole skill by hand.
+Re-record it with `/product-demo:run` from the sample's spec to check the whole skill by hand.
 """
 
 import json

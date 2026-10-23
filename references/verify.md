@@ -1,6 +1,6 @@
 # Verifying a composed demo
 
-Recipes for step 7 of SKILL.md. Run them from the directory holding `demos/`.
+Recipes for step 7 of `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md`. Run them from the directory holding `demos/`.
 
 ## Compose output
 
