@@ -353,6 +353,7 @@ def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
     # the same times compose prints: 'at frozen 1 4.133s "Second"' and 'total 8.000s'
     assert edit_map(tmp_path) == {
         "total_s": 8.0,
+        "subtitles_burned": False,
         "scenes": [
             {
                 "id": "frozen",

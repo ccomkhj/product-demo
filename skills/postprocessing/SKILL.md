@@ -1,6 +1,6 @@
 ---
 name: postprocessing
-description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, and review it as a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
+description: Edit an already composed product-demo video without touching the original - speed it up, trim the start or end, cut middle ranges, add a watermark, arrows, text callouts or a progress bar, translated subtitle tracks and chapters, and review it as a contact sheet - by writing a post recipe and running one command. Use when the user wants to change a finished demos/<slug>/<slug>.mp4 ("make it 1.25x", "cut the first two seconds", "remove the slow page load") rather than re-record or re-compose it.
 argument-hint: "<demo slug or folder> <what to change>"
 ---
 
@@ -33,6 +33,26 @@ adding a cut or a speed never moves other times. Prefer scene anchors
 scene or an action; the scene ids and `at` phrases are in `<slug>.editmap.json`. To find
 source seconds for "the slow page load", make a contact sheet of the source (step 4).
 
+### Translations: write the .srt files yourself
+
+For "add Korean and German subtitles", add `"translations": ["ko", "de"]` and, before
+running, write one `demos/<slug>/<slug>.<lang>.srt` per language yourself (no external
+service), next to `<slug>.srt`:
+
+- Read `<slug>.srt` and copy it block by block: same cue numbers, same
+  `00:00:01,000 --> 00:00:03,500` lines, byte for byte. Translate only the text lines.
+  Never merge, split, add or drop a cue, even when the target language reads better that
+  way; the run fails on a changed count or timing.
+- Leave product names, UI labels (button, menu and field names as shown on screen; the
+  viewer has to find them in the picture), URLs, code, keys and numbers as written, unless
+  the user says otherwise.
+- Keep each cue about as long as the original (two short lines at most) so it can be read
+  in its time.
+- Write UTF-8. If the file already exists from an earlier run and `<slug>.srt` is
+  unchanged, keep it rather than re-translating.
+
+If the source has burned-in subtitles (the run warns), the translated tracks show on top
+of them: say so once and suggest re-composing with `--no-burn-subs` first.
 Callout positions are source-video pixels. Pick them from a contact sheet of the source
 (step 4): find the moment, then convert sheet coordinates (each frame is scaled down to at
 most 480 px wide) by the video's width / the frame's width, or Read one full-size frame
@@ -60,6 +80,8 @@ callouts  <n>  <type> <start>s-<end>s, ...
 progress_bar  <edge> <n>px  <start>s-<end>s
 click_sounds  <n> clicks  [<n> unplaceable]
 music  <file>  level <l>  duck <r>:1  fade out <s>s
+subtitle_tracks  original, <lang>, ...
+chapters  <n> chapters  <YouTube list path>
 contact_sheet  <n> frames  <png path>
 total  <s>s  <video path>
 subtitles  <n> cues  <.srt path>
@@ -68,7 +90,9 @@ subtitles  <n> cues  <.srt path>
 Warnings go to stderr (`postprocess: warning: ...`): a cut that splits a subtitle cue (a cut
 mid-sentence; offer to move it to a cue boundary), a callout over the subtitle band or the
 presenter bubble (offer to move it), a click that gets no sound (list them to the user
-with the reason), or a missing edit map. On
+with the reason), a missing edit map, translations over burned-in subtitles, or chapters
+YouTube would ignore (fewer than 3, or one under 10 s; mention it, the mp4 chapters still
+work). On
 `postprocess: error: ...` nothing was written: fix the recipe and re-run. A demo without
 `<slug>.editmap.json` cannot use scene anchors; tell the user to re-run compose
 (`/product-demo:run`, re-compose the demo) to get one.
@@ -84,9 +108,13 @@ with the reason), or a missing edit map. On
   `${CLAUDE_PLUGIN_ROOT}/references/verify.md` on `<slug>-post.mp4`.
 - For a contact sheet of the source (to pick cut times), run with a recipe holding only
   `exports.contact_sheet`: with no other operation its frame times are source times.
+- Subtitle tracks and chapters: `ffprobe -v error -show_entries stream=codec_type:stream_tags=language -show_chapters demos/<slug>/<slug>-post.mp4`
+  lists one subtitle track per language and the chapters; each `<slug>-post.<lang>.srt`
+  has as many cues as `<slug>-post.srt`.
 - Exports: each printed export file exists; the size-capped mp4 is under its cap
   (`ls -l`), the GIF and poster open (Read the poster).
 
-Hand over `<slug>-post.mp4` and `<slug>-post.srt` with the printed lines' summary and any
+Hand over `<slug>-post.mp4` and `<slug>-post.srt` (plus each `<slug>-post.<lang>.srt` and
+`<slug>-post-chapters.txt` for the YouTube description) with the printed lines' summary and any
 warnings. Burned-in subtitles move with the picture: they are cut and sped up with it and
 cannot be removed or restyled here; mention this once when it matters.
