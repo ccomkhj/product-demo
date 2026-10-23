@@ -19,10 +19,8 @@ from demo_spec import choose_backend
 
 @pytest.fixture
 def registry(tmp_path, monkeypatch):
-    config = tmp_path / '.voices' / 'config.json'
-    monkeypatch.setattr(voice_config, 'PROFILE_CONFIG', config)
-    monkeypatch.setattr(own_voice, 'PROFILE_CONFIG', config)
-    return config
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path))
+    return tmp_path / 'product-demo' / 'config.json'
 
 
 def recording(seconds=4, silent=False, pause=0.5):

@@ -423,16 +423,15 @@ def test_subtitles_wrap_clear_of_a_bottom_bubble():
 
 def test_avatar_profile_uses_the_saved_photo(tmp_path, monkeypatch):
     import compose
-    import voice_config
-    monkeypatch.setattr(voice_config, "PROFILE_CONFIG", tmp_path / ".voices" / "config.json")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     spec = {"avatar": {"profile": "own_photo", "corner": "top-left", "size": 0.3}}
     with pytest.raises(compose.ComposeError, match="own_photo needs setup"):
         compose.spec_avatar(spec, tmp_path)
-    (tmp_path / ".voices").mkdir()
-    (tmp_path / ".voices" / "me.png").write_bytes(PHOTO.read_bytes())
-    (tmp_path / ".voices" / "config.json").write_text(json.dumps({"own_photo": {"image": "me.png"}}))
+    (tmp_path / "product-demo").mkdir()
+    (tmp_path / "product-demo" / "me.png").write_bytes(PHOTO.read_bytes())
+    (tmp_path / "product-demo" / "config.json").write_text(json.dumps({"own_photo": {"image": "me.png"}}))
     avatar = compose.spec_avatar(spec, tmp_path)
-    assert (avatar.image, avatar.corner, avatar.size) == ((tmp_path / ".voices" / "me.png").resolve(), "top-left", 0.3)
+    assert (avatar.image, avatar.corner, avatar.size) == ((tmp_path / "product-demo" / "me.png").resolve(), "top-left", 0.3)
 
 
 def test_an_action_line_names_its_time_and_phrase_and_how_late_it_is():

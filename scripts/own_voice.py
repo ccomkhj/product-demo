@@ -16,7 +16,7 @@ import uuid
 import webbrowser
 
 from demo_spec import BACKENDS, SpecError, validate_spec
-from voice_config import (PROFILE_CONFIG, QWEN_MODEL, probe_reference, resolve_voice_config,
+from voice_config import (QWEN_MODEL, profile_config, probe_reference, resolve_voice_config,
                           saved_photo)
 
 READING = ("Hello, this is my voice. I will use it to guide you through a short product "
@@ -50,9 +50,10 @@ def status():
 
 
 def read_registry():
-    if not PROFILE_CONFIG.exists():
+    registry = profile_config()
+    if not registry.exists():
         return {}
-    data = json.loads(PROFILE_CONFIG.read_text())
+    data = json.loads(registry.read_text())
     if not isinstance(data, dict):
         raise ValueError('The voice registry must be a JSON object; repair it before saving')
     return data
@@ -61,12 +62,12 @@ def read_registry():
 def write_registry(data, temporary):
     pending = Path(temporary) / 'config.json'
     pending.write_text(json.dumps(data, indent=2) + '\n')
-    pending.replace(PROFILE_CONFIG)
+    pending.replace(profile_config())
 
 
 def remove_replaced(name):
-    """Delete a recording or photo the registry no longer points at, but only inside .voices."""
-    directory = PROFILE_CONFIG.parent
+    """Delete a recording or photo the registry no longer points at, but only inside the registry folder."""
+    directory = profile_config().parent
     if name and (directory / name).resolve().parent == directory.resolve():
         (directory / name).unlink(missing_ok=True)
 
@@ -79,7 +80,7 @@ def register_photo(source):
     streams = json.loads(output).get('streams') or [{}]
     if not streams[0].get('width') or not streams[0].get('height'):
         raise ValueError(f'{source} is not an image')
-    directory = PROFILE_CONFIG.parent
+    directory = profile_config().parent
     directory.mkdir(parents=True, exist_ok=True)
     data = read_registry()
     previous = data.get('own_photo', {}).get('image') if isinstance(data.get('own_photo'), dict) else None
@@ -113,7 +114,7 @@ def save_defaults(settings):
         validate_spec({**spec, 'scenes': [{'id': 'x', 'url': 'x', 'narration': 'x'}]})
     except SpecError as exc:
         raise ValueError(str(exc)) from exc
-    directory = PROFILE_CONFIG.parent
+    directory = profile_config().parent
     directory.mkdir(parents=True, exist_ok=True)
     data = read_registry()
     data['defaults'] = {**data.get('defaults', {}), **settings}
@@ -136,7 +137,7 @@ def register(payload, replace=False):
         raise ValueError('Invalid audio upload') from exc
     if not audio or len(audio) > MAX_UPLOAD:
         raise ValueError('Empty or oversized recording')
-    directory = PROFILE_CONFIG.parent
+    directory = profile_config().parent
     directory.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=directory) as temporary:
         source = Path(temporary) / 'recording'
