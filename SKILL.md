@@ -177,8 +177,9 @@ the actions keep pace with the voice.
   `pace` check) and step 6. This works as long as the visuals still show what the new
   words describe and every `at` phrase is still in the narration; otherwise repeat
   readiness from step 3 and record again from step 5.
+- **Mispronounced word:** add `voice.pronounce`, rerun TTS and compose.
 
-Either way, finish with step 7 and meet its Done-when before handing the new video over:
+In every case, finish with step 7 and meet its Done-when before handing the new video over:
 new audio or new fitting can break length, overlay effects or sync just like a new take.
 
 ## Local cloned narration

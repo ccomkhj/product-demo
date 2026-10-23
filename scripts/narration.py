@@ -87,6 +87,17 @@ class Narration:
         return done / self._chars
 
 
+def spoken(narration, pronounce):
+    """The narration as the voice should say it: each ``pronounce`` key, as a whole word
+    (case-sensitive), becomes its value in one pass, so a replacement is never replaced again.
+    Longer keys win where keys overlap."""
+    if not pronounce:
+        return narration
+    keys = sorted(pronounce, key=len, reverse=True)
+    pattern = r"(?<!\w)(?:" + "|".join(map(re.escape, keys)) + r")(?!\w)"
+    return re.sub(pattern, lambda m: pronounce[m[0]], narration)
+
+
 def _split_sentences(text):
     """Split narration into sentences without breaking after abbreviations like "e.g." or "Dr."."""
     sentences, start = [], 0
