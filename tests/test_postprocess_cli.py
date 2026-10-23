@@ -155,6 +155,43 @@ def test_contact_sheet_export_is_written_with_its_frames(tmp_path):
 
 
 @needs_ffmpeg
+def test_size_cap_gif_and_poster_exports_are_written_within_their_limits(tmp_path):
+    demo = make_demo(tmp_path, {"speed": 2.0, "exports": {
+        "size_cap_mb": 0.2,
+        "gif": {"from": 2.0, "to": 6.0, "width": 160, "fps": 10},
+        "poster": {"time": {"scene": "two", "at": "end"}}}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    capped, gif, poster = (demo / f"smoke-post-{name}" for name in ("0.2mb.mp4", "gif.gif", "poster.png"))
+    assert f"size_cap\t0.2 MB\t{capped}" in result.stdout
+    assert f"gif\t1.000s-3.000s\t160px 10fps\t{gif}" in result.stdout
+    assert f"poster\t2.000s\t{poster}" in result.stdout
+    assert 0 < capped.stat().st_size <= 200_000
+    info = probe(capped)
+    assert float(info["format"]["duration"]) == pytest.approx(3.0, abs=0.1)
+    assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
+    [stream] = probe(gif)["streams"]
+    assert (stream["codec_name"], stream["width"], stream["height"]) == ("gif", 160, 120)
+    assert float(probe(gif)["format"]["duration"]) == pytest.approx(2.0, abs=0.15)
+    [stream] = probe(poster)["streams"]
+    assert (stream["width"], stream["height"]) == (320, 240)
+
+
+@needs_ffmpeg
+def test_an_unreachable_size_cap_fails_with_the_smallest_reachable_size(tmp_path):
+    demo = make_demo(tmp_path, {"exports": {"size_cap_mb": 0.01}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "smallest reachable size is 0.08 MB" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not list(demo.glob("smoke-post-*mb.mp4"))
+
+
+@needs_ffmpeg
 @needs_rsvg
 def test_title_and_closing_cards_lengthen_the_video_and_shift_the_subtitles(tmp_path):
     demo = make_demo(tmp_path, {"speed": 2.0, "cards": {

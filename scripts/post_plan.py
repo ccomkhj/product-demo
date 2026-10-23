@@ -30,6 +30,14 @@ CARD_FADE_S = 0.5  # fade at each side of a card and of the demo next to it
 CARD_BACKGROUND, CARD_COLOR = "#111111", "#ffffff"
 FADE_S = 0.03  # audio fade at each side of every cut, against clicks and pops
 CONTACT_FRAMES, MAX_CONTACT_FRAMES, MAX_COLUMNS = 12, 60, 8
+GIF_WIDTH, MIN_GIF_WIDTH, MAX_GIF_WIDTH = 640, 16, 1920
+GIF_FPS, MAX_GIF_FPS = 10, 30
+GIF_WARN_MB = 10
+# Size cap: kept below the cap by SIZE_MARGIN for the container; the video bitrate may not
+# drop below MIN_BPP bits per pixel per frame (readable UI text), else the resolution
+# steps down the ladder (never up, never below its last rung).
+SIZE_MARGIN, MIN_BPP, SIZE_AUDIO_KBPS = 0.95, 0.015, 64
+SIZE_HEIGHTS = (1080, 720, 540, 360)
 X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
 AAC = ["-c:a", "aac", "-b:a", "192k"]
 AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
@@ -314,6 +322,28 @@ def _check_cards(value, where):
                                   f"got {card[key]!r}")
 
 
+def _check_size_cap(value, where):
+    if not _is_number(value) or value <= 0:
+        raise RecipeError(f"{where} must be a positive number of megabytes, got {value!r}")
+
+
+def _check_gif(value, where):
+    _check_keys(value, where, ("from", "to", "width", "fps"))
+    for key in ("from", "to"):
+        if key in value:
+            check_time(value[key], f"{where}.{key}")
+    for key, low, high in (("width", MIN_GIF_WIDTH, MAX_GIF_WIDTH), ("fps", 1, MAX_GIF_FPS)):
+        number = value.get(key, low)
+        if isinstance(number, bool) or not isinstance(number, int) or not low <= number <= high:
+            raise RecipeError(f"{where}.{key} must be a whole number from {low} to {high}")
+
+
+def _check_poster(value, where):
+    _check_keys(value, where, ("time",))
+    if "time" in value:
+        check_time(value["time"], f"{where}.time")
+
+
 def check_time(value, where):
     """A recipe time: seconds >= 0, or {"scene": id, "at"?: phrase, "offset_s"?: s}."""
     if isinstance(value, dict):
@@ -357,7 +387,9 @@ VALIDATORS = {
 }
 
 EXPORT_VALIDATORS = {
-    # size_cap_mb, gif, poster (#22)
+    "size_cap_mb": _check_size_cap,
+    "gif": _check_gif,
+    "poster": _check_poster,
 
     "contact_sheet": _check_contact_sheet,
 }
@@ -390,6 +422,47 @@ def _cards_step(recipe, plan):
     return Step("cards", f"cards{line}", {"cards": plan.cards, "demo_s": end - start})
 
 
+def _size_cap_step(recipe, plan):
+    cap_mb = recipe.get("exports", {}).get("size_cap_mb")
+    if cap_mb is None:
+        return None
+    return Step("size_cap", f"size_cap\t{cap_mb:g} MB", {"cap_mb": cap_mb}, export=True)
+
+
+def _gif_step(recipe, plan):
+    gif = recipe.get("exports", {}).get("gif")
+    if gif is None:
+        return None
+    start, end = 0.0, plan.total_s
+    if "from" in gif or "to" in gif:
+        where = "exports.gif"
+        placed = plan.time_map.range(
+            source_time(gif.get("from", 0.0), plan.source_s, plan.edit_map, f"{where}.from"),
+            source_time(gif.get("to", plan.source_s), plan.source_s, plan.edit_map, f"{where}.to"))
+        if placed is None or placed[1] - placed[0] <= 0:
+            raise RecipeError(f"{where}: its range is empty or all cut")
+        start, end = placed[0], placed[1]
+    width, fps = gif.get("width", GIF_WIDTH), gif.get("fps", GIF_FPS)
+    return Step("gif", f"gif\t{start:.3f}s-{end:.3f}s\t{width}px {fps}fps",
+                {"start_s": round(start, 3), "end_s": round(end, 3), "width": width, "fps": fps},
+                export=True)
+
+
+def _poster_step(recipe, plan):
+    poster = recipe.get("exports", {}).get("poster")
+    if poster is None:
+        return None
+    if "time" in poster:
+        at_s = plan.output_s(poster["time"], "exports.poster.time")
+    else:
+        scenes = [*(plan.edit_map or {}).get("scenes", ()), {"start_s": 0.0, "end_s": plan.source_s}]
+        placed = next(p for scene in scenes
+                      if (p := plan.time_map.range(scene["start_s"], scene["end_s"])))
+        at_s = (placed[0] + placed[1]) / 2  # the middle of the first scene left after the cards
+    at_s = round(min(at_s, plan.total_s - 1 / FPS), 3)
+    return Step("poster", f"poster\t{at_s:.3f}s", {"at_s": at_s}, export=True)
+
+
 def _contact_sheet_step(recipe, plan):
     sheet = recipe.get("exports", {}).get("contact_sheet")
     if sheet is None:
@@ -418,8 +491,9 @@ STEPS = {
 
     # click_sounds, music (#20)
 
-    # size_cap, gif, poster (#22)
-
+    "size_cap": _size_cap_step,
+    "gif": _gif_step,
+    "poster": _poster_step,
     "contact_sheet": _contact_sheet_step,
 }
 
@@ -544,9 +618,58 @@ def _faded(chain, length, fade_in, fade_out):
 
 
 def frame_cmd(src, at_s, width, out):
-    """One frame of ``src`` at ``at_s`` seconds, scaled to ``width``, as a PNG."""
+    """One frame of ``src`` at ``at_s`` seconds, scaled to ``width`` (None: as is), as a PNG."""
+    scale = ["-vf", f"scale={width}:-2"] if width else []
     return ["ffmpeg", "-v", "error", "-y", "-ss", f"{at_s:.3f}", "-i", str(src),
-            "-frames:v", "1", "-vf", f"scale={width}:-2", str(out)]
+            "-frames:v", "1", *scale, str(out)]
+
+
+def size_cap_encoding(cap_mb, length_s, width, height):
+    """(width, height, video kb/s) that fits a ``length_s`` video in ``cap_mb`` megabytes:
+    the bitrate drops first, the resolution only below the MIN_BPP floor; RecipeError
+    naming the smallest reachable size when even the ladder's last rung is too big."""
+    video_kbps = cap_mb * 8000 / length_s * SIZE_MARGIN - SIZE_AUDIO_KBPS
+    sizes = [(width, height)] + [(round(width * h / height / 2) * 2, h)
+                                 for h in SIZE_HEIGHTS if h < height]
+    for w, h in sizes:
+        if video_kbps >= _floor_kbps(w, h):
+            return w, h, round(video_kbps)
+    w, h = sizes[-1]
+    smallest = (_floor_kbps(w, h) + SIZE_AUDIO_KBPS) * length_s / SIZE_MARGIN / 8000
+    raise RecipeError(f"exports.size_cap_mb: {cap_mb:g} MB is out of reach for a "
+                      f"{length_s:.1f}s video even at {w}x{h}; the smallest reachable size "
+                      f"is {math.ceil(smallest * 100) / 100:.2f} MB (cut the video shorter)")
+
+
+def _floor_kbps(width, height):
+    return MIN_BPP * width * height * FPS / 1000
+
+
+def size_cap_cmds(src, out, width, height, video_kbps, passlog, scale):
+    """The two x264 passes at ``video_kbps`` (scaled to width x height when ``scale``)."""
+    vf = ["-vf", f"scale={width}:{height}"] if scale else []
+    common = ["ffmpeg", "-v", "error", "-y", "-i", str(src), *vf, "-c:v", "libx264",
+              "-preset", "medium", "-b:v", f"{video_kbps}k", "-pix_fmt", "yuv420p",
+              "-passlogfile", str(passlog)]
+    return [[*common, "-pass", "1", "-an", "-f", "null", "-"],
+            [*common, "-pass", "2", "-c:a", "aac", "-b:a", f"{SIZE_AUDIO_KBPS}k",
+             "-map_metadata", "-1", "-movflags", "+faststart", str(out)]]
+
+
+def gif_cmd(src, out, start_s, end_s, width, fps):
+    """A looping GIF of [start_s, end_s] at ``width`` and ``fps``, with its own palette."""
+    graph = (f"[0:v]fps={fps},scale={width}:-1:flags=lanczos,split[a][b];"
+             f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5")
+    return ["ffmpeg", "-v", "error", "-y", "-ss", f"{start_s:.3f}", "-t", f"{end_s - start_s:.3f}",
+            "-i", str(src), "-filter_complex", graph, "-loop", "0", str(out)]
+
+
+def gif_warning(size_bytes):
+    """A warning when a GIF is over GIF_WARN_MB, else None."""
+    if size_bytes <= GIF_WARN_MB * 1e6:
+        return None
+    return (f"the GIF is {size_bytes / 1e6:.1f} MB (over {GIF_WARN_MB} MB); shorten its range "
+            f"or lower its width or fps")
 
 
 def contact_sheet_svg(frames, columns, width, height):

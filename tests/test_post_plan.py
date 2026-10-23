@@ -1,6 +1,7 @@
 import pytest
 
-from post_plan import Cue, RecipeError, build_post_plan, card_defaults, card_svg, cards_cmd
+from post_plan import (Cue, RecipeError, build_post_plan, card_defaults, card_svg, cards_cmd,
+                       gif_cmd, gif_warning, size_cap_encoding)
 
 SOURCE_S = 12.0
 EDIT_MAP = {
@@ -203,6 +204,94 @@ def test_contact_sheet_defaults_to_twelve_frames_in_four_columns():
     assert step.params["times"] == tuple(float(t) for t in range(12))
 
 
+# --- exports: size cap, gif, poster (#22) ------------------------------------------------
+
+def test_poster_defaults_to_a_frame_from_the_first_scene():
+    [step] = plan({"exports": {"poster": {}}}).steps
+
+    assert step.export
+    assert step.params == {"at_s": 2.0}  # middle of intro, 0-4 s
+    assert step.line == "poster\t2.000s"
+
+
+def test_poster_default_skips_a_scene_that_was_cut_away():
+    [_, step] = plan({"trim": {"start": 4.0}, "exports": {"poster": {}}}).steps
+
+    assert step.params == {"at_s": 4.0}  # report 4-12 s is now 0-8 s
+
+
+def test_poster_default_without_an_edit_map_is_the_middle_of_the_video():
+    [step] = plan({"exports": {"poster": {}}}, edit_map=None).steps
+
+    assert step.params == {"at_s": 6.0}
+
+
+def test_a_custom_poster_time_resolves_through_the_time_map():
+    result = plan({"trim": {"cuts": [{"from": 1.0, "to": 2.0}]}, "speed": 2.0,
+                   "exports": {"poster": {"time": scene("report", at="Export")}}})
+
+    assert result.steps[-1].params == {"at_s": 3.25}  # (7.5 - 1) / 2
+
+
+def test_gif_defaults_to_the_whole_video():
+    [step] = plan({"exports": {"gif": {}}}).steps
+
+    assert step.export
+    assert step.params == {"start_s": 0.0, "end_s": 12.0, "width": 640, "fps": 10}
+    assert step.line == "gif\t0.000s-12.000s\t640px 10fps"
+
+
+def test_a_gif_range_resolves_through_the_time_map():
+    result = plan({"trim": {"cuts": [{"from": 1.0, "to": 2.0}]}, "speed": 2.0,
+                   "exports": {"gif": {"from": scene("report"), "to": 10.0, "width": 320, "fps": 15}}})
+
+    assert result.steps[-1].params == {"start_s": 1.5, "end_s": 4.5, "width": 320, "fps": 15}
+
+
+def test_gif_command_generates_and_applies_a_palette_at_width_and_fps():
+    [step] = plan({"exports": {"gif": {"from": 1.0, "to": 3.0, "width": 320, "fps": 12}}}).steps
+
+    args = gif_cmd("in.mp4", "out.gif", **step.params)
+    assert args[args.index("-ss") + 1] == "1.000" and args[args.index("-t") + 1] == "2.000"
+    graph = args[args.index("-filter_complex") + 1]
+    assert "fps=12,scale=320:-1" in graph
+    assert "palettegen" in graph and "paletteuse" in graph
+    assert args[-1] == "out.gif"
+
+
+def test_a_gif_over_ten_megabytes_warns():
+    assert gif_warning(9_999_999) is None
+    assert "11.0 MB" in gif_warning(11_000_000)
+
+
+def test_size_cap_step_carries_the_cap():
+    [step] = plan({"exports": {"size_cap_mb": 10}}).steps
+
+    assert step.export and step.params == {"cap_mb": 10}
+    assert step.line == "size_cap\t10 MB"
+
+
+def test_size_cap_lowers_the_bitrate_and_keeps_the_resolution_when_it_can():
+    # 20 MB over 60 s: 20 * 8000 / 60 * 0.95 = 2533 kb/s, minus 64 kb/s audio
+    assert size_cap_encoding(20, 60.0, 1920, 1080) == (1920, 1080, 2469)
+    # 8 MB: 949 kb/s video, still above 1080p's floor (0.015 bpp * 1920x1080x30 = 933)
+    assert size_cap_encoding(8, 60.0, 1920, 1080) == (1920, 1080, 949)
+
+
+def test_size_cap_steps_the_resolution_down_only_below_the_floor():
+    # 7 MB: 823 kb/s < 933 (1080p floor) -> 720p (floor 415)
+    assert size_cap_encoding(7, 60.0, 1920, 1080) == (1280, 720, 823)
+    assert size_cap_encoding(7, 60.0, 1440, 900) == (1440, 900, 823)  # floor 583
+    # 189 kb/s: below 1200p, 1080p, 720p and 540p (864x540: 210) floors
+    assert size_cap_encoding(2, 60.0, 1920, 1200) == (576, 360, 189)
+
+
+def test_an_unreachable_size_cap_names_the_smallest_reachable_size():
+    # 640x360 floor 103.7 kb/s + 64 audio, over 60 s, with the margin: 1.33 MB
+    with pytest.raises(RecipeError, match=r"1 MB.*60\.0s video.*640x360.*smallest reachable size is 1.33 MB"):
+        size_cap_encoding(1, 60.0, 1920, 1080)
+
+
 # --- validation ------------------------------------------------------------------------
 
 @pytest.mark.parametrize("recipe, message", [
@@ -222,7 +311,16 @@ def test_contact_sheet_defaults_to_twelve_frames_in_four_columns():
     ({"trim": {"start": 6, "end": 5}}, "trim.end must be after trim.start"),
     ({"trim": {"end": 13}}, "past the end"),
     ({"trim": {"cuts": [{"from": 0, "to": 12}]}}, "nothing left"),
-    ({"exports": {"gif": {}}}, "unknown key 'gif' in exports"),
+    ({"exports": {"webm": {}}}, "unknown key 'webm' in exports"),
+    ({"exports": {"size_cap_mb": 0}}, "size_cap_mb must be a positive number of megabytes"),
+    ({"exports": {"size_cap_mb": "10"}}, "size_cap_mb must be a positive number"),
+    ({"exports": {"gif": {"width": 8}}}, r"gif.width must be a whole number from 16 to 1920"),
+    ({"exports": {"gif": {"fps": 60}}}, r"gif.fps must be a whole number from 1 to 30"),
+    ({"exports": {"gif": {"range": [1, 2]}}}, "unknown key 'range' in exports.gif"),
+    ({"exports": {"gif": {"from": 3, "to": 2}}}, "exports.gif: its range is empty or all cut"),
+    ({"exports": {"gif": {"from": -1}}}, r"exports.gif.from must be seconds"),
+    ({"exports": {"poster": {"time": "1s"}}}, r"exports.poster.time must be seconds"),
+    ({"trim": {"start": 2}, "exports": {"poster": {"time": 1}}}, "inside a cut"),
     ({"exports": {"contact_sheet": {"columns": 0}}}, "columns must be a whole number from 1 to 8"),
     ({"exports": {"contact_sheet": {"interval_s": 0}}}, "interval_s must be a positive number"),
     ({"exports": {"contact_sheet": {"interval_s": 0.01}}}, "more than 60 frames"),
@@ -301,6 +399,15 @@ def test_cards_step_joins_cards_and_demo_with_fades():
             "fade=t=out:st=11.500:d=0.500[demov]") in graph
     assert "anullsrc=r=48000:cl=stereo,atrim=duration=3.000[closinga]" in graph
     assert "[titlev][titlea][demov][demoa][closingv][closinga]concat=n=3:v=1:a=1[v][a]" in graph
+
+
+def test_the_default_poster_and_the_contact_sheet_account_for_the_cards():
+    steps = plan({"cards": {"title": {"seconds": 2}, "closing": {}},
+                  "exports": {"poster": {}, "contact_sheet": {"interval_s": 4}}}, demo=DEMO).steps
+
+    assert [step.op for step in steps] == ["cards", "poster", "contact_sheet"]
+    assert steps[1].params["at_s"] == pytest.approx(4.0)  # middle of scene intro, after 2 s
+    assert steps[2].params["times"] == (0.0, 4.0, 8.0, 12.0, 16.0)  # 17 s in all
 
 
 def test_card_svg_draws_its_colours_and_escaped_text():
