@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reuse a registered own_voice, or serve a local microphone recorder; --replace records a new
-one, --photo saves own_photo."""
+one, --photo saves own_photo, --save-defaults saves the settings chosen by --configure."""
 
 import argparse
 import base64
@@ -15,6 +15,7 @@ import tempfile
 import uuid
 import webbrowser
 
+from demo_spec import BACKENDS, SpecError, validate_spec
 from voice_config import (PROFILE_CONFIG, QWEN_MODEL, probe_reference, resolve_voice_config,
                           saved_photo)
 
@@ -22,6 +23,7 @@ READING = ("Hello, this is my voice. I will use it to guide you through a short 
            "demonstration. We will look at the main features together, one step at a time, "
            "and explain how they work in everyday use.")
 MAX_UPLOAD = 16 * 1024 * 1024
+DEFAULT_FIELDS = ('voice', 'avatar', 'viewport', 'burn_subs')
 
 
 def run(command):
@@ -35,11 +37,16 @@ def status():
     except ValueError:
         photo = False
     try:
+        defaults = read_registry().get('defaults', {})
+    except (ValueError, OSError):
+        defaults = {}
+    try:
         config = resolve_voice_config({'profile': 'own_voice'}, 'qwen3', Path.cwd())
         probe_reference(config['reference_audio'], run)
-        return {'ready': True, 'profile': 'own_voice', 'photo': photo}
+        return {'ready': True, 'profile': 'own_voice', 'photo': photo, 'defaults': defaults}
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
-        return {'ready': False, 'profile': 'own_voice', 'photo': photo, 'reason': str(exc)}
+        return {'ready': False, 'profile': 'own_voice', 'photo': photo, 'defaults': defaults,
+                'reason': str(exc)}
 
 
 def read_registry():
@@ -83,6 +90,35 @@ def register_photo(source):
         write_registry(data, temporary)
     remove_replaced(previous)
     return directory / name
+
+
+def save_defaults(settings):
+    """Merge ``settings`` into the saved defaults after checking them as a demo spec would.
+
+    ``avatar: false`` means no presenter even when own_photo exists; ``burn_subs`` is compose's
+    subtitle policy. Pronunciations belong to a product's demo, not to every demo."""
+    if not isinstance(settings, dict) or set(settings) - set(DEFAULT_FIELDS):
+        raise ValueError(f'defaults must be a JSON object with only {", ".join(DEFAULT_FIELDS)}')
+    if 'burn_subs' in settings and not isinstance(settings['burn_subs'], bool):
+        raise ValueError('burn_subs must be true or false')
+    voice = settings.get('voice') or {}
+    if 'pronounce' in voice:
+        raise ValueError('voice.pronounce belongs in the demo spec, not the defaults')
+    if voice.get('backend', 'qwen3') not in BACKENDS:
+        raise ValueError(f'voice.backend must be one of {", ".join(BACKENDS)}')
+    spec = {key: settings[key] for key in ('voice', 'avatar', 'viewport') if key in settings}
+    if spec.get('avatar') is False:
+        del spec['avatar']
+    try:
+        validate_spec({**spec, 'scenes': [{'id': 'x', 'url': 'x', 'narration': 'x'}]})
+    except SpecError as exc:
+        raise ValueError(str(exc)) from exc
+    directory = PROFILE_CONFIG.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    data = read_registry()
+    data['defaults'] = {**data.get('defaults', {}), **settings}
+    with tempfile.TemporaryDirectory(dir=directory) as temporary:
+        write_registry(data, temporary)
 
 
 def register(payload, replace=False):
@@ -195,7 +231,17 @@ def main(argv=None):
     parser.add_argument('--replace', action='store_true', help='record a new voice over the registered one')
     parser.add_argument('--no-open', action='store_true', help='print the recorder URL without opening it')
     parser.add_argument('--photo', metavar='PATH', help='save this photo as own_photo, the presenter bubble')
+    parser.add_argument('--save-defaults', metavar='JSON',
+                        help=f'merge these settings ({", ".join(DEFAULT_FIELDS)}) into the saved defaults')
     args = parser.parse_args(argv)
+    if args.save_defaults:
+        try:
+            save_defaults(json.loads(args.save_defaults))
+        except (ValueError, OSError) as exc:
+            print(json.dumps({'defaults': False, 'reason': str(exc)}), flush=True)
+            return 1
+        print(json.dumps(status()), flush=True)
+        return 0
     if args.photo:
         try:
             register_photo(args.photo)
