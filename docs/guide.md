@@ -37,7 +37,7 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in.
 2. **You approve the script** before anything is recorded.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
-4. **You get `final.mp4`, `final.srt` and `transcript.md`**, ready for the release notes.
+4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
 
 ### Purposes
 
