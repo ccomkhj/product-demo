@@ -38,8 +38,7 @@ fails with `CONNECTION_CLOSED`.
 It asks what's missing, you approve the script, and you get `<slug>.mp4`, `<slug>.srt` and
 `transcript.md` in `demos/<slug>/`.
 
-To choose the voice (or record your own), presenter, video size and subtitles once, run
-`/product-demo --configure`. Later runs use those settings without asking.
+Run `/product-demo --configure` once to set up voice (or record your own), presenter and subtitles with the agent.
 
 Voices, your own voice, presenter bubble, preflight checks and internals: see the
 [guide](docs/guide.md).
