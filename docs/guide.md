@@ -48,6 +48,20 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
 4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
 
+### Post-processing
+
+```
+/product-demo:postprocessing csv-export: make it 1.25x and cut the first two seconds
+```
+
+Edits a composed demo without touching `<slug>.mp4`, `<slug>.srt` or `transcript.md`. The agent
+writes the edits as a post recipe, `demos/<slug>/post.json` (format:
+[`references/post-recipe.md`](../references/post-recipe.md)), runs `scripts/postprocess.py` and
+hands over `<slug>-post.mp4` and `<slug>-post.srt`. Change one value later and re-run: the rest
+comes out the same. Times in the recipe are against the original video or a scene, read from
+the `<slug>.editmap.json` compose writes; demos composed before the edit map need a re-compose
+for scene-anchored times.
+
 ### Configure
 
 ```
@@ -148,6 +162,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 |------|------------|
 | `.claude-plugin/` | Plugin and marketplace manifests (no fixed version: each commit is an update) |
 | `skills/run/SKILL.md` | The `run` skill: interview, approval, narration, recording, compose and verify: interview, approval, narration, recording, compose and verify |
+| `skills/postprocessing/SKILL.md` | The `postprocessing` skill: post recipe, run, verify |
 | `references/` | Demo spec format, browser recording recipes and verification recipes |
 | `references/templates/` | Announcement, tutorial and sales script guidance |
 | `scripts/preflight.py` | Local readiness and measured narration duration checks |
@@ -156,6 +171,8 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/check_audio.py` | Transcribes `qwen3` narration with local whisper to catch leaked or misspoken words |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
+| `scripts/post_plan.py` | Post plan: validates the post recipe, time map, retimed cues, steps (no ffmpeg) |
+| `scripts/postprocess.py` | Runs the post plan: writes `<slug>-post.mp4`, `.srt` and exports |
 | `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |
 | `assets/overlay.js` | The visible cursor, click ripples, keycaps, badges and sync flash |
 | `docs/sample/` | The README's sample demo (spec, video, subtitles), also the reference end-to-end test |

@@ -66,6 +66,19 @@ The `<slug>.editmap.json` compose writes next to the video: total length, each s
 start and end, and the actions whose start compose knows. Post-processing's only link to
 the demo's structure.
 
+**Post recipe**:
+The `post.json` in a demo folder: one optional key per post-processing operation (trim,
+speed, exports, ...), times against the source video or a scene.
+_Avoid_: edit config, post config
+
+**Post plan**:
+What post-processing builds from the post recipe, the source's length, cues and edit map:
+the time map, retimed cues, warnings and the steps in their fixed order.
+
+**Time map**:
+Source time to output time: the kept ranges after trim and cuts, then the speed, then a
+title card's offset.
+
 **Own voice**:
 The user's registered recording, cloned by the qwen3 backend.
 _Avoid_: custom voice

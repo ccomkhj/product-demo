@@ -47,6 +47,10 @@ The old `/product-demo` command and the skills.sh install are gone; reinstall as
 It asks what's missing, you approve the script, and you get `<slug>.mp4`, `<slug>.srt` and
 `transcript.md` in `demos/<slug>/`.
 
+To edit a finished demo without touching the original (speed, trims, cuts), ask
+`/product-demo:postprocessing`, e.g. `/product-demo:postprocessing csv-export: 1.25x, cut the first 2 s`.
+It writes `<slug>-post.mp4` and `<slug>-post.srt`.
+
 Run `/product-demo:run --configure` once to set up voice (or record your own), presenter and subtitles with the agent.
 
 Voices, your own voice, presenter bubble, preflight checks and internals: see the

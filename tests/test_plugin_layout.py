@@ -46,6 +46,14 @@ def test_run_skill_replaces_the_root_skill():
     assert not (ROOT / "SKILL.md").exists()
 
 
+def test_postprocessing_skill_runs_the_post_processing_script_from_the_plugin_root():
+    assert skill_front_matter("postprocessing")["name"] == "postprocessing"
+    text = (ROOT / "skills/postprocessing/SKILL.md").read_text(encoding="utf-8")
+    assert ("uv run --project ${CLAUDE_PLUGIN_ROOT} python "
+            "${CLAUDE_PLUGIN_ROOT}/scripts/postprocess.py") in text
+    assert "${CLAUDE_PLUGIN_ROOT}/references/post-recipe.md" in text
+
+
 def test_instructions_refer_to_the_plugin_root_not_a_placeholder():
     for doc in instruction_docs():
         assert "<skill dir>" not in doc.read_text(encoding="utf-8"), doc
