@@ -11,6 +11,10 @@ npx skills add ccomkhj/product-demo
 claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
 ```
 
+The chrome-devtools MCP server needs the Node version in `chrome-devtools-mcp`'s `engines`
+(`npm view chrome-devtools-mcp engines`, currently `^20.19 || ^22.12 || >=23`); older Node
+fails with `CONNECTION_CLOSED`.
+
 Or clone it directly:
 
 ```
@@ -33,7 +37,7 @@ Demos are written to `demos/<slug>/` in the project you run it from.
 1. **It asks only what's missing**: the audience, viewer outcome, pages, and whether you need to sign in.
 2. **You approve the script** before anything is recorded.
 3. **It checks recording readiness**: local tools, browser access and scene conditions, then checks measured narration against your duration target.
-4. **You get `final.mp4`, `final.srt` and `transcript.md`**, ready for the release notes.
+4. **You get `<slug>.mp4`, `<slug>.srt` and `transcript.md`** in `demos/<slug>/`, ready for the release notes. `compose.py --out <path>.mp4` writes the video and `.srt` elsewhere.
 
 ### Purposes
 
@@ -128,6 +132,7 @@ are burned in with `rsvg-convert` (`brew install librsvg`).
 | `scripts/preflight.py` | Local readiness and measured narration duration checks |
 | `scripts/tts.py` | Narration audio (Kokoro, `say`, OpenAI or ElevenLabs) |
 | `scripts/kokoro_tts.py` | Local Kokoro synthesis, run by `tts.py` through `uv run` |
+| `scripts/check_audio.py` | Transcribes `qwen3` narration with local whisper to catch leaked or misspoken words |
 | `scripts/mark.py` | Timeline markers written while recording |
 | `scripts/compose.py` | Cuts, syncs and fits the recording; writes the video, subtitles and transcript |
 | `scripts/avatar.py` | The presenter bubble: a round photo whose halo glows with the voice |

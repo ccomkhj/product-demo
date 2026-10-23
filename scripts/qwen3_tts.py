@@ -10,19 +10,14 @@ from pathlib import Path
 import sys
 import wave
 
-from voice_config import QWEN_MODEL, QWEN_REVISION, check_platform
+from voice_config import QWEN_MODEL, QWEN_REVISION, check_platform, pinned_snapshot
 
 
 def load_local_model(model):
-    from huggingface_hub import snapshot_download
     from mlx_audio.tts.utils import load_model
 
     if model == QWEN_MODEL:
-        # Prefer the pinned local snapshot; never check the network on a warm run.
-        try:
-            model = snapshot_download(model, revision=QWEN_REVISION, local_files_only=True)
-        except FileNotFoundError:
-            model = snapshot_download(model, revision=QWEN_REVISION)
+        model = pinned_snapshot(model, QWEN_REVISION)
     return load_model(model)
 
 

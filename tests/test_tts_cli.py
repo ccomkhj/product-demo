@@ -166,3 +166,109 @@ def test_unsupported_kokoro_language_is_rejected(tmp_path):
 
     assert result.returncode != 0
     assert "voice 'jf_alpha' is not supported" in result.stderr
+
+
+needs_ffmpeg = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    reason="needs ffmpeg/ffprobe",
+)
+
+
+@pytest.fixture
+def heard(monkeypatch):
+    """Swap the say backend for a fake that records the narration each scene is spoken from."""
+    import tts
+
+    texts = []
+
+    def fake(scenes, _config, directory, _env, _transport):
+        for index, scene in enumerate(scenes):
+            texts.append(scene["narration"])
+            raw = directory / f"{index}.wav"
+            with wave.open(str(raw), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(24000)
+                out.writeframes(b"\x00\x00" * 2400)
+            yield scene["id"], raw
+
+    monkeypatch.setitem(tts.SYNTHESIZERS, "say", fake)
+    return texts
+
+
+def pronounce_spec(narration, pronounce):
+    return {"title": "Smoke",
+            "voice": {"backend": "say", "pronounce": pronounce},
+            "scenes": [{"id": "intro", "url": "https://example.com", "actions": [],
+                        "narration": narration}]}
+
+
+@needs_ffmpeg
+def test_pronounce_replaces_terms_in_the_text_the_synthesizer_speaks(tmp_path, heard):
+    from tts import generate
+
+    spec = pronounce_spec("Our OOS alerts flag OOS items.", {"OOS": "out-of-stock"})
+
+    generate(spec, "say", tmp_path, {})
+
+    assert heard == ["Our out-of-stock alerts flag out-of-stock items."]
+
+
+@needs_ffmpeg
+def test_pronounce_replaces_whole_words_only(tmp_path, heard):
+    from tts import generate
+
+    spec = pronounce_spec("BOOST the OOS count, not OOSE or oos.", {"OOS": "O-O-S"})
+
+    generate(spec, "say", tmp_path, {})
+
+    assert heard == ["BOOST the O-O-S count, not OOSE or oos."]
+
+
+@needs_ffmpeg
+def test_pronounce_never_replaces_a_replacement(tmp_path, heard):
+    from tts import generate
+
+    spec = pronounce_spec("SKU and API.", {"SKU": "S-K-U API", "API": "A-P-I", "S-K-U": "x"})
+
+    generate(spec, "say", tmp_path, {})
+
+    assert heard == ["S-K-U API and A-P-I."]
+
+
+@needs_ffmpeg
+def test_pronounce_prefers_the_longest_key(tmp_path, heard):
+    from tts import generate
+
+    spec = pronounce_spec("Open OOS list.", {"OOS": "O-O-S", "OOS list": "stock-out list"})
+
+    generate(spec, "say", tmp_path, {})
+
+    assert heard == ["Open stock-out list."]
+
+
+@needs_ffmpeg
+def test_pronounce_leaves_the_spec_unchanged(tmp_path, heard):
+    import copy
+
+    from tts import generate
+
+    spec = pronounce_spec("Our OOS alerts.", {"OOS": "out-of-stock"})
+    before = copy.deepcopy(spec)
+
+    generate(spec, "say", tmp_path, {})
+
+    assert spec == before
+
+
+@pytest.mark.parametrize("pronounce", [{"": "x"}, {"OOS": ""}, {"OOS": "  "}, {"OOS": 3},
+                                       ["OOS"], "OOS"])
+def test_malformed_pronounce_is_rejected(tmp_path, pronounce):
+    spec_path = tmp_path / "demo.json"
+    spec_path.write_text(json.dumps(pronounce_spec("Our OOS alerts.", pronounce)))
+
+    result = run_tts(spec_path)
+
+    assert result.returncode != 0
+    assert "voice.pronounce" in result.stderr
+    assert "Traceback" not in result.stderr

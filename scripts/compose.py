@@ -5,7 +5,8 @@ Usage:
         [--audio-dir DIR] [--durations DURATIONS] [--out FINAL] [--no-burn-subs]
 
 Defaults are relative to the demo spec's folder: raw.mp4, timeline.jsonl,
-audio/ (with <scene-id>.wav), audio/durations.json and final.mp4.
+audio/ (with <scene-id>.wav), audio/durations.json and <slug>.mp4, where <slug>
+is the folder's name.
 
 Next to FINAL it also writes FINAL's name with .srt (one cue per narration
 sentence) and transcript.md (scene titles + narration). The subtitles are also
@@ -242,6 +243,12 @@ def cue_svg(text, width, height, reserve=0):
     return svg, strip_h
 
 
+def action_line(action):
+    """One ``at`` action's line of compose output: where it starts, and how late if it is."""
+    late = f"\tlate {action.late_s:.3f}s" if action.late_s else ""
+    return f'at\t{action.scene_id}\t{action.index}\t{action.start_s:.3f}s\t"{action.phrase}"{late}'
+
+
 def _srt_time(seconds):
     ms = max(0, round(seconds * 1000))
     hours, ms = divmod(ms, 3_600_000)
@@ -382,7 +389,7 @@ def main(argv=None):
     parser.add_argument("--timeline", type=Path, help="default: <demo>/timeline.jsonl")
     parser.add_argument("--audio-dir", type=Path, help="default: <demo>/audio")
     parser.add_argument("--durations", type=Path, help="default: <audio-dir>/durations.json")
-    parser.add_argument("--out", type=Path, help="default: <demo>/final.mp4")
+    parser.add_argument("--out", type=Path, help="default: <demo>/<slug>.mp4, named after the demo folder")
     parser.add_argument("--burn-subs", action=argparse.BooleanOptionalAction, default=None,
                         help="draw the subtitles into the video (default: when a burn method "
                              "is available; the .srt is always written)")
@@ -390,7 +397,7 @@ def main(argv=None):
 
     demo_dir = args.spec.parent
     audio_dir = args.audio_dir or demo_dir / "audio"
-    out = args.out or demo_dir / "final.mp4"
+    out = args.out or demo_dir / f"{demo_dir.resolve().name}.mp4"
     srt_path, transcript_path = out.with_suffix(".srt"), out.parent / "transcript.md"
     try:
         spec = load_spec(args.spec)
@@ -419,9 +426,14 @@ def main(argv=None):
         print(f"compose: error: {exc}", file=sys.stderr)
         return 1
 
+    actions = {}
+    for action in plan.actions:
+        actions.setdefault(action.scene_id, []).append(action)
     for scene in plan.scenes:
         print(f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
               f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s")
+        for action in actions.get(scene.id, ()):
+            print(action_line(action))
     if plan.flash_s is not None:
         print(f"sync\tflash at {plan.flash_s:.3f}s in the raw video")
     print(f"total\t{plan.total_s:.3f}s\t{out}")

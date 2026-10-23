@@ -25,6 +25,10 @@ def validate_voice(voice):
     # ffmpeg's atempo filter takes 0.5-2.0 in a single pass.
     if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.5 <= speed <= 2:
         raise ValueError("voice.speed must be a number from 0.5 to 2")
+    pronounce = voice.get("pronounce", {})
+    if not isinstance(pronounce, dict) or not all(
+            isinstance(text, str) and text.strip() for pair in pronounce.items() for text in pair):
+        raise ValueError("voice.pronounce must map nonempty words to nonempty spoken text")
 
 
 def resolve_voice_config(voice, backend, spec_dir):
@@ -45,6 +49,8 @@ def resolve_voice_config(voice, backend, spec_dir):
             validate_voice(saved)
             if saved.get("profile"):
                 raise ValueError("saved voice profiles cannot refer to another profile")
+            if "pronounce" in saved:
+                raise ValueError("voice.pronounce belongs in the demo spec, not the saved profile")
             if saved.get("backend", "qwen3") != "qwen3":
                 raise ValueError("own_voice must use qwen3")
             # Profile paths belong to the registry; per-demo overrides belong to the spec.
@@ -102,9 +108,21 @@ def saved_photo():
         raise ValueError(f"own_photo needs setup: {exc}; run scripts/own_voice.py --photo <path>") from exc
 
 
-def check_platform():
+def pinned_snapshot(repo, revision):
+    """Local path of a pinned Hugging Face snapshot; downloads only when it isn't cached,
+    so a warm run never checks the network. Imports huggingface_hub lazily: this module
+    stays stdlib-only at import time."""
+    from huggingface_hub import snapshot_download
+
+    try:
+        return snapshot_download(repo, revision=revision, local_files_only=True)
+    except FileNotFoundError:
+        return snapshot_download(repo, revision=revision)
+
+
+def check_platform(caller="qwen3"):
     if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise ValueError("qwen3 requires native Apple Silicon macOS and arm64 Python (not Rosetta)")
+        raise ValueError(f"{caller} requires native Apple Silicon macOS and arm64 Python (not Rosetta)")
 
 
 def probe_reference(path, run):
