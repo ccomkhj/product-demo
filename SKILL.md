@@ -5,7 +5,7 @@ description: Narrated product-demo video from a short interview, recorded live i
 
 # Product demo
 
-Turns an interview into `final.mp4`, `final.srt` and `transcript.md`. The central idea is
+Turns an interview into `<slug>.mp4`, `<slug>.srt` and `transcript.md`. The central idea is
 **record-then-edit**: the agent pauses for seconds between tool calls, so a raw recording
 of it driving the browser is full of frozen stretches with pacing unrelated to any voice.
 So the narration is made first, the recording carries scene markers, and compose cuts each
@@ -75,6 +75,8 @@ Resolve failures before continuing. Carry the same explicit backend to TTS and s
 policy to compose. A successful local report does not verify browser access or login.
 Follow `references/readiness.md` to check MCP capabilities, entry pages, authentication,
 and actual viewport in the recording browser. Do not rehearse state-changing actions.
+If the chrome-devtools tools are missing or failed to connect, check the Node version
+first (Browser entry check 1 in `references/readiness.md`).
 Defer state-dependent scenes until reached naturally, then check them before their start
 markers. Restore the first scene's entry state before capture.
 
@@ -144,7 +146,8 @@ uv run --project <skill dir> python <skill dir>/scripts/compose.py demos/<slug>/
 ```
 
 It prints one line per scene with its fit (hold, speed-up or pad) and lengths, an `at`
-line per synced action with its start time, then a `total` line, and writes `final.mp4`, `final.srt` and `transcript.md` (output format in
+line per synced action with its start time, then a `total` line, and writes `<slug>.mp4`,
+`<slug>.srt` and `transcript.md` (output format in
 `references/verify.md`). The subtitles are burned into the video too, so the words show
 wherever it plays; pass `--no-burn-subs` only when the user wants a clean video with the
 `.srt` alongside. If the spec has an `avatar`, compose also draws the presenter bubble in
@@ -157,7 +160,7 @@ gives a photo (`references/demo-spec.md`).
 Confirm this take passed its scene checks in `readiness.md`. Check the result before
 handing it over; a fitting bug or a missing overlay is invisible in the compose output. Use the recipes in `references/verify.md`:
 
-- **Length:** ffprobe's duration of `final.mp4` must match compose's `total` line, not the
+- **Length:** ffprobe's duration of `<slug>.mp4` must match compose's `total` line, not the
   sum of the narration lengths, because padded scenes run longer than their narration.
 - **Frames:** a contact sheet per scene must show the scene's page, the cursor on each
   pointed target, a ripple per click, a keycap per key press, a badge per Back, and the
@@ -177,8 +180,9 @@ the actions keep pace with the voice.
   `pace` check) and step 6. This works as long as the visuals still show what the new
   words describe and every `at` phrase is still in the narration; otherwise repeat
   readiness from step 3 and record again from step 5.
+- **Mispronounced word:** add `voice.pronounce`, rerun TTS and compose.
 
-Either way, finish with step 7 and meet its Done-when before handing the new video over:
+In every case, finish with step 7 and meet its Done-when before handing the new video over:
 new audio or new fitting can break length, overlay effects or sync just like a new take.
 
 ## Local cloned narration
