@@ -31,16 +31,23 @@ When the user ran `/product-demo:postprocessing` with no edit (or asks what it c
 this menu, with the demo's current recipe (if any) summarised above it in one line, then
 let them answer in plain words ("2 and 5, closing card with our URL") and continue at step 2:
 
-```text
-Timing     1 Speed        "1.25x"                   2 Trim / cut   "cut the first 2 s", "remove the slow load"
-Branding   3 Title card   "add a title card"        4 Closing card "end with our URL"
-           5 Watermark    "logo.png top-right"      6 Progress bar "thin bar at the bottom"
-Overlays   7 Callouts     "arrow at the Export button when I say export"
-Sound      8 Music        "music.mp3 under the voice"  9 Click sounds
-Subtitles 10 Translations "Korean and German"      11 Chapters     "for YouTube"
-Exports   12 Under N MB   "under 10 MB for Slack"  13 GIF          "of the export scene"
-          14 Poster       15 Contact sheet
-```
+| Group | # | Edit | Say |
+|---|---|---|---|
+| Timing | 1 | Speed | "1.25x" |
+| | 2 | Trim / cut | "cut the first 2 s" |
+| Branding | 3 | Title card | "add a title card" |
+| | 4 | Closing card | "end with our URL" |
+| | 5 | Watermark | "logo.png top-right" |
+| | 6 | Progress bar | "thin bar at the bottom" |
+| Overlays | 7 | Callouts | "arrow at Export when I say export" |
+| Sound | 8 | Music | "music.mp3 under the voice" |
+| | 9 | Click sounds | |
+| Subtitles | 10 | Translations | "Korean and German" |
+| | 11 | Chapters | "for YouTube" |
+| Exports | 12 | Under N MB | "under 10 MB for Slack" |
+| | 13 | GIF | "of the export scene" |
+| | 14 | Poster | |
+| | 15 | Contact sheet | |
 
 Show it as written, not as a question with fixed choices: one answer can pick several.
 
