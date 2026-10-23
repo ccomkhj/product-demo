@@ -388,12 +388,13 @@ def cue_svg(text, width, height, reserve=0):
     return svg, strip_h
 
 
-def edit_map(spec, plan):
+def edit_map(spec, plan, burned=False):
     """The edit map: the total length and, per scene, its id, title, start and end in the
     final video, plus every action whose start compose knows (the scene's first action and
     each ``at`` action) with its index in the scene's actions, its type and its start.
 
     Times are in seconds, rounded to the millisecond like compose's printed lines.
+    ``burned``: the subtitles are drawn into the video (``subtitles_burned``).
     """
     at_starts = {(action.scene_id, action.index): action.start_s for action in plan.actions}
     scenes = []
@@ -418,7 +419,7 @@ def edit_map(spec, plan):
                 "actions": actions,
             }
         )
-    return {"total_s": round(plan.total_s, 3), "scenes": scenes}
+    return {"total_s": round(plan.total_s, 3), "subtitles_burned": burned, "scenes": scenes}
 
 
 def action_line(action):
@@ -629,7 +630,7 @@ def main(argv=None):
             )
         srt_path.write_text(srt_text(plan.cues), encoding="utf-8")
         edit_map_path.write_text(
-            json.dumps(edit_map(spec, plan), indent=2) + "\n", encoding="utf-8"
+            json.dumps(edit_map(spec, plan, method is not None), indent=2) + "\n", encoding="utf-8"
         )
         transcript_path.write_text(
             transcript_text(spec.get("title") or demo_dir.name, plan), encoding="utf-8"

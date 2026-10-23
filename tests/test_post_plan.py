@@ -7,9 +7,12 @@ from post_plan import (
     card_defaults,
     card_svg,
     cards_cmd,
+    chapters_metadata,
     gif_cmd,
     gif_warning,
     size_cap_encoding,
+    subtitle_tracks_cmd,
+    youtube_chapters,
 )
 
 SOURCE_S = 12.0
@@ -43,8 +46,8 @@ CUES = (
 )
 
 
-def plan(recipe, source_s=SOURCE_S, cues=CUES, edit_map=EDIT_MAP, demo=None):
-    return build_post_plan(recipe, source_s, cues, edit_map, demo)
+def plan(recipe, source_s=SOURCE_S, cues=CUES, edit_map=EDIT_MAP, demo=None, translations=None):
+    return build_post_plan(recipe, source_s, cues, edit_map, demo, translations)
 
 
 def scene(name, at=None, offset_s=None):
@@ -528,3 +531,158 @@ def test_card_svg_draws_its_colours_and_escaped_text():
 def test_invalid_cards_fail_with_clear_messages(cards, message):
     with pytest.raises(RecipeError, match=message):
         plan({"cards": cards}, demo=DEMO)
+
+
+# --- chapters --------------------------------------------------------------------------
+
+LONG_S = 40.0
+LONG_MAP = {
+    "total_s": LONG_S,
+    "subtitles_burned": False,
+    "scenes": [
+        {"id": s, "title": s.title(), "start_s": a, "end_s": b, "actions": []}
+        for s, a, b in (("login", 0.0, 12.0), ("search", 12.0, 25.0), ("export", 25.0, 40.0))
+    ],
+}
+
+
+def chapters(p):
+    return [(c.title, c.start_s, c.end_s) for c in p.chapters]
+
+
+def test_one_chapter_per_scene_named_after_its_title_through_the_time_map():
+    p = plan({"chapters": True, "trim": {"start": 1.0}, "speed": 2.0})
+
+    assert chapters(p) == [("Intro", 0.0, 1.5), ("Report", 1.5, 5.5)]
+
+
+def test_a_title_card_becomes_the_intro_chapter_and_the_first_scene_starts_after_it():
+    p = plan(
+        {"chapters": True, "cards": {"title": {"title": "Demo"}, "closing": {"text": "Bye"}}},
+        LONG_S,
+        edit_map=LONG_MAP,
+    )
+
+    assert chapters(p) == [
+        ("Intro", 0.0, 3.0),
+        ("Login", 3.0, 15.0),
+        ("Search", 15.0, 28.0),
+        ("Export", 28.0, 46.0),  # the closing card ends the last chapter
+    ]
+
+
+def test_a_scene_that_is_cut_entirely_gets_no_chapter():
+    recipe = {"chapters": True, "trim": {"cuts": [{"from": 12.0, "to": 25.0}]}}
+
+    p = plan(recipe, LONG_S, edit_map=LONG_MAP)
+
+    assert chapters(p) == [("Login", 0.0, 12.0), ("Export", 12.0, 27.0)]
+
+
+def test_chapters_that_youtube_accepts_give_no_warning():
+    assert plan({"chapters": True}, LONG_S, edit_map=LONG_MAP).warnings == ()
+
+
+def test_chapters_breaking_youtube_rules_warn():
+    warnings = plan({"chapters": True}).warnings
+
+    assert any("YouTube needs at least 3 chapters (got 2)" in w for w in warnings)
+    assert any('chapter "Intro" is 4.000s; YouTube needs at least 10 s' in w for w in warnings)
+
+
+def test_chapters_need_the_edit_map():
+    with pytest.raises(RecipeError, match="chapters need the scene times.*re-run compose"):
+        plan({"chapters": True}, edit_map=None)
+
+
+def test_chapters_step_writes_a_youtube_list_and_mp4_chapter_metadata():
+    p = plan({"chapters": True}, LONG_S, edit_map=LONG_MAP)
+    [step] = p.steps
+
+    assert step.line == "chapters\t3 chapters"
+    assert youtube_chapters(p.chapters) == "0:00 Login\n0:12 Search\n0:25 Export\n"
+    assert chapters_metadata(p.chapters) == (
+        ";FFMETADATA1\n"
+        "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=12000\ntitle=Login\n"
+        "[CHAPTER]\nTIMEBASE=1/1000\nSTART=12000\nEND=25000\ntitle=Search\n"
+        "[CHAPTER]\nTIMEBASE=1/1000\nSTART=25000\nEND=40000\ntitle=Export\n"
+    )
+
+
+def test_chapters_off_is_no_step():
+    assert plan({"chapters": False}).steps == ()
+
+
+@pytest.mark.parametrize(
+    ("recipe", "message"),
+    [
+        ({"chapters": "yes"}, "chapters must be true or false"),
+        ({"translations": "ko"}, "translations must be a list of language codes"),
+        ({"translations": ["xx"]}, "translations: unknown language code 'xx'"),
+        ({"translations": ["ko", "ko"]}, "translations lists 'ko' twice"),
+    ],
+)
+def test_invalid_chapters_and_translations_fail_with_clear_messages(recipe, message):
+    with pytest.raises(RecipeError, match=message):
+        plan(recipe, translations={"ko": CUES})
+
+
+# --- translations ----------------------------------------------------------------------
+
+KO = tuple(Cue(c.start_s, c.end_s, f"[ko] {c.text}") for c in CUES)
+
+
+def test_translated_cues_are_retimed_like_the_original():
+    recipe = {"translations": ["ko"], "trim": {"start": 2.0}, "speed": 2.0}
+    p = plan(recipe, translations={"ko": KO}, demo=DEMO)
+    titled = plan({**recipe, "cards": {"title": {}}}, translations={"ko": KO}, demo=DEMO)
+
+    assert p.translations["ko"] == (
+        Cue(0.0, 1.0, "[ko] This is the intro."),
+        Cue(1.0, 2.5, "[ko] Open the report."),
+        Cue(2.5, 5.0, "[ko] Export it."),
+    )
+    assert [c.start_s for c in titled.translations["ko"]] == [3.0, 4.0, 5.5]
+
+
+@pytest.mark.parametrize(
+    ("ko", "message"),
+    [
+        (KO[:3], "ko.srt has 3 cues, the original has 4"),
+        ((*KO[:3], Cue(7.5, 12.0, "[ko] Export it.")), "ko.srt cue 4 is at 7.500s-12.000s"),
+    ],
+)
+def test_a_translation_must_keep_the_cue_count_and_timings(ko, message):
+    with pytest.raises(RecipeError, match=message):
+        plan({"translations": ["ko"]}, translations={"ko": ko})
+
+
+def test_subtitle_tracks_step_lists_the_original_and_each_language():
+    p = plan({"translations": ["ko", "deu"]}, translations={"ko": KO, "deu": CUES})
+    [step] = p.steps
+
+    assert step.line == "subtitle_tracks\toriginal, ko, deu"
+    assert [(lang, tag) for lang, tag, _ in step.params["tracks"]] == [
+        (None, "und"),
+        ("ko", "kor"),
+        ("deu", "deu"),
+    ]
+
+
+def test_subtitle_tracks_cmd_muxes_each_srt_as_a_tagged_text_track():
+    cmd = subtitle_tracks_cmd("in.mp4", "out.mp4", ["a.srt", "a.ko.srt"], ["und", "kor"])
+
+    assert cmd[cmd.index("-i") + 1 :][:5] == ["in.mp4", "-i", "a.srt", "-i", "a.ko.srt"]
+    assert "mov_text" in cmd and cmd[-1] == "out.mp4"
+    assert cmd[cmd.index("language=kor") - 1] == "-metadata:s:s:1"
+
+
+def test_translations_over_burned_in_subtitles_warn():
+    burned = {**EDIT_MAP, "subtitles_burned": True}
+    clean = {**EDIT_MAP, "subtitles_burned": False}
+    recipe = {"translations": ["ko"]}
+
+    for edit_map in (burned, None):
+        [warning] = plan(recipe, edit_map=edit_map, translations={"ko": KO}).warnings
+        assert "burned-in subtitles" in warning and "--no-burn-subs" in warning
+    assert plan(recipe, edit_map=clean, translations={"ko": KO}).warnings == ()

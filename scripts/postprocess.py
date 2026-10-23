@@ -29,6 +29,8 @@ from post_plan import (
     card_defaults,
     card_svg,
     cards_cmd,
+    chapters_cmd,
+    chapters_metadata,
     contact_sheet_svg,
     frame_cmd,
     gif_cmd,
@@ -36,7 +38,9 @@ from post_plan import (
     parse_srt,
     size_cap_cmds,
     size_cap_encoding,
+    subtitle_tracks_cmd,
     validate_recipe,
+    youtube_chapters,
 )
 
 CONTACT_WIDTH = 480  # widest frame in a contact sheet
@@ -128,6 +132,34 @@ def _render_svg(svg, svg_path, png, need):
     run(svg_to_png_cmd(svg_path, png))
 
 
+def _run_subtitle_tracks(step, video, out_prefix, work_dir):
+    """Write a sidecar .srt per track and mux them all into the finished video."""
+    srts, tags = [], []
+    for lang, tag, cues in step.params["tracks"]:
+        srts.append(Path(f"{out_prefix}.{lang}.srt" if lang else f"{out_prefix}.srt"))
+        srts[-1].write_text(srt_text(cues), encoding="utf-8")
+        tags.append(tag)
+    _remux(video, work_dir, lambda out: subtitle_tracks_cmd(video, out, srts, tags))
+    return None
+
+
+def _run_chapters(step, video, out_prefix, work_dir):
+    """Add the chapters to the finished video; write the YouTube chapter list."""
+    metadata = work_dir / "chapters.ffmetadata"
+    metadata.write_text(chapters_metadata(step.params["chapters"]), encoding="utf-8")
+    _remux(video, work_dir, lambda out: chapters_cmd(video, out, metadata))
+    out = Path(f"{out_prefix}-chapters.txt")
+    out.write_text(youtube_chapters(step.params["chapters"]), encoding="utf-8")
+    return out
+
+
+def _remux(video, work_dir, cmd):
+    """Run ``cmd(out)`` on the finished ``video`` and put the result in its place."""
+    out = work_dir / "remux.mp4"
+    run(cmd(out))
+    shutil.copyfile(out, video)
+
+
 def _run_size_cap(step, video, out_prefix, work_dir):
     cap_mb = step.params["cap_mb"]
     length_s, width, height = probe(video)
@@ -165,7 +197,8 @@ RUNNERS = {
     "speed": _run_video_step,
     # watermark, callouts, progress_bar (#18)
     "cards": _run_cards,
-    # subtitle_tracks, chapters (#21)
+    "subtitle_tracks": _run_subtitle_tracks,
+    "chapters": _run_chapters,
     # click_sounds, music (#20)
     "size_cap": _run_size_cap,
     "gif": _run_gif,
@@ -246,12 +279,22 @@ def _plan(recipe, demo_dir, slug):
         raise PostError(f"cards.title.logo not found: {demo_dir / logo}")
     spec_path = demo_dir / "demo.json"
     spec = read_json_object(spec_path, "demo spec", PostError) if spec_path.is_file() else {}
+    translations = {}
+    for lang in recipe.get("translations", ()):
+        path = source.with_suffix(f".{lang}.srt")
+        if not path.is_file():
+            raise PostError(
+                f"translation not found: {path}; write it first "
+                f"(the cues of {srt.name}, translated, same count and timings)"
+            )
+        translations[lang] = parse_srt(path.read_text(encoding="utf-8"))
     plan = build_post_plan(
         recipe,
         probe(source)[0],
         parse_srt(srt.read_text(encoding="utf-8")),
         edit_map,
         card_defaults(spec, slug),
+        translations,
     )
     return plan, source, [*warnings, *plan.warnings]
 

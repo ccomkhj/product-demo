@@ -65,7 +65,33 @@ The title card's length shifts everything after it: subtitles, and every recipe 
 (still given in source seconds) lands that much later in the output. The progress bar
 covers only the demo, not the cards.
 
-<!-- translations, chapters (#21) -->
+## `translations`
+
+List of language codes, e.g. `["ko", "de"]`: two-letter ISO 639-1 codes or three-letter
+ISO 639-2/T (`"kor"`). For each, `<slug>.<lang>.srt` must exist next to the source before
+the run (the agent writes it, see the skill): the same cues as `<slug>.srt`, same count and
+same timings, only the text translated. A missing file or a changed cue count or timing
+fails before any encoding.
+
+Each translation is retimed like the original (trim, cuts, speed, cards) and written as
+`<slug>-post.<lang>.srt`. The mp4 gets selectable text tracks: the original (language
+`und`) then each translation, tagged with its ISO 639-2 code. Without `translations` the
+mp4 has no text track, only `<slug>-post.srt`.
+
+Warns when the source has burned-in subtitles (the edit map's `subtitles_burned`; an edit
+map without it counts as burned in): viewers would see two subtitles at once. Re-compose
+with `--no-burn-subs` for clean tracks.
+
+## `chapters`
+
+`true`: one chapter per scene, named after its title (`<slug>.editmap.json`; without it
+the run fails with "re-run compose"). A scene cut entirely gets none. With a title card the
+first chapter is "Intro" (the card) and the first scene starts after it; the closing card
+belongs to the last chapter. Written as mp4 chapter metadata and as
+`<slug>-post-chapters.txt`, the `m:ss Title` list to paste into a YouTube description.
+
+Warns when YouTube would ignore them: the first not at 0:00, fewer than 3, or one shorter
+than 10 s.
 
 <!-- click_sounds, music (#20) -->
 

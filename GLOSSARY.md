@@ -63,8 +63,8 @@ How compose matches a scene to its narration: hold, speed-up or pad.
 
 **Edit map**:
 The `<slug>.editmap.json` compose writes next to the video: total length, each scene's
-start and end, and the actions whose start compose knows. Post-processing's only link to
-the demo's structure.
+start and end, the actions whose start compose knows, and whether the subtitles are
+burned in. Post-processing's only link to the demo's structure.
 
 **Post recipe**:
 The `post.json` in a demo folder: one optional key per post-processing operation (trim,

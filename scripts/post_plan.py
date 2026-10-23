@@ -56,6 +56,15 @@ class Cue:
 
 
 @dataclass(frozen=True)
+class Chapter:
+    """One chapter of the output, in output seconds."""
+
+    start_s: float
+    end_s: float
+    title: str
+
+
+@dataclass(frozen=True)
 class Step:
     """One operation of the plan.
 
@@ -140,6 +149,8 @@ class PostPlan:
     steps: tuple
     edit_map: dict | None = None
     cards: dict = field(default_factory=dict)  # resolve_cards: "title" / "closing", if on
+    translations: dict = field(default_factory=dict)  # language code -> retimed cues
+    chapters: tuple = ()  # Chapter, in order, covering the whole output
 
     @property
     def source_s(self):
@@ -158,12 +169,13 @@ class PostPlan:
         return self.time_map.output_s(source_time(value, self.source_s, self.edit_map, where))
 
 
-def build_post_plan(recipe, source_s, cues, edit_map, demo=None):
+def build_post_plan(recipe, source_s, cues, edit_map, demo=None, translations=None):
     """Validate ``recipe`` and build the plan; raise RecipeError before any ffmpeg work.
 
     source_s: the source video's length. cues: its subtitle cues (Cue). edit_map: the
     parsed ``<slug>.editmap.json``, or None (then scene anchors are an error). demo: the
-    card defaults ``{"title", "url"}`` (see ``card_defaults``), or None.
+    card defaults ``{"title", "url"}`` (see ``card_defaults``), or None. translations:
+    {language code: its cues in source time} for the recipe's ``translations``.
     """
     validate_recipe(recipe)
     time_map = _time_map(recipe, source_s, edit_map)
@@ -173,6 +185,25 @@ def build_post_plan(recipe, source_s, cues, edit_map, demo=None):
         lead_s=cards["title"]["seconds"] if "title" in cards else 0.0,
         tail_s=cards["closing"]["seconds"] if "closing" in cards else 0.0,
     )
+    retimed, warnings = _retime(cues, time_map)
+    translated = _translations(recipe.get("translations", ()), cues, translations, time_map)
+    if translated and (edit_map or {}).get("subtitles_burned", True):
+        warnings.append(
+            "translated subtitle tracks over burned-in subtitles: viewers see two at once "
+            "(no edit map says otherwise); re-compose with --no-burn-subs for clean tracks"
+        )
+    chapter_list = _chapters(recipe, time_map, edit_map, "title" in cards)
+    warnings += youtube_warnings(chapter_list)
+    plan = PostPlan(
+        time_map, retimed, tuple(warnings), (), edit_map, cards, translated, chapter_list
+    )
+    return replace(
+        plan, steps=tuple(step for build in STEPS.values() if (step := build(recipe, plan)))
+    )
+
+
+def _retime(cues, time_map):
+    """(cues placed in the output, warnings for cues a cut splits); all-cut cues dropped."""
     warnings, retimed = [], []
     for number, cue in enumerate(cues, start=1):
         placed = time_map.range(cue.start_s, cue.end_s)
@@ -187,10 +218,31 @@ def build_post_plan(recipe, source_s, cues, edit_map, demo=None):
             )
             warnings.append(f'cut at {cuts} splits cue {number} "{cue.text}"')
         retimed.append(Cue(round(start, 3), round(end, 3), cue.text))
-    plan = PostPlan(time_map, tuple(retimed), tuple(warnings), (), edit_map, cards)
-    return replace(
-        plan, steps=tuple(step for build in STEPS.values() if (step := build(recipe, plan)))
-    )
+    return tuple(retimed), warnings
+
+
+def _translations(languages, cues, translations, time_map):
+    """{lang: retimed cues}; each translation must have the original's cues and timings."""
+    retimed = {}
+    for lang in languages:
+        name = f"{lang}.srt"
+        if lang not in (translations or {}):
+            raise RecipeError(f"translations: {name} is missing; write it first")
+        translated = translations[lang]
+        if len(translated) != len(cues):
+            raise RecipeError(
+                f"translations: {name} has {len(translated)} cues, the original has "
+                f"{len(cues)}; keep one translated cue per original cue"
+            )
+        for number, (ours, theirs) in enumerate(zip(translated, cues), start=1):
+            if abs(ours.start_s - theirs.start_s) > 1e-3 or abs(ours.end_s - theirs.end_s) > 1e-3:
+                raise RecipeError(
+                    f"translations: {name} cue {number} is at {ours.start_s:.3f}s-"
+                    f"{ours.end_s:.3f}s, the original at {theirs.start_s:.3f}s-"
+                    f"{theirs.end_s:.3f}s; keep the original timings"
+                )
+        retimed[lang] = _retime(translated, time_map)[0]
+    return retimed
 
 
 def source_time(value, source_s, edit_map, where="time"):
@@ -346,6 +398,24 @@ def _check_cards(value, where):
                 )
 
 
+def _check_translations(value, where):
+    if not isinstance(value, list) or not all(isinstance(lang, str) for lang in value):
+        raise RecipeError(f'{where} must be a list of language codes, e.g. ["ko", "de"]')
+    for lang in value:
+        if lang not in ISO639_2 and lang not in ISO639_2.values():
+            raise RecipeError(
+                f"{where}: unknown language code '{lang}' (a two-letter ISO 639-1 code "
+                f"like 'ko', or a three-letter ISO 639-2/T code like 'kor')"
+            )
+        if value.count(lang) > 1:
+            raise RecipeError(f"{where} lists '{lang}' twice")
+
+
+def _check_chapters(value, where):
+    if not isinstance(value, bool):
+        raise RecipeError(f"{where} must be true or false, got {value!r}")
+
+
 def _check_size_cap(value, where):
     if not _is_number(value) or value <= 0:
         raise RecipeError(f"{where} must be a positive number of megabytes, got {value!r}")
@@ -404,7 +474,8 @@ VALIDATORS = {
     "speed": _check_speed,
     # watermark, callouts, progress_bar (#18)
     "cards": _check_cards,
-    # translations, chapters (#21)
+    "translations": _check_translations,
+    "chapters": _check_chapters,
     # click_sounds, music (#20)
     "exports": _check_exports,
 }
@@ -445,6 +516,28 @@ def _cards_step(recipe, plan):
     start, end = plan.demo_span
     line = "".join(f"\t{name} {card['seconds']:.3f}s" for name, card in plan.cards.items())
     return Step("cards", f"cards{line}", {"cards": plan.cards, "demo_s": end - start})
+
+
+def _subtitle_tracks_step(recipe, plan):
+    if not plan.translations:
+        return None
+    tracks = ((None, "und", plan.cues),) + tuple(
+        (lang, ISO639_2.get(lang, lang), cues) for lang, cues in plan.translations.items()
+    )
+    names = ", ".join(lang or "original" for lang, _, _ in tracks)
+    # export: muxed into the finished video, so no later re-encode drops the tracks
+    return Step("subtitle_tracks", f"subtitle_tracks\t{names}", {"tracks": tracks}, export=True)
+
+
+def _chapters_step(recipe, plan):
+    if not plan.chapters:
+        return None
+    return Step(
+        "chapters",
+        f"chapters\t{len(plan.chapters)} chapters",
+        {"chapters": plan.chapters},
+        export=True,
+    )
 
 
 def _size_cap_step(recipe, plan):
@@ -525,7 +618,8 @@ STEPS = {
     "speed": _speed_step,
     # watermark, callouts, progress_bar (#18)
     "cards": _cards_step,
-    # subtitle_tracks, chapters (#21)
+    "subtitle_tracks": _subtitle_tracks_step,
+    "chapters": _chapters_step,
     # click_sounds, music (#20)
     "size_cap": _size_cap_step,
     "gif": _gif_step,
@@ -614,6 +708,118 @@ def card_svg(card, width, height, logo_href=None):
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
         f'<rect width="100%" height="100%" fill="{card["background"]}"/>{"".join(body)}</svg>'
     )
+
+
+# --- subtitle tracks and chapters ----------------------------------------------------
+
+# ISO 639-1 -> ISO 639-2/T, the language tag mp4 subtitle tracks carry. A recipe may also
+# give the three-letter code itself.
+ISO639_2 = {
+    "ar": "ara", "bg": "bul", "bn": "ben", "ca": "cat", "cs": "ces", "da": "dan",
+    "de": "deu", "el": "ell", "en": "eng", "es": "spa", "et": "est", "fa": "fas",
+    "fi": "fin", "fr": "fra", "he": "heb", "hi": "hin", "hr": "hrv", "hu": "hun",
+    "id": "ind", "it": "ita", "ja": "jpn", "ko": "kor", "lt": "lit", "lv": "lav",
+    "ms": "msa", "nl": "nld", "no": "nor", "pl": "pol", "pt": "por", "ro": "ron",
+    "ru": "rus", "sk": "slk", "sl": "slv", "sr": "srp", "sv": "swe", "sw": "swa",
+    "ta": "tam", "th": "tha", "tl": "tgl", "tr": "tur", "uk": "ukr", "ur": "urd",
+    "vi": "vie", "zh": "zho",
+}  # fmt: skip
+YOUTUBE_MIN_CHAPTERS, YOUTUBE_MIN_CHAPTER_S = 3, 10.0
+
+
+def _chapters(recipe, time_map, edit_map, intro):
+    """One Chapter per scene left after the cuts, named after its title; "Intro" first
+    when there is a title card. Each ends where the next starts, the last at the end."""
+    if not recipe.get("chapters"):
+        return ()
+    if edit_map is None:
+        raise RecipeError(
+            "chapters need the scene times from the edit map; "
+            "re-run compose to write <slug>.editmap.json"
+        )
+    starts = [(0.0, "Intro")] if intro else []
+    for scene in edit_map["scenes"]:
+        if placed := time_map.range(scene["start_s"], scene["end_s"]):
+            starts.append((placed[0], scene["title"]))
+    ends = [start for start, _ in starts[1:]] + [time_map.total_s]
+    return tuple(
+        Chapter(round(start, 3), round(end, 3), title) for (start, title), end in zip(starts, ends)
+    )
+
+
+def youtube_warnings(chapters):
+    """Warnings for each YouTube chapter rule the chapters break (YouTube ignores them)."""
+    if not chapters:
+        return []
+    warnings = []
+    if chapters[0].start_s > 0:
+        warnings.append(
+            f"the first chapter starts at {chapters[0].start_s:.3f}s; YouTube needs 0:00"
+        )
+    if len(chapters) < YOUTUBE_MIN_CHAPTERS:
+        warnings.append(
+            f"YouTube needs at least {YOUTUBE_MIN_CHAPTERS} chapters (got {len(chapters)})"
+        )
+    for chapter in chapters:
+        if chapter.end_s - chapter.start_s < YOUTUBE_MIN_CHAPTER_S:
+            warnings.append(
+                f'chapter "{chapter.title}" is {chapter.end_s - chapter.start_s:.3f}s; '
+                f"YouTube needs at least {YOUTUBE_MIN_CHAPTER_S:g} s"
+            )
+    return [f"chapters: {warning}, so YouTube ignores them" for warning in warnings]
+
+
+def youtube_chapters(chapters):
+    """The chapter list to paste into a YouTube description: one ``m:ss Title`` per line."""
+    long = chapters[-1].end_s >= 3600
+
+    def stamp(seconds):
+        hours, rest = divmod(int(seconds + 1e-6), 3600)
+        minutes, secs = divmod(rest, 60)
+        return f"{hours}:{minutes:02d}:{secs:02d}" if long else f"{minutes}:{secs:02d}"
+
+    return "".join(f"{stamp(c.start_s)} {c.title}\n" for c in chapters)
+
+
+def chapters_metadata(chapters):
+    """The chapters as an ffmpeg metadata file (``-f ffmetadata``), in milliseconds."""
+    lines = [";FFMETADATA1"]
+    for chapter in chapters:
+        title = re.sub(r"([=;#\\\n])", r"\\\1", chapter.title)
+        lines += [
+            "[CHAPTER]",
+            "TIMEBASE=1/1000",
+            f"START={round(chapter.start_s * 1000)}",
+            f"END={round(chapter.end_s * 1000)}",
+            f"title={title}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def subtitle_tracks_cmd(src, out, srts, languages):
+    """Copy ``src``'s picture and sound and add each .srt as a text track tagged with its
+    language (``languages``: ISO 639-2 codes, same order)."""
+    inputs = [arg for srt in srts for arg in ("-i", str(srt))]
+    maps = [arg for index in range(1, len(srts) + 1) for arg in ("-map", str(index))]
+    tags = [
+        arg
+        for index, lang in enumerate(languages)
+        for arg in (f"-metadata:s:s:{index}", f"language={lang}")
+    ]
+    return [
+        "ffmpeg", "-v", "error", "-y", "-i", str(src), *inputs,
+        "-map", "0:v", "-map", "0:a", *maps,
+        "-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text", *tags,
+        "-movflags", "+faststart", str(out),
+    ]  # fmt: skip
+
+
+def chapters_cmd(src, out, metadata):
+    """Copy every stream of ``src`` and add the chapters of ``metadata`` (an ffmetadata file)."""
+    return [
+        "ffmpeg", "-v", "error", "-y", "-i", str(src), "-f", "ffmetadata", "-i", str(metadata),
+        "-map", "0", "-c", "copy", "-map_chapters", "1", "-movflags", "+faststart", str(out),
+    ]  # fmt: skip
 
 
 # --- command builders (pure: arguments in, argument list out) ------------------------

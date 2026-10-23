@@ -276,6 +276,71 @@ def test_title_and_closing_cards_lengthen_the_video_and_shift_the_subtitles(tmp_
     )
 
 
+def chapters_of(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_chapters", "-of", "json", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [
+        (c["tags"]["title"], float(c["start_time"]), float(c["end_time"]))
+        for c in json.loads(out)["chapters"]
+    ]
+
+
+@needs_ffmpeg
+def test_translations_and_chapters_are_muxed_as_tagged_tracks_and_mp4_chapters(tmp_path):
+    demo = make_demo(
+        tmp_path,
+        {
+            "translations": ["ko", "de"],
+            "chapters": True,
+            "speed": 2.0,
+            "exports": {"gif": {}, "size_cap_mb": 1},
+        },
+    )
+    for lang in ("ko", "de"):
+        (demo / f"smoke.{lang}.srt").write_text(SRT.replace("scene", f"scene [{lang}]"))
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    youtube = demo / "smoke-post-chapters.txt"
+    assert "subtitle_tracks\toriginal, ko, de" in lines
+    assert f"chapters\t2 chapters\t{youtube}" in lines
+    streams = probe(demo / "smoke-post.mp4")["streams"]
+    subs = [s for s in streams if s["codec_type"] == "subtitle"]
+    assert [(s["codec_name"], s["tags"]["language"]) for s in subs] == [
+        ("mov_text", "und"),
+        ("mov_text", "kor"),
+        ("mov_text", "deu"),
+    ]
+    assert chapters_of(demo / "smoke-post.mp4") == [("One", 0.0, 1.0), ("Two", 1.0, 3.0)]
+    assert youtube.read_text() == "0:00 One\n0:01 Two\n"
+    assert (demo / "smoke-post.ko.srt").read_text() == (
+        "1\n00:00:00,000 --> 00:00:01,000\nFirst scene [ko].\n\n"
+        "2\n00:00:01,000 --> 00:00:02,000\nSecond scene [ko] starts.\n\n"
+        "3\n00:00:02,000 --> 00:00:03,000\nThe end.\n"
+    )
+    assert "Second scene [de] starts." in (demo / "smoke-post.de.srt").read_text()
+    assert "burned-in subtitles" in result.stderr
+    assert "YouTube needs at least 3 chapters" in result.stderr
+    assert (demo / "smoke-post-1mb.mp4").is_file() and (demo / "smoke-post-gif.gif").is_file()
+
+
+@needs_ffmpeg
+def test_a_missing_translation_fails_before_any_output(tmp_path):
+    demo = make_demo(tmp_path, {"translations": ["ko"]})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "smoke.ko.srt" in result.stderr and "write it" in result.stderr
+    assert not (demo / "smoke-post.mp4").exists()
+
+
 @needs_ffmpeg
 def test_a_missing_card_logo_fails_before_any_output(tmp_path):
     demo = make_demo(tmp_path, {"cards": {"title": {"title": "Smoke", "logo": "nope.png"}}})
