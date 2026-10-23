@@ -14,12 +14,12 @@ shipped into a **narrated, subtitled demo video**. It drives a real Chrome brows
 the script for free with local [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), puts
 every click on the word that names it, and cuts the dead time.
 
-https://github.com/user-attachments/assets/67ef85ed-2ec2-44a9-9a49-263a4400f107
+https://github.com/user-attachments/assets/2c0ee19e-20e3-4949-8748-e35e23421094
 
-*54 s, with a presenter bubble in the corner, made from this one line:*
+*61 s, with a presenter bubble in the corner, made from this one line:*
 
 ```
-/product-demo:run record a sample video for https://www.korea.net -> https://www.korea.net/AboutKorea/OverviewofKorea (explain only 3 bullet points about Korea) -> https://www.korea.net/Government/Administration/President-Lee-Jae-Myung (just tell who the president is and when he was elected). Use the presenter avatar assets/avatars/huijo.png.
+/product-demo:run record a sample video for https://www.korea.net -> https://www.korea.net/AboutKorea/OverviewofKorea (explain only 3 stories about Korea) -> https://www.korea.net/Events/Festivals (2 Festival worth trying if you visit Korea). Use the presenter avatar assets/avatars/huijo.png.
 ```
 
 ## Install
