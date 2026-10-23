@@ -26,6 +26,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
@@ -42,7 +43,7 @@ jobs:
       - name: Install ffmpeg and librsvg
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            sudo apt-get update && sudo apt-get install -y ffmpeg librsvg2-bin
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg librsvg2-bin
           else
             brew install ffmpeg librsvg
           fi
