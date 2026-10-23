@@ -1,54 +1,125 @@
 {
-  "title": "A quick tour of Korea.net (sample)",
+  "title": "Korea in thirty seconds (sample)",
   "product": "Korea.net",
   "audience": "general audience curious about Korea",
   "purpose": "custom",
   "outcome": "Know where Korea.net introduces the country, three facts about Korea, and who its president is",
-  "viewport": { "width": 1920, "height": 1080 },
-  "voice": { "backend": "qwen3", "profile": "own_voice" },
-  "avatar": { "image": "../../assets/avatars/huijo.png", "corner": "bottom-left", "size": 0.2 },
+  "target_duration_s": 30,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "voice": {
+    "backend": "qwen3",
+    "profile": "own_voice",
+    "language": "English",
+    "speed": 1.1
+  },
+  "avatar": {
+    "image": "../../assets/avatars/huijo.png",
+    "corner": "bottom-left",
+    "size": 0.15
+  },
   "scenes": [
     {
       "id": "home",
-      "title": "Korea.net: the official website of Korea",
+      "title": "Korea.net, straight from the source",
       "url": "https://www.korea.net",
-      "prerequisites": [{ "type": "visible_target", "target": "the ABOUT KOREA menu link" }],
-      "expected_outcomes": [{ "type": "visible_text", "text": "Overview of Korea" }],
-      "actions": [
-        { "type": "point", "target": "the Korea.net logo" },
-        { "type": "point", "target": "the top news headline in the list under the president banner", "at": "news on culture" },
-        { "type": "click", "target": "the ABOUT KOREA menu link", "at": "open About Korea" }
+      "prerequisites": [
+        {
+          "type": "visible_target",
+          "target": "the ABOUT KOREA menu link"
+        }
       ],
-      "narration": "This is Korea dot net, the official website of the Republic of Korea, with news on culture, sports and technology. To learn the basics, let's open About Korea."
+      "expected_outcomes": [
+        {
+          "type": "visible_text",
+          "text": "Overview of Korea"
+        }
+      ],
+      "actions": [
+        {
+          "type": "point",
+          "target": "the Korea.net logo",
+          "at": "Korea dot net"
+        },
+        {
+          "type": "click",
+          "target": "the ABOUT KOREA menu link",
+          "at": "Open About Korea"
+        }
+      ],
+      "narration": "Korea in thirty seconds, no jet lag included. Straight from the government's own site, Korea dot net. Open About Korea."
     },
     {
       "id": "overview",
-      "title": "Overview of Korea: three facts",
+      "title": "Three facts about Korea",
       "url": "https://www.korea.net/AboutKorea/OverviewofKorea",
-      "prerequisites": [{ "type": "visible_text", "text": "Overview of Korea" }],
-      "expected_outcomes": [{ "type": "visible_text", "text": "Hangeul: A Writing System" }],
-      "actions": [
-        { "type": "point", "target": "the Overview of Korea page heading" },
-        { "type": "point", "target": "the Geography and Location of the Korean Peninsula heading", "at": "First, geography" },
-        { "type": "scroll", "target": "the A Land of Four Seasons heading", "at": "Second" },
-        { "type": "point", "target": "the A Land of Four Seasons heading", "at": "four distinct seasons" },
-        { "type": "scroll", "target": "the Hangeul: A Writing System Rooted in Scientific Principles heading", "at": "Third" },
-        { "type": "point", "target": "the Hangeul: A Writing System Rooted in Scientific Principles heading", "at": "the Korean alphabet" }
+      "prerequisites": [
+        {
+          "type": "visible_text",
+          "text": "Overview of Korea"
+        }
       ],
-      "narration": "The Overview of Korea page covers the country's essentials. Here are three. First, geography: Korea sits on a peninsula about a thousand kilometers long, and roughly seventy-five percent of it is mountains. Second, it is a land of four distinct seasons, from spring cherry blossoms to snowy winters. Third, Hangeul, the Korean alphabet, was created in 1443 by King Sejong to make reading and writing accessible to everyone."
+      "expected_outcomes": [
+        {
+          "type": "visible_text",
+          "text": "Hangeul Metal Type"
+        }
+      ],
+      "actions": [
+        {
+          "type": "scroll",
+          "target": "the map of the Korean Peninsula",
+          "at": "seventy-five percent"
+        },
+        {
+          "type": "scroll",
+          "target": "the Winter Landscape of Deogyusan Mtn. photo",
+          "at": "four distinct seasons"
+        },
+        {
+          "type": "scroll",
+          "target": "the Hangeul Metal Type photo",
+          "at": "King Sejong"
+        }
+      ],
+      "narration": "Three facts. One: about seventy-five percent of the peninsula is mountains. Two: four distinct seasons, and winter means it. Three: in 1443, King Sejong created Hangeul so ordinary people could read. Most teams can't agree on a font."
     },
     {
       "id": "president",
       "title": "President Lee Jae Myung",
       "url": "https://www.korea.net/Government/Administration/President-Lee-Jae-Myung",
-      "prerequisites": [{ "type": "visible_text", "text": "Lee Jae Myung" }],
-      "expected_outcomes": [{ "type": "visible_text", "text": "President of the Republic of Korea" }],
-      "actions": [
-        { "type": "point", "target": "the President Lee Jae Myung page heading" },
-        { "type": "point", "target": "the Lee Jae Myung name next to the portrait", "at": "Lee Jae Myung" },
-        { "type": "point", "target": "the President of the Republic of Korea subtitle", "at": "elected" }
+      "prerequisites": [
+        {
+          "type": "visible_text",
+          "text": "Lee Jae Myung"
+        }
       ],
-      "narration": "And who leads the country? Under Government, the president's page introduces Lee Jae Myung. He was elected President of the Republic of Korea on June third, 2025."
+      "expected_outcomes": [
+        {
+          "type": "visible_target",
+          "target": "the 2025- President of the Republic of Korea career entry"
+        }
+      ],
+      "actions": [
+        {
+          "type": "point",
+          "target": "the Lee Jae Myung name next to the portrait",
+          "at": "Lee Jae Myung"
+        },
+        {
+          "type": "scroll",
+          "target": "the Education heading",
+          "at": "equivalency exam"
+        },
+        {
+          "type": "scroll",
+          "target": "the 2025- President of the Republic of Korea career entry",
+          "at": "ends at president"
+        }
+      ],
+      "narration": "Who runs the place? Lee Jae Myung, elected president on June third, 2025. His résumé opens with a high-school equivalency exam and ends at president. Decent career progression."
     }
   ]
 }

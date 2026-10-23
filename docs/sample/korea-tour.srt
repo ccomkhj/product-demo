@@ -1,39 +1,47 @@
 1
-00:00:00,000 --> 00:00:08,370
-This is Korea dot net, the official website of the Republic of Korea, with news on culture, sports and technology.
+00:00:00,000 --> 00:00:03,293
+Korea in thirty seconds, no jet lag included.
 
 2
-00:00:08,370 --> 00:00:11,600
-To learn the basics, let's open About Korea.
+00:00:03,293 --> 00:00:07,319
+Straight from the government's own site, Korea dot net.
 
 3
-00:00:11,600 --> 00:00:16,106
-The Overview of Korea page covers the country's essentials.
+00:00:07,319 --> 00:00:08,563
+Open About Korea.
 
 4
-00:00:16,106 --> 00:00:17,252
-Here are three.
+00:00:08,567 --> 00:00:09,496
+Three facts.
 
 5
-00:00:17,252 --> 00:00:27,180
-First, geography: Korea sits on a peninsula about a thousand kilometers long, and roughly seventy-five percent of it is mountains.
+00:00:09,496 --> 00:00:14,295
+One: about seventy-five percent of the peninsula is mountains.
 
 6
-00:00:27,180 --> 00:00:34,206
-Second, it is a land of four distinct seasons, from spring cherry blossoms to snowy winters.
+00:00:14,295 --> 00:00:18,010
+Two: four distinct seasons, and winter means it.
 
 7
-00:00:34,206 --> 00:00:43,600
-Third, Hangeul, the Korean alphabet, was created in 1443 by King Sejong to make reading and writing accessible to everyone.
+00:00:18,010 --> 00:00:23,738
+Three: in 1443, King Sejong created Hangeul so ordinary people could read.
 
 8
-00:00:43,600 --> 00:00:45,680
-And who leads the country?
+00:00:23,738 --> 00:00:26,293
+Most teams can't agree on a font.
 
 9
-00:00:45,680 --> 00:00:50,800
-Under Government, the president's page introduces Lee Jae Myung.
+00:00:26,300 --> 00:00:27,872
+Who runs the place?
 
 10
-00:00:50,800 --> 00:00:56,400
-He was elected President of the Republic of Korea on June third, 2025.
+00:00:27,872 --> 00:00:32,255
+Lee Jae Myung, elected president on June third, 2025.
+
+11
+00:00:32,255 --> 00:00:38,459
+His résumé opens with a high-school equivalency exam and ends at president.
+
+12
+00:00:38,459 --> 00:00:40,600
+Decent career progression.
