@@ -15,7 +15,8 @@ def test_abbreviations_and_initials_do_not_end_a_sentence():
     cues = Narration("Ask Dr. Who, e.g. at 5 p.m. today. J. Smith agrees!").cue_shares()
 
     assert [sentence for *_, sentence in cues] == [
-        "Ask Dr. Who, e.g. at 5 p.m. today.", "J. Smith agrees!",
+        "Ask Dr. Who, e.g. at 5 p.m. today.",
+        "J. Smith agrees!",
     ]
 
 
@@ -30,8 +31,7 @@ def test_a_phrase_starts_with_the_cue_of_the_sentence_it_opens():
 def test_a_phrase_inside_a_sentence_is_timed_by_the_characters_before_it():
     narration = Narration("Open the list.  Click   Save.")
 
-    assert narration.phrase_shares(["the list", "CLICK save"]) == pytest.approx(
-        [5 / 25, 14 / 25])
+    assert narration.phrase_shares(["the list", "CLICK save"]) == pytest.approx([5 / 25, 14 / 25])
 
 
 def test_phrases_must_keep_the_narrations_order():

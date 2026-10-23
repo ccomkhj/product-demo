@@ -72,11 +72,13 @@ def geometry(avatar, width, height):
     if avatar.corner.startswith("bottom"):
         centre_y = height - centre_y
     reserve = margin + face + 2 * rim + halo if avatar.corner.startswith("bottom") else 0
-    return Geometry(face, rim, halo, canvas, centre_x - canvas // 2, centre_y - canvas // 2,
-                    reserve)
+    return Geometry(
+        face, rim, halo, canvas, centre_x - canvas // 2, centre_y - canvas // 2, reserve
+    )
 
 
 # --- command builders (pure: arguments in, argument list out) ---------------------------
+
 
 def bubble_cmd(image, geo, out):
     """The photo as a circle ``geo.face`` across, with a white rim and a soft shadow, as a PNG."""
@@ -85,17 +87,37 @@ def bubble_cmd(image, geo, out):
     drop = max(1, round(geo.face * 0.02))
     # The rim is white and the shadow black; at the rim's edge the two blend to grey.
     rim = f"clip({outer:.2f}-hypot(X+0.5-{centre:.2f},Y+0.5-{centre:.2f})+0.5,0,1)"
-    shadow = (f"0.35*clip(({outer + geo.halo * 0.6:.2f}"
-              f"-hypot(X+0.5-{centre:.2f},Y+0.5-{centre + drop:.2f}))/{geo.halo * 0.6:.2f},0,1)")
-    base = (f"color=c=black@0:s={geo.canvas}x{geo.canvas},format=rgba,"
-            f"geq=r='255*{rim}':g='255*{rim}':b='255*{rim}':a='255*max({rim},{shadow})'[base]")
-    face = (f"[0:v]crop='min(iw,ih)':'min(iw,ih)',scale={geo.face}:{geo.face}:flags=lanczos,"
-            f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{_disc('W/2', 'W/2', 'H/2')}'"
-            "[face]")
+    shadow = (
+        f"0.35*clip(({outer + geo.halo * 0.6:.2f}"
+        f"-hypot(X+0.5-{centre:.2f},Y+0.5-{centre + drop:.2f}))/{geo.halo * 0.6:.2f},0,1)"
+    )
+    base = (
+        f"color=c=black@0:s={geo.canvas}x{geo.canvas},format=rgba,"
+        f"geq=r='255*{rim}':g='255*{rim}':b='255*{rim}':a='255*max({rim},{shadow})'[base]"
+    )
+    face = (
+        f"[0:v]crop='min(iw,ih)':'min(iw,ih)',scale={geo.face}:{geo.face}:flags=lanczos,"
+        f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{_disc('W/2', 'W/2', 'H/2')}'"
+        "[face]"
+    )
     offset = geo.rim + geo.halo
-    return ["ffmpeg", "-v", "error", "-y", "-i", str(image), "-filter_complex",
-            f"{base};{face};[base][face]overlay={offset}:{offset}:format=auto[out]",
-            "-map", "[out]", "-frames:v", "1", "-update", "1", str(out)]
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        str(image),
+        "-filter_complex",
+        f"{base};{face};[base][face]overlay={offset}:{offset}:format=auto[out]",
+        "-map",
+        "[out]",
+        "-frames:v",
+        "1",
+        "-update",
+        "1",
+        str(out),
+    ]
 
 
 def halo_cmd(geo, out, colour=HALO_COLOUR):
@@ -103,10 +125,23 @@ def halo_cmd(geo, out, colour=HALO_COLOUR):
     centre = geo.canvas / 2
     outer = geo.face / 2 + geo.rim
     glow = f"pow(clip(1-(hypot(X+0.5-{centre:.2f},Y+0.5-{centre:.2f})-{outer:.2f})/{geo.halo},0,1),1.5)"
-    return ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
-            "-i", f"color=c={colour}:s={geo.canvas}x{geo.canvas}",
-            "-vf", f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='255*{glow}'",
-            "-frames:v", "1", "-update", "1", str(out)]
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c={colour}:s={geo.canvas}x{geo.canvas}",
+        "-vf",
+        f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='255*{glow}'",
+        "-frames:v",
+        "1",
+        "-update",
+        "1",
+        str(out),
+    ]
 
 
 def avatar_burn_cmd(video, bubble, halo, commands_name, geo, fps, out):
@@ -115,16 +150,44 @@ def avatar_burn_cmd(video, bubble, halo, commands_name, geo, fps, out):
     Run with cwd = the commands file's folder: ``commands_name`` is a bare name, so the
     filtergraph needs no path escaping.
     """
-    graph = (f"[2:v]format=rgba,sendcmd=f={commands_name},colorchannelmixer@halo=aa=0[halo];"
-             f"[0:v][halo]overlay=x={geo.x}:y={geo.y}:shortest=1[lit];"
-             f"[lit][1:v]overlay=x={geo.x}:y={geo.y}:shortest=1[out]")
-    return ["ffmpeg", "-v", "error", "-y", "-i", str(video),
-            "-loop", "1", "-framerate", str(fps), "-i", str(bubble),
-            "-loop", "1", "-framerate", str(fps), "-i", str(halo),
-            "-filter_complex", graph, "-map", "[out]", "-an", "-r", str(fps), *X264, str(out)]
+    graph = (
+        f"[2:v]format=rgba,sendcmd=f={commands_name},colorchannelmixer@halo=aa=0[halo];"
+        f"[0:v][halo]overlay=x={geo.x}:y={geo.y}:shortest=1[lit];"
+        f"[lit][1:v]overlay=x={geo.x}:y={geo.y}:shortest=1[out]"
+    )
+    return [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        str(video),
+        "-loop",
+        "1",
+        "-framerate",
+        str(fps),
+        "-i",
+        str(bubble),
+        "-loop",
+        "1",
+        "-framerate",
+        str(fps),
+        "-i",
+        str(halo),
+        "-filter_complex",
+        graph,
+        "-map",
+        "[out]",
+        "-an",
+        "-r",
+        str(fps),
+        *X264,
+        str(out),
+    ]
 
 
 # --- voice levels (pure) -----------------------------------------------------------------
+
 
 def voice_levels(samples, rate, fps):
     """The voice's loudness for each video frame, smoothed, from 0 (silent) to 1 (loud).
@@ -137,7 +200,7 @@ def voice_levels(samples, rate, fps):
         return []
     decibels = []
     for index in range(frames):
-        chunk = samples[index * window:(index + 1) * window]
+        chunk = samples[index * window : (index + 1) * window]
         rms = math.sqrt(sum(value * value for value in chunk) / len(chunk)) / 32768
         decibels.append(20 * math.log10(max(rms, 1e-6)))
     loud = sorted(decibels)[min(frames - 1, int(frames * 0.95))]
@@ -174,6 +237,7 @@ def read_wav(path):
 
 # --- pipeline ----------------------------------------------------------------------------
 
+
 def burn_avatar(video, audio, avatar, viewport, fps, out, work_dir, run):
     """Draw ``avatar``'s bubble on ``video``, its halo following ``audio``; ``run`` runs a command."""
     work_dir = Path(work_dir)
@@ -182,9 +246,21 @@ def burn_avatar(video, audio, avatar, viewport, fps, out, work_dir, run):
     run(bubble_cmd(avatar.image, geo, bubble))
     run(halo_cmd(geo, halo))
     samples, rate = read_wav(audio)
-    (work_dir / "avatar-levels.cmd").write_text(level_commands(voice_levels(samples, rate, fps), fps))
-    run(avatar_burn_cmd(Path(video).resolve(), bubble.resolve(), halo.resolve(), "avatar-levels.cmd",
-                        geo, fps, Path(out).resolve()), cwd=work_dir)
+    (work_dir / "avatar-levels.cmd").write_text(
+        level_commands(voice_levels(samples, rate, fps), fps)
+    )
+    run(
+        avatar_burn_cmd(
+            Path(video).resolve(),
+            bubble.resolve(),
+            halo.resolve(),
+            "avatar-levels.cmd",
+            geo,
+            fps,
+            Path(out).resolve(),
+        ),
+        cwd=work_dir,
+    )
     return geo
 
 

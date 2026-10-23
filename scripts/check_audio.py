@@ -16,9 +16,9 @@ downloads the pinned model.
 
 import argparse
 import difflib
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 from demo_spec import load_spec
 from narration import spoken
@@ -30,8 +30,10 @@ WHISPER_REVISION = "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
 # whisper's own error rate on clean speech.
 THRESHOLD = 0.95
 
-ONES = ("zero one two three four five six seven eight nine ten eleven twelve thirteen "
-        "fourteen fifteen sixteen seventeen eighteen nineteen").split()
+ONES = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen "
+    "fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
 TENS = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
 SCALES = ((10**9, "billion"), (10**6, "million"), (1000, "thousand"), (100, "hundred"))
 

@@ -28,8 +28,7 @@ MODEL_FILES = {
 }
 # Voice-name prefix -> espeak language. Japanese (j) and Mandarin (z) voices need extra
 # phonemizers that kokoro-onnx doesn't bundle, so they are left out.
-LANGS = {"a": "en-us", "b": "en-gb", "e": "es", "f": "fr-fr", "h": "hi", "i": "it",
-         "p": "pt-br"}
+LANGS = {"a": "en-us", "b": "en-gb", "e": "es", "f": "fr-fr", "h": "hi", "i": "it", "p": "pt-br"}
 
 
 def cache_dir():
@@ -47,8 +46,10 @@ def fetch_models(directory):
         print(f"kokoro: downloading {name} (once) into {directory}", file=sys.stderr)
         partial = target.with_suffix(target.suffix + ".part")
         sha = hashlib.sha256()
-        with urllib.request.urlopen(RELEASE + name, timeout=60) as response, \
-                partial.open("wb") as out:
+        with (
+            urllib.request.urlopen(RELEASE + name, timeout=60) as response,
+            partial.open("wb") as out,
+        ):
             while chunk := response.read(1 << 20):
                 sha.update(chunk)
                 out.write(chunk)

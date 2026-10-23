@@ -36,8 +36,10 @@ def test_valid_spec_is_accepted_with_default_viewport():
     assert [s["id"] for s in result["scenes"]] == ["home", "details"]
 
 
-@pytest.mark.parametrize("viewport", [{"width": 1920}, {"width": 0, "height": 1080},
-                                      {"width": 19.2, "height": 1080}, "1920x1080"])
+@pytest.mark.parametrize(
+    "viewport",
+    [{"width": 1920}, {"width": 0, "height": 1080}, {"width": 19.2, "height": 1080}, "1920x1080"],
+)
 def test_malformed_viewport_is_rejected(viewport):
     with pytest.raises(SpecError, match="viewport"):
         validate_spec(make_spec(viewport=viewport))
@@ -146,32 +148,49 @@ def test_action_that_is_not_an_object_is_rejected_naming_the_scene(action):
 
 
 def spec_with_actions(actions, narration="Point at the heading, then click Save to keep it."):
-    return make_spec(scenes=[{"id": "home", "url": "https://example.com",
-                              "actions": actions, "narration": narration}])
+    return make_spec(
+        scenes=[
+            {"id": "home", "url": "https://example.com", "actions": actions, "narration": narration}
+        ]
+    )
 
 
 def test_at_phrases_from_the_narration_are_accepted_in_order_and_any_case():
-    validate_spec(spec_with_actions([
-        {"type": "point", "target": "the heading", "at": "the heading"},
-        {"type": "wait", "ms": 200},
-        {"type": "click", "target": "Save", "at": "click   SAVE"},
-    ]))
+    validate_spec(
+        spec_with_actions(
+            [
+                {"type": "point", "target": "the heading", "at": "the heading"},
+                {"type": "wait", "ms": 200},
+                {"type": "click", "target": "Save", "at": "click   SAVE"},
+            ]
+        )
+    )
 
 
 def test_at_phrase_missing_from_the_narration_is_rejected_naming_the_action():
-    with pytest.raises(SpecError, match=r"scene 1 'home', action 2: 'at' phrase 'Delete' is not in"):
-        validate_spec(spec_with_actions([
-            {"type": "point", "target": "the heading"},
-            {"type": "click", "target": "Delete", "at": "Delete"},
-        ]))
+    with pytest.raises(
+        SpecError, match=r"scene 1 'home', action 2: 'at' phrase 'Delete' is not in"
+    ):
+        validate_spec(
+            spec_with_actions(
+                [
+                    {"type": "point", "target": "the heading"},
+                    {"type": "click", "target": "Delete", "at": "Delete"},
+                ]
+            )
+        )
 
 
 def test_at_phrases_out_of_narration_order_are_rejected():
     with pytest.raises(SpecError, match="action 2: .* after the previous phrase"):
-        validate_spec(spec_with_actions([
-            {"type": "click", "target": "Save", "at": "click Save"},
-            {"type": "point", "target": "the heading", "at": "the heading"},
-        ]))
+        validate_spec(
+            spec_with_actions(
+                [
+                    {"type": "click", "target": "Save", "at": "click Save"},
+                    {"type": "point", "target": "the heading", "at": "the heading"},
+                ]
+            )
+        )
 
 
 @pytest.mark.parametrize("phrase", ["", "  ", 3, None])
@@ -180,45 +199,66 @@ def test_at_that_is_not_a_phrase_is_rejected(phrase):
         validate_spec(spec_with_actions([{"type": "point", "target": "x", "at": phrase}]))
 
 
-@pytest.mark.parametrize('purpose', ['feature-announcement', 'customer-tutorial', 'sales-walkthrough', 'custom'])
+@pytest.mark.parametrize(
+    "purpose", ["feature-announcement", "customer-tutorial", "sales-walkthrough", "custom"]
+)
 def test_purpose_metadata_and_scene_checks(purpose):
-    spec = make_spec(purpose=purpose, outcome='Export a report', target_duration_s=30)
-    spec['scenes'][0]['prerequisites'] = [
-        {'type': 'visible_text', 'text': 'Reports'},
-        {'type': 'visible_target', 'target': 'the enabled Export button'},
+    spec = make_spec(purpose=purpose, outcome="Export a report", target_duration_s=30)
+    spec["scenes"][0]["prerequisites"] = [
+        {"type": "visible_text", "text": "Reports"},
+        {"type": "visible_target", "target": "the enabled Export button"},
     ]
-    spec['scenes'][0]['expected_outcomes'] = []
+    spec["scenes"][0]["expected_outcomes"] = []
     result = validate_spec(spec)
-    assert result['purpose'] == purpose
-    assert result['scenes'][0]['prerequisites'] == spec['scenes'][0]['prerequisites']
-    result['scenes'][0]['prerequisites'].clear()
-    assert len(spec['scenes'][0]['prerequisites']) == 2
+    assert result["purpose"] == purpose
+    assert result["scenes"][0]["prerequisites"] == spec["scenes"][0]["prerequisites"]
+    result["scenes"][0]["prerequisites"].clear()
+    assert len(spec["scenes"][0]["prerequisites"]) == 2
 
 
 def test_old_spec_does_not_get_template_defaults():
     result = validate_spec(make_spec())
-    assert not {'purpose', 'outcome', 'target_duration_s'} & result.keys()
+    assert not {"purpose", "outcome", "target_duration_s"} & result.keys()
 
 
-@pytest.mark.parametrize('field,value', [
-    ('purpose', 'unknown'), ('purpose', []), ('purpose', None),
-    ('outcome', ''), ('outcome', '  '), ('outcome', 1),
-    *[('target_duration_s', v) for v in (0, -1, True, False, '30', None, float('nan'), float('inf'))],
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("purpose", "unknown"),
+        ("purpose", []),
+        ("purpose", None),
+        ("outcome", ""),
+        ("outcome", "  "),
+        ("outcome", 1),
+        *[
+            ("target_duration_s", v)
+            for v in (0, -1, True, False, "30", None, float("nan"), float("inf"))
+        ],
+    ],
+)
 def test_invalid_demo_metadata(field, value):
     with pytest.raises(SpecError, match=field):
         validate_spec(make_spec(**{field: value}))
 
 
-@pytest.mark.parametrize('field', ['prerequisites', 'expected_outcomes'])
-@pytest.mark.parametrize('checks', [None, {}, 'Reports', [None], [{}],
-    [{'type': 'script', 'text': 'Reports'}],
-    [{'type': 'visible_text'}], [{'type': 'visible_text', 'text': ' '}],
-    [{'type': 'visible_target', 'target': False}],
-])
+@pytest.mark.parametrize("field", ["prerequisites", "expected_outcomes"])
+@pytest.mark.parametrize(
+    "checks",
+    [
+        None,
+        {},
+        "Reports",
+        [None],
+        [{}],
+        [{"type": "script", "text": "Reports"}],
+        [{"type": "visible_text"}],
+        [{"type": "visible_text", "text": " "}],
+        [{"type": "visible_target", "target": False}],
+    ],
+)
 def test_invalid_scene_checks(field, checks):
     spec = make_spec()
-    spec['scenes'][0][field] = checks
+    spec["scenes"][0][field] = checks
     with pytest.raises(SpecError, match=f"scene 1.*home.*{field}"):
         validate_spec(spec)
 
@@ -238,17 +278,20 @@ def test_spec_without_avatar_has_none():
     assert "avatar" not in validate_spec(make_spec())
 
 
-@pytest.mark.parametrize("avatar, message", [
-    ("me.png", "avatar must be a JSON object"),
-    ({}, "avatar.image must be"),
-    ({"image": " "}, "avatar.image must be"),
-    ({"profile": "own_voice"}, "avatar.profile must be own_photo"),
-    ({"profile": "own_photo", "image": "me.png"}, "without an image"),
-    ({"image": "me.png", "corner": "middle"}, "avatar.corner must be one of bottom-left"),
-    ({"image": "me.png", "size": 0.6}, "avatar.size must be a number from 0.05 to 0.5"),
-    ({"image": "me.png", "size": 0}, "avatar.size"),
-    ({"image": "me.png", "size": True}, "avatar.size"),
-])
+@pytest.mark.parametrize(
+    "avatar, message",
+    [
+        ("me.png", "avatar must be a JSON object"),
+        ({}, "avatar.image must be"),
+        ({"image": " "}, "avatar.image must be"),
+        ({"profile": "own_voice"}, "avatar.profile must be own_photo"),
+        ({"profile": "own_photo", "image": "me.png"}, "without an image"),
+        ({"image": "me.png", "corner": "middle"}, "avatar.corner must be one of bottom-left"),
+        ({"image": "me.png", "size": 0.6}, "avatar.size must be a number from 0.05 to 0.5"),
+        ({"image": "me.png", "size": 0}, "avatar.size"),
+        ({"image": "me.png", "size": True}, "avatar.size"),
+    ],
+)
 def test_malformed_avatar_is_rejected(avatar, message):
     with pytest.raises(SpecError, match=message):
         validate_spec(make_spec(avatar=avatar))

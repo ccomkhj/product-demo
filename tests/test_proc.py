@@ -31,7 +31,8 @@ def test_failing_tool_reports_exit_code_and_the_end_of_stderr():
 
 
 def test_run_uses_the_given_working_directory(tmp_path):
-    out = run([sys.executable, "-c", "import os; print(os.getcwd())"], cwd=tmp_path,
-              error=ToolFailed)
+    out = run(
+        [sys.executable, "-c", "import os; print(os.getcwd())"], cwd=tmp_path, error=ToolFailed
+    )
 
     assert out.strip() == str(tmp_path.resolve())

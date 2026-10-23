@@ -29,11 +29,23 @@ The end.
 EDIT_MAP = {
     "total_s": SOURCE_S,
     "scenes": [
-        {"id": "one", "title": "One", "start_s": 0.0, "end_s": 2.0,
-         "actions": [{"index": 0, "type": "point", "start_s": 0.0}]},
-        {"id": "two", "title": "Two", "start_s": 2.0, "end_s": 6.0,
-         "actions": [{"index": 0, "type": "click", "start_s": 2.0},
-                     {"index": 1, "type": "click", "start_s": 4.0, "at": "end"}]},
+        {
+            "id": "one",
+            "title": "One",
+            "start_s": 0.0,
+            "end_s": 2.0,
+            "actions": [{"index": 0, "type": "point", "start_s": 0.0}],
+        },
+        {
+            "id": "two",
+            "title": "Two",
+            "start_s": 2.0,
+            "end_s": 6.0,
+            "actions": [
+                {"index": 0, "type": "click", "start_s": 2.0},
+                {"index": 1, "type": "click", "start_s": 4.0, "at": "end"},
+            ],
+        },
     ],
 }
 
@@ -42,10 +54,25 @@ def make_demo(tmp_path, recipe, edit_map=True):
     """A composed demo folder (slug = folder name): a 6 s source, its .srt, edit map, recipe."""
     demo = tmp_path / "smoke"
     demo.mkdir(parents=True)
-    ffmpeg("-f", "lavfi", "-i", f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
-           "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
-           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "1",
-           demo / "smoke.mp4")
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size=320x240:rate=30:duration={SOURCE_S}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=440:sample_rate=48000:duration={SOURCE_S}",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ac",
+        "1",
+        demo / "smoke.mp4",
+    )
     (demo / "smoke.srt").write_text(SRT)
     (demo / "transcript.md").write_text("# Smoke\n")
     if edit_map:
@@ -55,8 +82,9 @@ def make_demo(tmp_path, recipe, edit_map=True):
 
 
 def run_post(*args, env=None):
-    return subprocess.run([sys.executable, str(POSTPROCESS), *map(str, args)],
-                          capture_output=True, text=True, env=env)
+    return subprocess.run(
+        [sys.executable, str(POSTPROCESS), *map(str, args)], capture_output=True, text=True, env=env
+    )
 
 
 def digest(path):
@@ -71,10 +99,14 @@ def printed_total(stdout):
 @needs_ffmpeg
 def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     # cut 1.0-3.0 (splits cues 1 and 2), anchored to scene two's start; then 2x
-    demo = make_demo(tmp_path, {"speed": 2.0, "trim": {
-        "cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}})
-    originals = {name: digest(demo / name)
-                 for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")}
+    demo = make_demo(
+        tmp_path,
+        {"speed": 2.0, "trim": {"cuts": [{"from": 1.0, "to": {"scene": "two", "offset_s": 1.0}}]}},
+    )
+    originals = {
+        name: digest(demo / name)
+        for name in ("smoke.mp4", "smoke.srt", "transcript.md", "smoke.editmap.json")
+    }
 
     result = run_post(demo / "post.json")
 
@@ -85,7 +117,9 @@ def test_trim_and_speed_write_the_post_video_and_retimed_subtitles(tmp_path):
     info = probe(demo / "smoke-post.mp4")
     assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
     assert float(info["format"]["duration"]) == pytest.approx(2.0, abs=1 / 30 + 0.03)
-    assert (demo / "smoke-post.srt").read_text() == """1
+    assert (
+        (demo / "smoke-post.srt").read_text()
+        == """1
 00:00:00,000 --> 00:00:00,500
 First scene.
 
@@ -97,6 +131,7 @@ Second scene starts.
 00:00:01,000 --> 00:00:02,000
 The end.
 """
+    )
     assert "splits cue 1" in result.stderr and "splits cue 2" in result.stderr
     assert {name: digest(demo / name) for name in originals} == originals
 
@@ -154,12 +189,78 @@ def test_contact_sheet_export_is_written_with_its_frames(tmp_path):
     assert printed_total(result.stdout) == pytest.approx(SOURCE_S)
 
 
+@needs_ffmpeg
+def test_size_cap_gif_and_poster_exports_are_written_within_their_limits(tmp_path):
+    demo = make_demo(
+        tmp_path,
+        {
+            "speed": 2.0,
+            "exports": {
+                "size_cap_mb": 0.2,
+                "gif": {"from": 2.0, "to": 6.0, "width": 160, "fps": 10},
+                "poster": {"time": {"scene": "two", "at": "end"}},
+            },
+        },
+    )
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 0, result.stderr
+    capped, gif, poster = (
+        demo / f"smoke-post-{name}" for name in ("0.2mb.mp4", "gif.gif", "poster.png")
+    )
+    assert f"size_cap\t0.2 MB\t{capped}" in result.stdout
+    assert f"gif\t1.000s-3.000s\t160px 10fps\t{gif}" in result.stdout
+    assert f"poster\t2.000s\t{poster}" in result.stdout
+    assert 0 < capped.stat().st_size <= 200_000
+    info = probe(capped)
+    assert float(info["format"]["duration"]) == pytest.approx(3.0, abs=0.1)
+    assert {s["codec_type"] for s in info["streams"]} == {"video", "audio"}
+    [stream] = probe(gif)["streams"]
+    assert (stream["codec_name"], stream["width"], stream["height"]) == ("gif", 160, 120)
+    assert float(probe(gif)["format"]["duration"]) == pytest.approx(2.0, abs=0.15)
+    [stream] = probe(poster)["streams"]
+    assert (stream["width"], stream["height"]) == (320, 240)
+
+
+@needs_ffmpeg
+def test_an_unreachable_size_cap_fails_with_the_smallest_reachable_size(tmp_path):
+    demo = make_demo(tmp_path, {"exports": {"size_cap_mb": 0.01}})
+
+    result = run_post(demo / "post.json")
+
+    assert result.returncode == 1
+    assert "smallest reachable size is 0.08 MB" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not list(demo.glob("smoke-post-*mb.mp4"))
+
+
 def pixel(video, at_s, x, y):
     """(r, g, b) of one pixel of ``video``'s frame at ``at_s``."""
-    return tuple(subprocess.run(
-        ["ffmpeg", "-v", "error", "-ss", str(at_s), "-i", str(video), "-frames:v", "1",
-         "-vf", f"crop=2:2:{x}:{y}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-        capture_output=True, check=True).stdout[:3])
+    return tuple(
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-ss",
+                str(at_s),
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"crop=2:2:{x}:{y}",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        ).stdout[:3]
+    )
 
 
 @needs_ffmpeg
@@ -174,7 +275,8 @@ def test_progress_bar_fills_along_its_edge(tmp_path):
     assert r > 200 and g < 60 and b < 60
     assert pixel(demo / "smoke-post.mp4", 3.0, 300, 235) != pytest.approx((r, g, b), abs=60)
     assert float(probe(demo / "smoke-post.mp4")["format"]["duration"]) == pytest.approx(
-        SOURCE_S, abs=0.05)
+        SOURCE_S, abs=0.05
+    )
 
 
 @needs_ffmpeg
@@ -192,10 +294,22 @@ def test_image_watermark_sits_in_its_corner_without_rsvg(tmp_path):
 @needs_ffmpeg
 @needs_rsvg
 def test_text_callout_shows_only_inside_its_window(tmp_path):
-    demo = make_demo(tmp_path, {"watermark": {"text": "acme"}, "callouts": [
-        {"type": "text", "text": "Here", "position": [20, 20], "start": {"scene": "two"},
-         "end": 4.0},
-        {"type": "arrow", "from": [200, 200], "to": [150, 120], "start": 1.0, "end": 5.0}]})
+    demo = make_demo(
+        tmp_path,
+        {
+            "watermark": {"text": "acme"},
+            "callouts": [
+                {
+                    "type": "text",
+                    "text": "Here",
+                    "position": [20, 20],
+                    "start": {"scene": "two"},
+                    "end": 4.0,
+                },
+                {"type": "arrow", "from": [200, 200], "to": [150, 120], "start": 1.0, "end": 5.0},
+            ],
+        },
+    )
 
     result = run_post(demo / "post.json")
 
@@ -205,7 +319,8 @@ def test_text_callout_shows_only_inside_its_window(tmp_path):
     assert [float(s["duration"]) for s in streams] == pytest.approx([SOURCE_S] * 2, abs=0.05)
     assert max(pixel(demo / "smoke-post.mp4", 3.0, 24, 24)) < 60
     assert pixel(demo / "smoke-post.mp4", 1.0, 24, 24) == pytest.approx(
-        pixel(demo / "smoke.mp4", 1.0, 24, 24), abs=40)
+        pixel(demo / "smoke.mp4", 1.0, 24, 24), abs=40
+    )
 
 
 @needs_ffmpeg
