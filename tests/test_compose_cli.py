@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from compose import action_line, cue_svg, subtitles_burn_cmd
+from compose import action_line, burn_method, cue_svg, subtitles_burn_cmd
 from edit_plan import ActionTime
 
 COMPOSE = Path(__file__).resolve().parent.parent / "scripts" / "compose.py"
@@ -14,6 +14,10 @@ COMPOSE = Path(__file__).resolve().parent.parent / "scripts" / "compose.py"
 needs_ffmpeg = pytest.mark.skipif(
     not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
     reason="needs ffmpeg/ffprobe",
+)
+needs_burn = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe") and burn_method()),
+    reason="needs ffmpeg/ffprobe plus libass or rsvg-convert",
 )
 
 SCENES = [
@@ -226,7 +230,7 @@ def bottom_and_top_difference(a, b, width=320, height=240, at=0.5):
     return mean_diff(height * 3 // 4, height), mean_diff(0, height // 4)
 
 
-@needs_ffmpeg
+@needs_burn
 def test_burn_subs_draws_the_subtitles_into_a_playable_video(tmp_path):
     audio = write_demo(tmp_path)
     make_media(tmp_path, audio)

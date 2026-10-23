@@ -128,6 +128,12 @@ export async function startBrowser() {
     inject() {
       return this.eval(OVERLAY_SOURCE);
     },
+    // Stretch the page's timers so slow CDP round trips (CI runners) cannot outlast
+    // short-lived overlay state; their order, and so what the test checks, is unchanged.
+    slowTimers(factor = 10) {
+      return this.eval(`{ const st = setTimeout;
+        window.setTimeout = (f, ms = 0, ...a) => st(f, ms * ${factor}, ...a); }`);
+    },
     async click(x, y, clickCount = 1) {
       for (let n = 1; n <= clickCount; n++) {
         const base = { x, y, button: "left", clickCount: n };

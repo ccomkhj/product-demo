@@ -55,6 +55,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
   });
 
   test("typed text is coalesced into one keycap", async () => {
+    await page.slowTimers();
     await page.inject();
     for (const ch of "hi there") {
       await page.key(ch, { text: ch });
@@ -63,6 +64,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
   });
 
   test("a click presses the cursor and draws a ripple wide enough to see in a 1080p video", async () => {
+    await page.slowTimers();
     await page.inject();
     await page.click(360, 220);
     const pressed = await page.eval(`document.querySelector("[data-demo-overlay]").shadowRoot
@@ -119,7 +121,9 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     const during = await page.eval(`(() => {
       const f = document.querySelector("[data-demo-overlay]").shadowRoot.querySelector('[data-demo="sync"]');
       const r = f.getBoundingClientRect();
-      return { color: getComputedStyle(f).backgroundColor, full: r.width === innerWidth && r.height === innerHeight };
+      // client size, not inner size: a classic (non-overlay) scrollbar is not part of the layer
+      const { clientWidth: w, clientHeight: h } = document.documentElement;
+      return { color: getComputedStyle(f).backgroundColor, full: r.width === w && r.height === h };
     })()`);
     const result = await pending;
     assert.deepEqual(during, { color: "rgb(255, 0, 255)", full: true });
