@@ -295,3 +295,45 @@ def test_spec_without_avatar_has_none():
 def test_malformed_avatar_is_rejected(avatar, message):
     with pytest.raises(SpecError, match=message):
         validate_spec(make_spec(avatar=avatar))
+
+
+def test_upload_with_a_target_and_files_is_accepted():
+    validate_spec(
+        spec_with_actions(
+            [{"type": "upload", "target": "Add videos", "files": ["a.mp4", "/abs/b.mov"]}]
+        )
+    )
+
+
+def test_upload_at_follows_the_phrase_order_rule():
+    validate_spec(
+        spec_with_actions(
+            [{"type": "upload", "target": "Save", "files": ["a.csv"], "at": "click Save"}]
+        )
+    )
+    with pytest.raises(SpecError, match="action 2: .* after the previous phrase"):
+        validate_spec(
+            spec_with_actions(
+                [
+                    {"type": "upload", "target": "Save", "files": ["a.csv"], "at": "click Save"},
+                    {"type": "point", "target": "the heading", "at": "the heading"},
+                ]
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "fields, message",
+    [
+        ({"files": ["a.mp4"]}, "target"),
+        ({"target": " ", "files": ["a.mp4"]}, "target"),
+        ({"target": "Add"}, "files"),
+        ({"target": "Add", "files": []}, "files"),
+        ({"target": "Add", "files": "a.mp4"}, "files"),
+        ({"target": "Add", "files": ["a.mp4", " "]}, "files"),
+        ({"target": "Add", "files": [3]}, "files"),
+    ],
+)
+def test_malformed_upload_is_rejected_naming_the_action(fields, message):
+    with pytest.raises(SpecError, match=rf"scene 1 'home', action 1: upload {message}"):
+        validate_spec(spec_with_actions([{"type": "upload", **fields}]))

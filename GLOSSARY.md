@@ -16,7 +16,8 @@ One page-sized part of a demo with its own narration and actions.
 _Avoid_: step, slide, segment
 
 **Action**:
-One browser interaction in a scene: click, double-click, key, type, scroll or back.
+One browser interaction in a scene: click, double-click, key, type, scroll, back or
+upload (putting files into the page's file input).
 
 **At phrase**:
 Words in a scene's narration that an action starts on.

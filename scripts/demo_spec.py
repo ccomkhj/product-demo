@@ -9,7 +9,7 @@ from narration import Narration, PhraseError
 from voice_config import validate_voice
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
-ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
+ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait", "upload")
 PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
 
@@ -91,6 +91,8 @@ def validate_spec(spec):
                     f"{where}, action {position}: unknown action type {action_type!r} "
                     f"(allowed: {', '.join(ACTION_TYPES)})"
                 )
+            if action_type == "upload":
+                _validate_upload(action, f"{where}, action {position}")
         anchored = [
             (number, action["at"])
             for number, action in enumerate(scene.get("actions", []), start=1)
@@ -146,6 +148,19 @@ def _validate_avatar(spec):
             f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
             "(the photo's diameter as a share of the video's height)"
         )
+
+
+def _non_empty(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_upload(action, where):
+    """Whether the files exist is preflight's job; here only the shape."""
+    if not _non_empty(action.get("target")):
+        raise SpecError(f"{where}: upload target must be a non-empty string")
+    files = action.get("files")
+    if not isinstance(files, list) or not files or not all(map(_non_empty, files)):
+        raise SpecError(f"{where}: upload files must be a non-empty list of file paths")
 
 
 def _validate_checks(scene, where):
