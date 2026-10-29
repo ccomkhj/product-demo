@@ -9,11 +9,11 @@
  * no-op apart from re-attaching the overlay host if the page removed it.
  *
  * API (single global):
- *   __demo.device(mode)          "desktop" (default) or "phone"; call after EVERY injection, and when a
+ *   __demo.device(device)        "desktop" (default) or "phone"; call after EVERY injection, and when a
  *                                phone scene follows a desktop one on the same page
  *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done.
- *                                In phone mode: a fingertip hovers on the target for as long instead
- *   __demo.tap(el | selector)    draw a click on the element (ripple, or fingertip in phone mode)
+ *                                On a phone: a fingertip hovers on the target for as long instead
+ *   __demo.tap(el | selector)    draw a click on the element (ripple, or fingertip on a phone)
  *                                without sending one
  *   __demo.badge(text)           transient badge, e.g. "◀ Back"; resolves once it has been on screen a moment
  *   __demo.upload(files)         badge naming the uploaded files: "📎 clip.mp4", or "📎 3 videos"
@@ -22,7 +22,7 @@
  *   __demo.sync()                full-screen magenta flash (~400 ms) that compose finds in the
  *                                recording; resolves to the wall-clock ms at which it was painted
  * Clicks, double-clicks and key presses (real CDP input from MCP) are drawn
- * automatically by capture-phase listeners: ripple, double ring, keycap. In phone mode
+ * automatically by capture-phase listeners: ripple, double ring, keycap. On a phone
  * the arrow cursor is hidden and a click is drawn as a fingertip plus the ripple.
  *
  * Every overlay element is pointer-events:none inside a shadow root on a
@@ -243,10 +243,10 @@
     return f;
   }
 
-  // A phone scene can follow a desktop scene on the same page, so the mode changes in place.
-  function device(mode) {
-    if (mode !== "desktop" && mode !== "phone") throw new Error(`__demo.device: unknown mode ${mode}`);
-    phone = mode === "phone";
+  // A phone scene can follow a desktop scene on the same page, so the device changes in place.
+  function device(name) {
+    if (name !== "desktop" && name !== "phone") throw new Error(`__demo.device: unknown device ${name}`);
+    phone = name === "phone";
     ensureHost().classList.toggle("phone", phone);
   }
 

@@ -174,7 +174,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.equal(await page.eval(`location.pathname`), "/second");
   });
 
-  test("phone mode: a tap draws a fingertip and ripple where it lands, and no arrow cursor", async () => {
+  test("phone: a tap draws a fingertip and ripple where it lands, and no arrow cursor", async () => {
     await page.slowTimers();
     await page.inject();
     await page.eval(`__demo.device("phone")`);
@@ -189,7 +189,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.deepEqual(drawn, { finger: [360, 220], ripple: [360, 220], cursor: "none" });
   });
 
-  test("phone mode: point hovers a changing fingertip on the target for as long as a glide", async () => {
+  test("phone: point hovers a changing fingertip on the target for as long as a glide", async () => {
     await page.inject();
     await page.eval(`__demo.device("phone")`);
     const result = await page.eval(`(async () => {
@@ -210,7 +210,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.ok(result.elapsed > 450 && result.elapsed < 1200, `elapsed ${result.elapsed}`);
   });
 
-  test("the mode changes on a page that already has the overlay, and back to desktop draws as before", async () => {
+  test("the device changes on a page that already has the overlay, and back to desktop draws as before", async () => {
     await page.slowTimers();
     await page.inject();
     await page.eval(`__demo.device("phone")`);
@@ -229,7 +229,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.deepEqual(after, { display: "block", pressed: true });
   });
 
-  test("tap draws a click's ripple on an element without clicking it, as a fingertip in phone mode", async () => {
+  test("tap draws a click's ripple on an element without clicking it, as a fingertip on a phone", async () => {
     await page.slowTimers();
     await page.inject();
     await page.eval(`document.querySelector("#btn").onmousedown = () => { window.pressed = true; }`);
@@ -243,7 +243,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.equal(await page.eval(`window.pressed ?? false`), false);
   });
 
-  test("re-injecting after navigation takes the mode it is given", async () => {
+  test("re-injecting after navigation takes the device it is given", async () => {
     await page.inject();
     await page.eval(`__demo.device("phone")`);
     await page.goto("/second");
@@ -252,7 +252,7 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     const display = await page.eval(`getComputedStyle(document.querySelector("[data-demo-overlay]").shadowRoot
       .querySelector('[data-demo="cursor"]')).display`);
     assert.equal(display, "none");
-    await assert.rejects(page.eval(`__demo.device("tablet")`), /unknown mode/);
+    await assert.rejects(page.eval(`__demo.device("tablet")`), /unknown device/);
   });
 
   test("re-injecting after navigation installs the overlay on the new page", async () => {

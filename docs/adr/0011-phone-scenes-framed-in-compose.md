@@ -65,7 +65,7 @@ page at 1486×836. Its findings:
 
 ## Consequences
 
-- Turning on phone mode reloads the page. A phone scene starts from a fresh load of its
+- Turning on phone emulation reloads the page. A phone scene starts from a fresh load of its
   URL, and state from the scene before it is gone unless the app keeps it (in storage or
   on its server). That suits a QR hand-off, where the phone opens its own page anyway.
 - On a screen that can't fit 844 px, the phone page is shorter than 390×844. Readiness

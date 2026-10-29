@@ -43,7 +43,7 @@ evaluate_script({ pageId, sourcePath: "${CLAUDE_PLUGIN_ROOT}/assets/overlay.js",
 It returns `"overlay installed"` the first time on a document and
 `"overlay already present"` after that.
 
-Then, after every injection, set the overlay's device mode to the device of the scene
+Then, after every injection, set the overlay's device to the device of the scene
 being recorded (or about to be: the gap before a scene counts as that scene):
 
 ```
@@ -51,7 +51,7 @@ evaluate_script({ pageId, function: "() => __demo.device('phone')" })   // or 'd
 ```
 
 A scene's device is its own `device`, else the demo spec's top-level `device`, else
-`"desktop"`. The mode is per document, so a new page starts in desktop mode until told.
+`"desktop"`. The device is per document, so a new page starts as desktop until told.
 
 `sourcePath` only works when the file is inside one of the MCP server's workspace roots
 (normally the directory Claude Code was started in). Otherwise the call fails with
@@ -75,9 +75,9 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
 
 | Call | Effect |
 |------|--------|
-| `__demo.device(mode)` | `"desktop"` or `"phone"`. In phone mode the arrow cursor is hidden, clicks are drawn as a fingertip plus the ripple where they land, and `point` hovers a fingertip on the target instead of gliding. Keycaps, badges, captions and the flash are the same in both. |
-| `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. In phone mode a fingertip hovers on the element for the same ~600 ms instead. |
-| `__demo.tap(el)` | Draws a click on the element (ripple, or fingertip and ripple in phone mode) without sending one. Only for a click the recipe can't send (see upload). |
+| `__demo.device(device)` | `"desktop"` or `"phone"`. On a phone the arrow cursor is hidden, clicks are drawn as a fingertip plus the ripple where they land, and `point` hovers a fingertip on the target instead of gliding. Keycaps, badges, captions and the flash are the same in both. |
+| `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. On a phone a fingertip hovers on the element for the same ~600 ms instead. |
+| `__demo.tap(el)` | Draws a click on the element (ripple, or fingertip and ripple on a phone) without sending one. Only for a click the recipe can't send (see upload). |
 | `__demo.badge(text[, ms])` | Transient badge at the top left (default 1500 ms). Resolves after ~700 ms, so awaiting it before a navigation keeps it on screen long enough to be recorded. |
 | `__demo.upload(files)` | Badge naming what an `upload` added: `📎 clip.mp4` for one file, a count and kind for several (`📎 3 videos`, `📎 2 images`; mixed kinds say `files`). Resolves like `badge`. |
 | `__demo.caption(text)` | Lower-third caption at the bottom left. It stays until replaced. `caption("")` hides it. |
