@@ -174,6 +174,87 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.equal(await page.eval(`location.pathname`), "/second");
   });
 
+  test("phone mode: a tap draws a fingertip and ripple where it lands, and no arrow cursor", async () => {
+    await page.slowTimers();
+    await page.inject();
+    await page.eval(`__demo.device("phone")`);
+    await page.click(360, 220);
+    const drawn = await page.eval(`(() => {
+      const root = document.querySelector("[data-demo-overlay]").shadowRoot;
+      const centre = (sel) => { const r = root.querySelector(sel).getBoundingClientRect();
+        return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; };
+      return { finger: centre('[data-demo="finger"]'), ripple: centre('[data-demo="core"]'),
+        cursor: getComputedStyle(root.querySelector('[data-demo="cursor"]')).display };
+    })()`);
+    assert.deepEqual(drawn, { finger: [360, 220], ripple: [360, 220], cursor: "none" });
+  });
+
+  test("phone mode: point hovers a changing fingertip on the target for as long as a glide", async () => {
+    await page.inject();
+    await page.eval(`__demo.device("phone")`);
+    const result = await page.eval(`(async () => {
+      const root = document.querySelector("[data-demo-overlay]").shadowRoot;
+      const cursorBefore = root.querySelector('[data-demo="cursor"]').style.transform;
+      const t0 = performance.now();
+      const done = __demo.point("#btn");
+      await new Promise((r) => setTimeout(r, 200));
+      const f = root.querySelector('[data-demo="finger"]').getBoundingClientRect();
+      const animation = getComputedStyle(root.querySelector('[data-demo="finger"]')).animationName;
+      await done;
+      return { elapsed: performance.now() - t0, centre: [Math.round(f.left + f.width / 2), Math.round(f.top + f.height / 2)],
+        animation, cursorMoved: root.querySelector('[data-demo="cursor"]').style.transform !== cursorBefore };
+    })()`);
+    assert.deepEqual(result.centre, [360, 220]);
+    assert.equal(result.animation, "hover");
+    assert.equal(result.cursorMoved, false);
+    assert.ok(result.elapsed > 450 && result.elapsed < 1200, `elapsed ${result.elapsed}`);
+  });
+
+  test("the mode changes on a page that already has the overlay, and back to desktop draws as before", async () => {
+    await page.slowTimers();
+    await page.inject();
+    await page.eval(`__demo.device("phone")`);
+    assert.equal(await page.inject(), "overlay already present");
+    await page.click(360, 220);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 1);
+
+    await page.eval(`__demo.device("desktop")`);
+    await page.click(360, 220);
+    const after = await page.eval(`(() => {
+      const c = document.querySelector("[data-demo-overlay]").shadowRoot.querySelector('[data-demo="cursor"]');
+      return { display: getComputedStyle(c).display, pressed: c.classList.contains("pressed") };
+    })()`);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 1);
+    assert.equal(await page.eval(count('[data-demo="ripple"]')), 2);
+    assert.deepEqual(after, { display: "block", pressed: true });
+  });
+
+  test("tap draws a click's ripple on an element without clicking it, as a fingertip in phone mode", async () => {
+    await page.slowTimers();
+    await page.inject();
+    await page.eval(`document.querySelector("#btn").onmousedown = () => { window.pressed = true; }`);
+    await page.eval(`__demo.tap("#btn")`);
+    assert.equal(await page.eval(count('[data-demo="ripple"]')), 1);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 0);
+    await page.eval(`__demo.device("phone")`);
+    await page.eval(`__demo.tap(document.querySelector("#btn"))`);
+    assert.equal(await page.eval(count('[data-demo="ripple"]')), 2);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 1);
+    assert.equal(await page.eval(`window.pressed ?? false`), false);
+  });
+
+  test("re-injecting after navigation takes the mode it is given", async () => {
+    await page.inject();
+    await page.eval(`__demo.device("phone")`);
+    await page.goto("/second");
+    await page.inject();
+    await page.eval(`__demo.device("phone")`);
+    const display = await page.eval(`getComputedStyle(document.querySelector("[data-demo-overlay]").shadowRoot
+      .querySelector('[data-demo="cursor"]')).display`);
+    assert.equal(display, "none");
+    await assert.rejects(page.eval(`__demo.device("tablet")`), /unknown mode/);
+  });
+
   test("re-injecting after navigation installs the overlay on the new page", async () => {
     await page.inject();
     await page.goto("/second");
