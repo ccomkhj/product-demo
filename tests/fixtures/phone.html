@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone layout fixture</title>
+<!-- Picks its layout from (pointer: coarse), not width, like apps that need emulated touch. -->
+<style>
+  body { margin: 0; font: 24px system-ui; background: #1e3a8a; color: #fff; }
+  main { padding: 3rem; }
+  #layout::after { content: "Desktop layout"; }
+  .tick { width: 48px; height: 48px; background: #fde047; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  button { font: inherit; padding: 1rem 1.5rem; margin: 1rem 1rem 0 0; }
+  @media (pointer: coarse) {
+    body { background: #166534; }
+    main { padding: 1rem; }
+    #layout::after { content: "Phone layout"; }
+    button { display: block; width: 100%; margin: 1rem 0 0; }
+  }
+</style>
+<main>
+  <h1 id="layout"></h1>
+  <div class="tick"></div>
+  <button id="tap">Tap me</button>
+  <button id="add">Add videos</button>
+  <input type="file" id="files" accept="video/*" multiple hidden>
+  <p id="result" role="status"></p>
+</main>
+<script>
+const result = document.getElementById('result');
+document.getElementById('tap').addEventListener('click', () => { result.textContent = 'Tapped'; });
+document.getElementById('add').addEventListener('click', () => document.getElementById('files').click());
+document.getElementById('files').addEventListener('change', (e) => {
+  result.textContent = `Added ${[...e.target.files].map((f) => f.name).join(', ')}`;
+});
+</script>
+</html>
