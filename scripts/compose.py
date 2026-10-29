@@ -38,6 +38,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import demo_paths
 import edit_map
+import phone_frame
 import proc
 from avatar import Avatar, burn_avatar, geometry
 from demo_spec import SpecError, load_spec, read_json_object
@@ -136,16 +137,29 @@ def sync_cmd(parts, out):
     ]
 
 
-def fit_cmd(src, scene_fit, frames, viewport, out):
-    """Apply a fit to a decimated segment, scale to the viewport, emit exactly ``frames``."""
-    width, height = _even(viewport["width"]), _even(viewport["height"])
+def viewport_filters(viewport):
+    """A desktop scene fills the viewport, letterboxed if its shape differs."""
+    width, height = _frame(viewport)
+    return [
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+    ]
+
+
+def screen_filters(crop, geo):
+    """A phone scene keeps only its page, scaled to the phone frame's screen."""
+    x, y, width, height = crop
+    return [f"crop={width}:{height}:{x}:{y}", f"scale={geo.screen_width}:{geo.screen_height}"]
+
+
+def fit_cmd(src, scene_fit, frames, placement, out):
+    """Apply a fit to a decimated segment, place it with ``placement``, emit exactly ``frames``."""
     filters = []
     if scene_fit.speed != 1.0:
         filters.append(f"setpts=PTS/{scene_fit.speed:.6f}")
     filters += [
         f"fps={FPS}",
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+        *placement,
         "setsar=1",
         # Always clone the last frame a little past the target, then cut at
         # exactly ``frames``: covers the hold and any rounding short-fall.
@@ -334,7 +348,8 @@ def transcript_text(title, plan):
     """Render the narration as Markdown: the demo title, then each scene's title and narration."""
     lines = [f"# {title}", ""]
     for scene in plan.scenes:
-        lines += [f"## {scene.title}", "", scene.narration.strip(), ""]
+        label = " (phone)" if scene.device == "phone" else ""
+        lines += [f"## {scene.title}{label}", "", scene.narration.strip(), ""]
     return "\n".join(lines)
 
 
@@ -451,9 +466,56 @@ class RawVideo:
         """The decimated file of a window that ``frames`` measured."""
         return self._decimated[(trim_start, trim_end)]
 
+    def size(self):
+        """(width, height) in pixels: fixed for the whole take when the screencast started."""
+        self._check()
+        out = run(proc.ffprobe_cmd(self.path, "stream=width,height", "v", "csv=p=0"))
+        width, height = out.strip().split(",")[:2]
+        return int(width), int(height)
+
     def _check(self):
         if not self.path.is_file():
             raise ComposeError(f"raw recording not found: {self.path}")
+
+
+def phone_crops(plan, phone, raw_video):
+    """{scene id: crop rect in the take} for phone scenes; a desktop-shaped one is an error."""
+    phone_scenes = [scene for scene in plan.scenes if scene.device == "phone"]
+    if not phone_scenes:
+        return {}
+    take = raw_video.size()
+    crops = {}
+    for scene in phone_scenes:
+        crop = scene.phone_page.crop(*take)
+        if phone_frame.too_wide(crop[2], crop[3], phone):
+            raise ComposeError(
+                f"phone scene '{scene.id}' is {crop[2]}x{crop[3]} px in the take, not "
+                "phone-shaped; re-record it with the page resized and emulated to the "
+                "phone size (see references/mcp-recipes.md) instead of a desktop page"
+            )
+        crops[scene.id] = crop
+    return crops
+
+
+class PhoneFrame:
+    """The phone frame drawn once per compose, so every phone scene is framed the same."""
+
+    def __init__(self, page_size, spec, work_dir):
+        self.viewport = _frame(spec["viewport"])
+        self.background = spec["phone"]["background"]
+        self.geo = phone_frame.geometry(*page_size, *self.viewport)
+        self.mask, self.bezel = (
+            Path(work_dir) / "phone-mask.png",
+            Path(work_dir) / "phone-bezel.png",
+        )
+        run(phone_frame.mask_cmd(self.geo, self.mask))
+        run(phone_frame.bezel_cmd(self.geo, self.bezel))
+
+    def frame_cmd(self, screen, frames, out):
+        return phone_frame.frame_cmd(
+            screen, self.mask, self.bezel, self.geo, self.background, self.viewport,
+            frames, FPS, X264, out,
+        )  # fmt: skip
 
 
 def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None, avatar=None):
@@ -469,6 +531,10 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     for scene_id, wav in wavs.items():
         if not wav.is_file():
             raise ComposeError(f"narration audio for scene '{scene_id}' not found: {wav}")
+    crops = phone_crops(plan, spec["phone"], raw_video)
+    if crops:
+        page = next(iter(crops.values()))
+        phone = PhoneFrame(page[2:], spec, work_dir)
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
@@ -483,7 +549,14 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
             synced = work_dir / f"{index:03d}-synced.mp4"
             run(sync_cmd(parts, synced))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        run(fit_cmd(synced, scene.fit, scene.frames, spec["viewport"], fitted))
+        if scene.id in crops:
+            screen = work_dir / f"{index:03d}-screen.mp4"
+            placement = screen_filters(crops[scene.id], phone.geo)
+            run(fit_cmd(synced, scene.fit, scene.frames, placement, screen))
+            run(phone.frame_cmd(screen, scene.frames, fitted))
+        else:
+            placement = viewport_filters(spec["viewport"])
+            run(fit_cmd(synced, scene.fit, scene.frames, placement, fitted))
         list_lines.append(f"file '{fitted.as_posix()}'")
         audio_parts.append((wavs[scene.id], scene.scene_s))
     list_file = work_dir / "scenes.txt"
@@ -582,6 +655,7 @@ def main(argv=None):
         print(
             f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
             f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s"
+            + ("\tphone" if scene.device == "phone" else "")
         )
         for action in actions.get(scene.id, ()):
             print(action_line(action))

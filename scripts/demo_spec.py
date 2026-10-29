@@ -173,9 +173,7 @@ def _validate_phone(spec):
     if not _whole_sizes(phone):
         raise SpecError("phone width and height must be positive whole CSS pixels")
     background = phone["background"]
-    if not isinstance(background, str) or not re.fullmatch(
-        r"#(?:[0-9a-fA-F]{3}){1,2}", background
-    ):
+    if not isinstance(background, str) or not re.fullmatch(r"#(?:[0-9a-fA-F]{3}){1,2}", background):
         raise SpecError(f"phone.background must be a #rgb or #rrggbb colour, got {background!r}")
 
 
