@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 BEZEL_COLOUR = "0x111111"
 TOP_MARGIN = 0.04  # of the video's height, above the frame
-SUBTITLE_BAND = 0.22  # of the video's height, kept clear at the bottom (two subtitle lines)
+CLEAR_BELOW = 0.22  # of the video's height: the subtitle band (bottom 20%) plus a margin
 BEZEL = 0.025  # of the frame's height
 CORNER = 0.12  # the screen's corner radius, as a share of its width
 # A page this many times wider (for its height) than the phone's own shape was not
@@ -34,9 +34,9 @@ class Geometry:
 
 
 def geometry(page_width, page_height, width, height):
-    """The largest frame of the page's shape that fits above the subtitle band, centred."""
+    """As large as fits above the subtitle band, so subtitles never cover the screen."""
     top = round(height * TOP_MARGIN)
-    room_h = height - top - round(height * SUBTITLE_BAND)
+    room_h = height - top - round(height * CLEAR_BELOW)
     room_w = width - 2 * top
     bezel = max(2, round(room_h * BEZEL))
     scale = min((room_h - 2 * bezel) / page_height, (room_w - 2 * bezel) / page_width)

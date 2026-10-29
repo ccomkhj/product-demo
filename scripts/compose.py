@@ -15,7 +15,8 @@ drawn into the video, with libass when ffmpeg has the `subtitles` filter,
 otherwise as cue images rendered by rsvg-convert and overlaid; --no-burn-subs
 leaves them out, and --burn-subs fails instead of warning when neither is there.
 A spec with an ``avatar`` also gets the presenter bubble drawn in its corner (see
-avatar.py), and subtitles at the same edge keep clear of it.
+avatar.py), and subtitles at the same edge keep clear of it. Phone scenes are cropped to
+their recorded page and drawn in the phone frame on the backdrop (see phone_frame.py).
 
 Each scene is cut from the raw recording into segments at its beat markers,
 their frozen frames are dropped with mpdecimate, each segment is held back until

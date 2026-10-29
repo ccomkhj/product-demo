@@ -368,9 +368,9 @@ def test_unknown_scene_device_is_rejected_naming_the_scene():
 
 
 def test_phone_fields_are_kept_and_missing_ones_filled_in():
-    result = validate_spec(make_spec(phone={"width": 375, "background": "#fff"}))
+    result = validate_spec(make_spec(phone={"width": 375, "background": "#FFFFFF"}))
 
-    assert result["phone"] == {"width": 375, "height": 844, "background": "#fff"}
+    assert result["phone"] == {"width": 375, "height": 844, "background": "#FFFFFF"}
 
 
 @pytest.mark.parametrize(
@@ -383,6 +383,7 @@ def test_phone_fields_are_kept_and_missing_ones_filled_in():
         {"height": True},
         {"background": "dark"},
         {"background": "#12345"},
+        {"background": "#fff"},
         {"background": 0},
     ],
 )
