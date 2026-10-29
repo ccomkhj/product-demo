@@ -656,7 +656,9 @@ BACKDROP_RGB = (0x30, 0x50, 0xA0)
 PHONE_WINDOW, PHONE_PAGE = [100, 240], [80, 240]
 
 
-def write_phone_demo(demo_dir, viewport=(320, 240), page=PHONE_PAGE, window=PHONE_WINDOW):
+def write_phone_demo(
+    demo_dir, viewport=(320, 240), page=PHONE_PAGE, window=PHONE_WINDOW, dpr=1, narration="On the phone."
+):
     width, height = viewport
     spec = {
         "title": "Phone",
@@ -668,7 +670,7 @@ def write_phone_demo(demo_dir, viewport=(320, 240), page=PHONE_PAGE, window=PHON
                 "id": "pick",
                 "title": "Pick",
                 "url": "u",
-                "narration": "On the phone.",
+                "narration": narration,
                 "device": "phone",
             },
         ],
@@ -684,7 +686,7 @@ def write_phone_demo(demo_dir, viewport=(320, 240), page=PHONE_PAGE, window=PHON
             "t_ms": 4_500,
             "window": window,
             "page": page,
-            "dpr": 1,
+            "dpr": dpr,
         },
         {"scene": "pick", "event": "end", "t_ms": 7_500},
     ]
@@ -815,6 +817,18 @@ def test_a_phone_scene_recorded_at_a_desktop_aspect_fails_with_a_hint(tmp_path):
     assert result.returncode == 1
     assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+@needs_ffmpeg
+def test_a_phone_scene_whose_emulation_did_not_take_fails_with_a_hint(tmp_path):
+    # Chrome won't size a window below ~500 px wide: un-emulated, the page stays 500x836,
+    # a little wider than the 390x844 phone yet nowhere near a desktop page
+    write_phone_demo(tmp_path, page=[500, 836], window=[500, 836], dpr=0.25)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
 
 
 def test_a_phone_scene_without_its_page_size_fails_with_a_hint(tmp_path):

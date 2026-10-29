@@ -15,8 +15,9 @@ CLEAR_BELOW = 0.22  # of the video's height: the subtitle band (bottom 20%) plus
 BEZEL = 0.025  # of the frame's height
 CORNER = 0.12  # the screen's corner radius, as a share of its width
 # A page this many times wider (for its height) than the phone's own shape was not
-# recorded as a phone: the take is a desktop page, and framing it would squash it.
-MAX_ASPECT_STRETCH = 1.5
+# recorded as a phone. A failed emulation leaves Chrome's narrowest window (~500x836,
+# 1.3x a 390x844 phone), so the limit sits below that.
+MAX_ASPECT_STRETCH = 1.2
 
 
 @dataclass(frozen=True)
