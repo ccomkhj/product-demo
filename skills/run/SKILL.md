@@ -47,7 +47,11 @@ announcement stays 60 seconds). If purpose is unclear, use custom with no target
 add a separate template approval.
 Ask only for missing product, audience, viewer outcome, and ordered pages. For each page:
 the URL, what to do there, the key message, and whether it needs a login. Never invent
-URLs, UI controls, or sales metrics. Pick a short slug. If `demos/<slug>/` already exists,
+URLs, UI controls, or sales metrics.
+When the request mentions a phone, a mobile web app or a QR code hand-off, ask which pages
+happen on the phone; those become phone scenes (or set the top-level `device` when every
+page does). When a page starts with picking files (photos, videos, CSVs), ask which sample
+files to use; they go in the demo folder for an `upload` action. Pick a short slug. If `demos/<slug>/` already exists,
 it holds an earlier take that git cannot restore (`demos/` is ignored) and later steps
 overwrite its spec, audio and videos: ask whether to replace it or use a new slug (for
 example `<slug>-<YYYY-MM-DD>`) before writing anything there. Re-running an existing demo
@@ -56,7 +60,7 @@ are known.
 
 ## 2. Spec and transcript approval
 
-Resolve the voice, presenter, viewport and subtitle policy with **Settings** below before
+Resolve the voice, presenter, viewport, device and subtitle policy with **Settings** below before
 writing the spec.
 
 Write `demos/<slug>/demo.json` following `${CLAUDE_PLUGIN_ROOT}/references/demo-spec.md`. Narration is spoken
@@ -70,6 +74,10 @@ targets in words ("the Save button"), because element uids change between runs a
 resolved while recording. Give every action the narration talks about an `at` phrase
 from its narration: compose starts the action when the voice says it, so the screen shows
 what the words describe instead of racing ahead of them.
+Mark phone pages with `"device": "phone"` and file picking with an `upload` action whose
+target is the control a user would tap; the "Phone worked example" in
+`${CLAUDE_PLUGIN_ROOT}/references/demo-spec.md` shows a desktop QR code, a phone upload and
+the desktop result.
 
 Write optional `purpose`, `outcome`, and `target_duration_s` metadata. Copy a template's
 suggested target only when the user has not supplied one; custom specs need no target.
@@ -149,7 +157,9 @@ differences per scene; it exits 1 on any `check`. On `check`:
 ## 5. Record
 
 Follow `${CLAUDE_PLUGIN_ROOT}/references/mcp-recipes.md` literally: its "Recording start and stop" section, then
-one action recipe per spec action. The rules that matter, and why:
+one action recipe per spec action. With phone scenes, also run readiness step 6 (phone
+size and `(pointer: coarse)`) before recording, and switch device in the gap before each
+scene whose device changes ("Phone scenes" in `mcp-recipes.md`). The rules that matter, and why:
 
 - **Check scene states.** Evaluate prerequisites immediately before each scene's start
   marker and expected outcomes after its actions, before its end marker. Follow the bounded
@@ -234,6 +244,7 @@ It prints `ready` (own voice registered), `photo` (presenter photo saved) and `d
 | Voice | `voice` (copy into the spec) | `ready: true` → `{"backend": "qwen3", "profile": "own_voice"}`; otherwise the **missing own voice** gate |
 | Presenter | `avatar` (`false` = none; else copy into the spec) | `photo: true` → `{"profile": "own_photo"}`; otherwise none |
 | Video size | `viewport` (copy into the spec) | 1920×1080 |
+| Device | `device` (copy into the spec as the top-level `device`) | desktop |
 | Subtitles | `burn_subs` → `--burn-subs` / `--no-burn-subs` on preflight and compose | burned in |
 
 Place a presenter without a saved `corner` in the corner the scenes' actions don't use
