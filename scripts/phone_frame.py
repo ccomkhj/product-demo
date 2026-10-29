@@ -9,6 +9,8 @@ bubble (ADR-0006), its screen mask and body are drawn once as PNGs by ffmpeg.
 
 from dataclasses import dataclass
 
+from avatar import even
+
 BODY_COLOUR = "0x111111"
 TOP_MARGIN = 0.04  # of the video's height, above the frame
 BEZEL = 0.025  # of the frame's height
@@ -40,7 +42,7 @@ def geometry(page_width, page_height, width, height, clear_below):
     room_w = width - 2 * top
     bezel = max(2, round(room_h * BEZEL))
     scale = min((room_h - 2 * bezel) / page_height, (room_w - 2 * bezel) / page_width)
-    screen_w, screen_h = _even(page_width * scale), _even(page_height * scale)
+    screen_w, screen_h = even(page_width * scale), even(page_height * scale)
     outer_w, outer_h = screen_w + 2 * bezel, screen_h + 2 * bezel
     return Geometry(
         (width - outer_w) // 2,
@@ -114,7 +116,3 @@ def _rounded(width, height, radius):
     dx = f"max(abs(X+0.5-{width / 2})-{width / 2 - radius},0)"
     dy = f"max(abs(Y+0.5-{height / 2})-{height / 2 - radius},0)"
     return f"255*clip({radius}-hypot({dx},{dy})+0.5,0,1)"
-
-
-def _even(value):
-    return int(value) - int(value) % 2

@@ -35,14 +35,14 @@ def main(argv=None):
     parser.add_argument(
         "--sync-ms", type=int, metavar="MS", help="rec_start only: the value __demo.sync() returned"
     )
-    geometry = parser.add_argument_group("phone scene start (ADR-0011)")
-    geometry.add_argument(
+    phone_sizes = parser.add_argument_group("phone scene start (ADR-0011)")
+    phone_sizes.add_argument(
         "--window", type=_size, metavar="WxH", help="innerWidth x innerHeight before emulate"
     )
-    geometry.add_argument(
+    phone_sizes.add_argument(
         "--page", type=_size, metavar="WxH", help="innerWidth x innerHeight after emulate"
     )
-    geometry.add_argument(
+    phone_sizes.add_argument(
         "--dpr", type=float, metavar="N", help="devicePixelRatio read before emulate"
     )
     args = parser.parse_args(argv)

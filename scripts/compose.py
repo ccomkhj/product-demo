@@ -41,7 +41,7 @@ import demo_paths
 import edit_map
 import phone_frame
 import proc
-from avatar import Avatar, burn_avatar, geometry
+from avatar import Avatar, burn_avatar, even, geometry
 from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
 from subtitles import srt_text
@@ -730,12 +730,8 @@ def spec_avatar(spec, demo_dir):
     return Avatar(image, fields["corner"], fields["size"])
 
 
-def _even(value):
-    return int(value) - int(value) % 2
-
-
 def _frame(viewport):
-    return _even(viewport["width"]), _even(viewport["height"])
+    return even(viewport["width"]), even(viewport["height"])
 
 
 if __name__ == "__main__":

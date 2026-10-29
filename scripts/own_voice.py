@@ -32,8 +32,8 @@ READING = (
     "and explain how they work in everyday use."
 )
 MAX_UPLOAD = 16 * 1024 * 1024
-DEFAULT_FIELDS = ("voice", "avatar", "viewport", "device", "burn_subs")
 SPEC_FIELDS = ("voice", "avatar", "viewport", "device")
+DEFAULT_FIELDS = SPEC_FIELDS + ("burn_subs",)
 
 
 def run(command):
