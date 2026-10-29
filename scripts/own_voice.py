@@ -32,7 +32,8 @@ READING = (
     "and explain how they work in everyday use."
 )
 MAX_UPLOAD = 16 * 1024 * 1024
-DEFAULT_FIELDS = ("voice", "avatar", "viewport", "burn_subs")
+DEFAULT_FIELDS = ("voice", "avatar", "viewport", "device", "burn_subs")
+SPEC_FIELDS = ("voice", "avatar", "viewport", "device")
 
 
 def run(command):
@@ -122,7 +123,7 @@ def save_defaults(settings):
         raise ValueError("voice.pronounce belongs in the demo spec, not the defaults")
     if voice.get("backend", "qwen3") not in BACKENDS:
         raise ValueError(f"voice.backend must be one of {', '.join(BACKENDS)}")
-    spec = {key: settings[key] for key in ("voice", "avatar", "viewport") if key in settings}
+    spec = {key: settings[key] for key in SPEC_FIELDS if key in settings}
     if spec.get("avatar") is False:
         del spec["avatar"]
     try:

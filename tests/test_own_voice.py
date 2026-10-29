@@ -232,11 +232,13 @@ def test_defaults_are_saved_merged_and_reported(registry, capsys):
     )
     assert json.loads(capsys.readouterr().out)["defaults"]["avatar"] is False
     own_voice.save_defaults({"burn_subs": False, "viewport": {"width": 1280, "height": 720}})
+    own_voice.save_defaults({"device": "phone"})
     assert own_voice.status()["defaults"] == {
         "voice": {"backend": "kokoro", "voice": "am_michael", "speed": 1.1},
         "avatar": False,
         "burn_subs": False,
         "viewport": {"width": 1280, "height": 720},
+        "device": "phone",
     }
     assert json.loads(registry.read_text())["own_voice"] == before
 
@@ -257,6 +259,7 @@ def test_defaults_are_saved_merged_and_reported(registry, capsys):
         },
         {"avatar": {"profile": "own_photo", "corner": "middle"}},
         {"viewport": {"width": 0, "height": 720}},
+        {"device": "tablet"},
         [],
     ],
 )
