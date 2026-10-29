@@ -11,6 +11,8 @@
  * API (single global):
  *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done
  *   __demo.badge(text)           transient badge, e.g. "◀ Back"; resolves once it has been on screen a moment
+ *   __demo.upload(files)         badge naming the uploaded files: "📎 clip.mp4", or "📎 3 videos"
+ *                                for several (kind from the extensions; mixed kinds say "files")
  *   __demo.caption(text)         lower-third caption; caption("") or caption(null) hides it
  *   __demo.sync()                full-screen magenta flash (~400 ms) that compose finds in the
  *                                recording; resolves to the wall-clock ms at which it was painted
@@ -22,7 +24,7 @@
  * are passive and never cancel or stop events.
  */
 (() => {
-  const VERSION = 4;
+  const VERSION = 5;
   const existing = window.__demo;
   if (existing && existing.version === VERSION) {
     existing._ensureHost();
@@ -221,6 +223,26 @@
     return new Promise((resolve) => setTimeout(resolve, Math.min(life, 700)));
   }
 
+  const KINDS = {
+    videos: ["mp4", "mov", "webm", "mkv", "avi", "m4v"],
+    images: ["jpg", "jpeg", "png", "gif", "webp", "heic", "avif", "svg"],
+    "audio files": ["mp3", "wav", "m4a", "aac", "ogg", "flac"],
+    documents: ["pdf", "doc", "docx", "txt", "md"],
+    spreadsheets: ["csv", "xls", "xlsx"],
+  };
+
+  // The native file picker can't be recorded, so the badge tells the viewer what was chosen.
+  function upload(files) {
+    const names = files.map((path) => String(path).split(/[\\/]/).pop());
+    if (names.length === 1) return badge(`📎 ${names[0]}`);
+    const kindOf = (name) => {
+      const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+      return Object.keys(KINDS).find((kind) => KINDS[kind].includes(ext)) ?? "files";
+    };
+    const kinds = new Set(names.map(kindOf));
+    return badge(`📎 ${names.length} ${kinds.size === 1 ? [...kinds][0] : "files"}`);
+  }
+
   function caption(text) {
     const layerEl = ensureHost();
     if (captionEl) { captionEl.remove(); captionEl = null; }
@@ -333,7 +355,7 @@
   window.addEventListener("dblclick", onDblclick, opts);
   window.addEventListener("keydown", onKeydown, opts);
 
-  const api = { version: VERSION, point, badge, caption, sync, _ensureHost: ensureHost };
+  const api = { version: VERSION, point, badge, upload, caption, sync, _ensureHost: ensureHost };
   Object.defineProperty(window, "__demo", { value: Object.freeze(api), configurable: true, writable: false, enumerable: false });
 
   if (document.documentElement) ensureHost();

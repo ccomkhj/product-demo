@@ -114,6 +114,29 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.equal(await page.eval(count('[data-demo="caption"]')), 0);
   });
 
+  test("upload names one file, or counts several by kind, in a badge", async () => {
+    await page.inject();
+    const cases = [
+      [["/demo/clips/beach.mp4"], "📎 beach.mp4"],
+      [["a.mp4", "b.MOV", "c.webm"], "📎 3 videos"],
+      [["a.jpg", "b.png"], "📎 2 images"],
+      [["a.mp4", "b.jpg"], "📎 2 files"],
+      [["data.csv", "notes"], "📎 2 files"],
+    ];
+    for (const [files, label] of cases) {
+      await page.eval(`__demo.upload(${JSON.stringify(files)})`);
+      assert.deepEqual(await page.eval(texts('[data-demo="badge"]')), [label]);
+    }
+  });
+
+  test("the upload badge keeps changing, so mpdecimate keeps it like other badges", async () => {
+    await page.inject();
+    await page.eval(`__demo.upload(["a.mp4", "b.mp4"])`);
+    const timer = await page.eval(`getComputedStyle(document.querySelector("[data-demo-overlay]")
+      .shadowRoot.querySelector('[data-demo="badge"]'), "::after").animationName`);
+    assert.equal(timer, "timer");
+  });
+
   test("sync flashes the whole viewport magenta and resolves to when it was painted", async () => {
     await page.inject();
     const before = await page.eval(`Date.now()`);
