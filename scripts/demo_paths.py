@@ -14,6 +14,11 @@ def spec(demo_dir):
     return Path(demo_dir) / "demo.json"
 
 
+def resolve(base, path):
+    """Spec and voice-profile file paths live with their folder unless absolute."""
+    return Path(base) / Path(path).expanduser()
+
+
 def raw(demo_dir):
     return Path(demo_dir) / "raw.mp4"
 

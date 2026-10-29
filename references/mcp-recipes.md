@@ -3,7 +3,7 @@
 The exact call sequences to use when recording a demo. Follow them literally. Every call
 below was run against the Chrome DevTools MCP (`mcp__chrome-devtools__*`). If the tools
 are deferred, load them first with
-`ToolSearch("select:mcp__chrome-devtools__list_pages,mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__screencast_start,mcp__chrome-devtools__screencast_stop")`.
+`ToolSearch("select:mcp__chrome-devtools__list_pages,mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__upload_file,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__screencast_start,mcp__chrome-devtools__screencast_stop")`.
 
 Every tool takes `pageId`. Get it once with `list_pages` (the selected page is marked
 `[selected]`) and use the same id for the whole recording.
@@ -66,6 +66,7 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
 |------|--------|
 | `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. |
 | `__demo.badge(text[, ms])` | Transient badge at the top left (default 1500 ms). Resolves after ~700 ms, so awaiting it before a navigation keeps it on screen long enough to be recorded. |
+| `__demo.upload(files)` | Badge naming what an `upload` added: `📎 clip.mp4` for one file, a count and kind for several (`📎 3 videos`, `📎 2 images`; mixed kinds say `files`). Resolves like `badge`. |
 | `__demo.caption(text)` | Lower-third caption at the bottom left. It stays until replaced. `caption("")` hides it. |
 
 ## Readiness before recording
@@ -196,6 +197,30 @@ There is no scroll tool. Use a smooth scroll and wait for it to finish:
 1. `evaluate_script({ pageId, function: "() => __demo.badge('◀ Back')" })`. The returned promise is awaited, so the badge is on screen before the page changes.
 2. `navigate_page({ pageId, type: "back" })`
 3. Re-inject the overlay.
+
+### upload
+The native file picker can't be recorded, so the tap on the control and a badge stand in
+for it. Make each `files` path absolute first: relative paths are relative to the demo
+folder (`demos/<slug>/`), like `avatar.image`. Local preflight has already checked they exist.
+
+1. `take_snapshot({ pageId })` → choose the uid of the visible control the target names
+   (the "Add videos" button, the drop zone's "Browse" link). Most apps hide the real
+   `<input type="file">` behind such a control; target the control, not the hidden input,
+   so the tap lands where a user would tap. Only when the input itself is visible on screen
+   is it the target.
+2. If the action has an `at`, mark a beat now.
+3. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
+4. `upload_file({ pageId, uid: "<uid>", filePaths: ["<absolute path>", ...] })`, all files in
+   one call. On a control that opens a file chooser it clicks the control (the overlay draws
+   the ripple) and answers the chooser with the files; the page gets real files.
+5. If the result says `Page navigated to ...`, re-inject the overlay.
+6. `evaluate_script({ pageId, function: "() => __demo.upload(<paths>)" })` shows the badge.
+   `args` takes element uids only, so the paths go inline: JSON-encode the list (double
+   quotes, escaped), so a `'` or `"` in a file name can't break the script, e.g.
+   `"() => __demo.upload([\"/demos/tour/it's.mp4\", \"/demos/tour/b.png\"])"`.
+
+If `upload_file` reports that no file chooser opened, the uid is neither a file input nor
+a control that opens one: take a fresh snapshot and pick the control again.
 
 ### wait
 - To let an animation or transition finish before the next action:

@@ -107,6 +107,38 @@ def test_cli_duration_warning_and_missing_file(cli):
     assert run("--json", "--durations", str(durations)).returncode == 1
 
 
+def test_cli_upload_files_must_exist(cli, tmp_path):
+    spec, binaries, run = cli
+    elsewhere = tmp_path / "elsewhere.csv"
+    elsewhere.write_text("a,b\n")
+    (tmp_path / "clips").mkdir()
+    (tmp_path / "clips" / "one.mp4").write_bytes(b"")
+    data = json.loads(spec.read_text())
+    data["scenes"][0]["actions"] = [
+        {"type": "upload", "target": "Add", "files": ["clips/one.mp4", str(elsewhere)]}
+    ]
+    spec.write_text(json.dumps(data))
+    result = run("--json")
+    assert result.returncode == 0
+    assert any(
+        c["id"] == "upload" and c["status"] == "pass" for c in json.loads(result.stdout)["checks"]
+    )
+
+    data["scenes"][0]["actions"][0]["files"].append("clips/two.mp4")
+    spec.write_text(json.dumps(data))
+    result = run("--json")
+    assert result.returncode == 1
+    [check] = [c for c in json.loads(result.stdout)["checks"] if c["id"] == "upload"]
+    assert check["status"] == "fail" and check["remedy"]
+    scene_id = data["scenes"][0]["id"]
+    assert f"{tmp_path / 'clips' / 'two.mp4'} (scene '{scene_id}')" in check["message"]
+
+
+def test_cli_spec_without_uploads_has_no_upload_check(cli):
+    result = cli[2]("--json")
+    assert all(c["id"] != "upload" for c in json.loads(result.stdout)["checks"])
+
+
 def test_old_python_gets_actionable_json(monkeypatch, capsys):
     import runpy
 

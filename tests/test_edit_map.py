@@ -146,6 +146,14 @@ def test_clicks_land_one_glide_after_their_action_starts():
     ]
 
 
+def test_an_upload_taps_its_control_so_it_counts_as_a_click():
+    upload = MapAction(1, "upload", 2.0, "Pick")
+    scene = MapScene("pick", "Pick", 0.0, 5.0, (MapAction(0, "point", 0.0), upload))
+    saved = edit_map.from_dict(edit_map.to_dict(EditMap(5.0, True, (scene,))))
+
+    assert saved.clicks() == [("pick", upload, pytest.approx(2.6))]
+
+
 def test_the_glide_matches_the_overlay():
     overlay = (Path(__file__).resolve().parent.parent / "assets" / "overlay.js").read_text()
     glide_ms = int(re.search(r"const GLIDE_MS = (\d+);", overlay).group(1))

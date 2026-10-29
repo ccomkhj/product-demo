@@ -152,6 +152,7 @@ must appear in the narration in the same order as their actions.
 | `scroll` | `target` to scroll to, or `by` (pixels, negative is up) | Smooth scroll. |
 | `back` | none | `◀ Back` badge, then the previous page. |
 | `wait` | `ms`, or `text` to wait for | Nothing; holds the page. |
+| `upload` | `target` (the visible control a user would tap, e.g. "the Add videos button"), `files` (non-empty list of paths, relative to the demo folder or absolute) | A tap on the control, then a badge naming what was added: the file name for one file, a count and kind for several (`📎 3 videos`). The page gets the real files; the native file picker is never shown. Local preflight fails if a file is missing. |
 
 ## Worked example
 

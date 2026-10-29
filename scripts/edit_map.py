@@ -13,7 +13,8 @@ from dataclasses import dataclass
 import demo_paths
 
 NEEDS_COMPOSE = "re-run compose to write <slug>.editmap.json"
-CLICK_TYPES = ("click", "dblclick", "type")  # a type action clicks its field first
+# a type action clicks its field first; an upload taps the control that opens the picker
+CLICK_TYPES = ("click", "dblclick", "type", "upload")
 GLIDE_S = 0.6  # the overlay's cursor glide (assets/overlay.js GLIDE_MS): the click lands after it
 
 

@@ -7,6 +7,7 @@ import platform
 import shutil
 from pathlib import Path
 
+import demo_paths
 from proc import ffprobe_cmd
 
 # Where the registry lived before it moved to a per-user folder: an old skill install
@@ -106,7 +107,7 @@ def resolve_voice_config(voice, backend, spec_dir):
             for field in ("reference_audio", "model"):
                 if saved.get(field) and not (field == "model" and saved[field] == QWEN_MODEL):
                     saved[field] = str(
-                        (registry_path().parent / Path(saved[field]).expanduser()).resolve()
+                        demo_paths.resolve(registry_path().parent, saved[field]).resolve()
                     )
             config = {**saved, **config}
         except (OSError, ValueError) as exc:
@@ -116,8 +117,7 @@ def resolve_voice_config(voice, backend, spec_dir):
             raise ValueError(f"voice.{field} is required for qwen3")
     if config.get("voice"):
         raise ValueError("qwen3 Base uses reference_audio, not a preset voice.voice")
-    reference = Path(config["reference_audio"]).expanduser()
-    reference = reference if reference.is_absolute() else Path(spec_dir) / reference
+    reference = demo_paths.resolve(spec_dir, config["reference_audio"])
     with reference.open("rb") as handle:
         if not handle.read(1):
             raise ValueError("voice.reference_audio is empty")

@@ -16,7 +16,8 @@ One page-sized part of a demo with its own narration and actions.
 _Avoid_: step, slide, segment
 
 **Action**:
-One browser interaction in a scene: click, double-click, key, type, scroll or back.
+One browser interaction in a scene: click, double-click, key, type, scroll, back or
+upload (putting files into the page's file input).
 
 **At phrase**:
 Words in a scene's narration that an action starts on.
@@ -68,8 +69,8 @@ subtitles are burned in (missing: burned). Post-processing's only link to the de
 structure; owned by `scripts/edit_map.py`.
 
 **Click sound**:
-The short sound post-processing plays one cursor glide after each click, double-click and
-field click (type) whose start is in the edit map.
+The short sound post-processing plays one cursor glide after each click, double-click,
+field click (type) and upload whose start is in the edit map.
 
 **Post recipe**:
 The `post.json` in a demo folder: one optional key per post-processing operation (trim,

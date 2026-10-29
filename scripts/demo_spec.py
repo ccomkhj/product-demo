@@ -9,7 +9,7 @@ from narration import Narration, PhraseError
 from voice_config import validate_voice
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
-ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait")
+ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait", "upload")
 PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
 
@@ -75,10 +75,10 @@ def validate_spec(spec):
             )
         seen_ids[scene_id] = index
         narration = scene.get("narration")
-        if not isinstance(narration, str) or not narration.strip():
+        if not _non_empty(narration):
             raise SpecError(f"{where}: empty narration")
         url = scene.get("url")
-        if not isinstance(url, str) or not url.strip():
+        if not _non_empty(url):
             raise SpecError(f"{where}: missing url")
         for position, action in enumerate(scene.get("actions", []), start=1):
             if not isinstance(action, dict):
@@ -91,6 +91,8 @@ def validate_spec(spec):
                     f"{where}, action {position}: unknown action type {action_type!r} "
                     f"(allowed: {', '.join(ACTION_TYPES)})"
                 )
+            if action_type == "upload":
+                _validate_upload(action, f"{where}, action {position}")
         anchored = [
             (number, action["at"])
             for number, action in enumerate(scene.get("actions", []), start=1)
@@ -118,7 +120,7 @@ def _validate_metadata(spec):
         raise SpecError(f"purpose must be one of {', '.join(PURPOSES)}")
     if "outcome" in spec:
         value = spec["outcome"]
-        if not isinstance(value, str) or not value.strip():
+        if not _non_empty(value):
             raise SpecError("outcome must be a non-empty string")
     if "target_duration_s" in spec and not positive_seconds(spec["target_duration_s"]):
         raise SpecError("target_duration_s must be a finite positive number")
@@ -135,7 +137,7 @@ def _validate_avatar(spec):
             raise SpecError("avatar.profile must be own_photo, without an image")
     else:
         image = avatar.get("image")
-        if not isinstance(image, str) or not image.strip():
+        if not _non_empty(image):
             raise SpecError("avatar.image must be a non-empty path to a photo")
     corner = avatar.setdefault("corner", DEFAULT_CORNER)
     if corner not in CORNERS:
@@ -146,6 +148,19 @@ def _validate_avatar(spec):
             f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
             "(the photo's diameter as a share of the video's height)"
         )
+
+
+def _non_empty(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_upload(action, where):
+    """Whether the files exist is preflight's job; here only the shape."""
+    if not _non_empty(action.get("target")):
+        raise SpecError(f"{where}: upload target must be a non-empty string")
+    files = action.get("files")
+    if not isinstance(files, list) or not files or not all(map(_non_empty, files)):
+        raise SpecError(f"{where}: upload files must be a non-empty list of file paths")
 
 
 def _validate_checks(scene, where):
@@ -162,7 +177,7 @@ def _validate_checks(scene, where):
                 raise SpecError(f"{label}: type must be visible_text or visible_target")
             payload = "text" if kind == "visible_text" else "target"
             value = check.get(payload)
-            if not isinstance(value, str) or not value.strip():
+            if not _non_empty(value):
                 raise SpecError(f"{label}: {payload} must be a non-empty string")
 
 

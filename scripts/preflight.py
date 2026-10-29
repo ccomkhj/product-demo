@@ -39,6 +39,7 @@ if __name__ == "__main__" and sys.version_info < (3, 11):
         print(message)
     raise SystemExit(1)
 
+import demo_paths
 from compose import ComposeError, burn_method
 from demo_spec import SpecError, load_spec, positive_seconds, read_json_object
 from tts import BACKENDS, TtsError, choose_backend
@@ -111,6 +112,30 @@ def _voice(spec, selected, spec_dir):
     if backend.note:
         checks.append(CheckResult(selected, "warning", backend.note))
     return checks
+
+
+def _uploads(spec, spec_dir):
+    """A missing upload file would otherwise stop the take halfway through recording."""
+    files = [
+        (scene["id"], demo_paths.resolve(spec_dir, name))
+        for scene in spec["scenes"]
+        for action in scene.get("actions", [])
+        if action["type"] == "upload"
+        for name in action["files"]
+    ]
+    if not files:
+        return []
+    missing = [f"{path} (scene '{scene}')" for scene, path in files if not path.is_file()]
+    if missing:
+        return [
+            CheckResult(
+                "upload",
+                "fail",
+                "Upload files not found: " + ", ".join(missing),
+                "Put the files there, or fix their paths in demo.json (relative to the demo folder).",
+            )
+        ]
+    return [CheckResult("upload", "pass", f"All {len(files)} upload files are present")]
 
 
 # Spoken narration runs about 0.3-0.5 s per word; well past this bound the synthesis ran away.
@@ -194,9 +219,10 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
         )
         return _report(checks, selected)
 
+    spec_dir = Path(spec_path).resolve().parent
     checks.extend(_executable(name, ["-version"]) for name in ("ffmpeg", "ffprobe"))
     try:
-        with tempfile.TemporaryFile(dir=Path(spec_path).resolve().parent) as handle:
+        with tempfile.TemporaryFile(dir=spec_dir) as handle:
             handle.write(b"preflight\n")
             handle.flush()
         checks.append(CheckResult("output", "pass", "Demo directory is writable"))
@@ -210,7 +236,8 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
             )
         )
 
-    checks.extend(_voice(spec, selected, Path(spec_path).resolve().parent))
+    checks.extend(_voice(spec, selected, spec_dir))
+    checks.extend(_uploads(spec, spec_dir))
 
     if burn_subs is False:
         checks.append(

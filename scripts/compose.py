@@ -609,7 +609,7 @@ def spec_avatar(spec, demo_dir):
             return Avatar(saved_photo(), fields["corner"], fields["size"])
         except ValueError as exc:
             raise ComposeError(str(exc)) from exc
-    image = Path(demo_dir) / Path(fields["image"]).expanduser()
+    image = demo_paths.resolve(demo_dir, fields["image"])
     if not image.is_file():
         raise ComposeError(f"avatar image not found: {image}")
     return Avatar(image, fields["corner"], fields["size"])
