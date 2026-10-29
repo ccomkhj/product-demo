@@ -219,9 +219,10 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
         )
         return _report(checks, selected)
 
+    spec_dir = Path(spec_path).resolve().parent
     checks.extend(_executable(name, ["-version"]) for name in ("ffmpeg", "ffprobe"))
     try:
-        with tempfile.TemporaryFile(dir=Path(spec_path).resolve().parent) as handle:
+        with tempfile.TemporaryFile(dir=spec_dir) as handle:
             handle.write(b"preflight\n")
             handle.flush()
         checks.append(CheckResult("output", "pass", "Demo directory is writable"))
@@ -235,8 +236,8 @@ def run_checks(spec_path, backend=None, burn_subs=None, durations=None):
             )
         )
 
-    checks.extend(_voice(spec, selected, Path(spec_path).resolve().parent))
-    checks.extend(_uploads(spec, Path(spec_path).resolve().parent))
+    checks.extend(_voice(spec, selected, spec_dir))
+    checks.extend(_uploads(spec, spec_dir))
 
     if burn_subs is False:
         checks.append(
