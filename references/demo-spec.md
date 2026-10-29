@@ -28,8 +28,9 @@ A scene with `device: "phone"` (its own, or the top-level one) is recorded in a 
 touch-enabled page, so the app renders its real mobile layout (see `mcp-recipes.md`).
 Compose crops the phone page out of the take and draws it in a generic rounded phone frame,
 centred on the `phone.background` colour at the output `viewport` size. The frame is as
-large as fits above the subtitle band, so subtitles never cover the screen; in a 9:16
-viewport it fills most of the height. Desktop scenes compose as before, so one video can
+large as fits above the phone scenes' deepest subtitle, so subtitles never cover the
+screen; in a 9:16 viewport it fills most of the height. Keep phone-scene sentences short:
+one too long to leave the phone a third of the height fails compose with a hint. Desktop scenes compose as before, so one video can
 go laptop → phone → laptop without changing size. The presenter bubble and subtitles are
 drawn over phone scenes as over any other.
 
