@@ -213,8 +213,11 @@ folder (`demos/<slug>/`), like `avatar.image`. Local preflight has already check
 4. `upload_file({ pageId, uid: "<uid>", filePaths: ["<absolute path>", ...] })`, all files in
    one call. On a control that opens a file chooser it clicks the control (the overlay draws
    the ripple) and answers the chooser with the files; the page gets real files.
-5. `evaluate_script({ pageId, function: "() => __demo.upload(['<path>', ...])" })` shows the
-   badge (`args` takes element uids only, so the paths go inline as a JSON array).
+5. If the result says `Page navigated to ...`, re-inject the overlay.
+6. `evaluate_script({ pageId, function: "() => __demo.upload(<paths>)" })` shows the badge.
+   `args` takes element uids only, so the paths go inline: JSON-encode the list (double
+   quotes, escaped), so a `'` or `"` in a file name can't break the script, e.g.
+   `"() => __demo.upload([\"/demos/tour/it's.mp4\", \"/demos/tour/b.png\"])"`.
 
 If `upload_file` reports that no file chooser opened, the uid is neither a file input nor
 a control that opens one: take a fresh snapshot and pick the control again.
