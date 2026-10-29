@@ -228,8 +228,10 @@ def concat_audio_cmd(wavs_and_lengths, out):
     ]
 
 
-# ffmpeg renders an .srt on a 384 x 288 libass canvas; side margins are in its units.
-LIBASS_WIDTH, LIBASS_MARGIN = 384, 10
+# ffmpeg renders an .srt on a 384 x 288 libass canvas; the style below is in its units.
+LIBASS_WIDTH, LIBASS_HEIGHT, LIBASS_MARGIN = 384, 288, 10
+LIBASS_FONT, LIBASS_MARGIN_V = 18, 18
+OVERLAY_BOTTOM = 0.04  # of the height: the gap under an overlaid cue
 
 
 def subtitles_burn_cmd(video, srt_name, out, side_margin=LIBASS_MARGIN):
@@ -239,8 +241,8 @@ def subtitles_burn_cmd(video, srt_name, out, side_margin=LIBASS_MARGIN):
     so the lines stay centred.
     """
     style = (
-        "FontName=Helvetica,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-        f"BorderStyle=1,Outline=1.5,Shadow=0,MarginV=18,"
+        f"FontName=Helvetica,FontSize={LIBASS_FONT},PrimaryColour=&H00FFFFFF,"
+        f"OutlineColour=&H00000000,BorderStyle=1,Outline=1.5,Shadow=0,MarginV={LIBASS_MARGIN_V},"
         f"MarginL={side_margin},MarginR={side_margin}"
     )
     return [
@@ -420,7 +422,7 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir, reserve=0):
     width, height = _frame(viewport)
     if method is BurnMethod.SUBTITLES:
         (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
-        margin = max(LIBASS_MARGIN, math.ceil(reserve * LIBASS_WIDTH / width))
+        margin = _libass_side_margin(reserve, width)
         run(
             subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve(), margin),
             cwd=work_dir,
@@ -432,7 +434,7 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir, reserve=0):
         svg_path, png = work_dir / f"cue-{index:03d}.svg", work_dir / f"cue-{index:03d}.png"
         svg_path.write_text(svg, encoding="utf-8")
         run(svg_to_png_cmd(svg_path, png))
-        y = max(0, height - strip_h - round(height * 0.04))
+        y = max(0, height - strip_h - round(height * OVERLAY_BOTTOM))
         overlays.append((png, cue.start_s, cue.end_s, y))
     if not overlays:
         shutil.copyfile(video, out)
@@ -499,24 +501,63 @@ def phone_crops(plan, phone, raw_video):
 
 
 class PhoneFrame:
-    """The phone frame drawn once per compose, so every phone scene is framed the same."""
+    """The frame's PNGs are drawn once per page size, so phone scenes of one size share them."""
 
-    def __init__(self, page_size, spec, work_dir):
+    def __init__(self, geo, spec, work_dir, name):
+        self.geo = geo
         self.viewport = _frame(spec["viewport"])
         self.background = spec["phone"]["background"]
-        self.geo = phone_frame.geometry(*page_size, *self.viewport)
-        self.mask, self.bezel = (
-            Path(work_dir) / "phone-mask.png",
-            Path(work_dir) / "phone-bezel.png",
-        )
-        run(phone_frame.mask_cmd(self.geo, self.mask))
-        run(phone_frame.bezel_cmd(self.geo, self.bezel))
+        self.mask = Path(work_dir) / f"phone-mask-{name}.png"
+        self.body = Path(work_dir) / f"phone-body-{name}.png"
+        run(phone_frame.mask_cmd(geo, self.mask))
+        run(phone_frame.body_cmd(geo, self.body))
 
-    def frame_cmd(self, screen, frames, out):
-        return phone_frame.frame_cmd(
-            screen, self.mask, self.bezel, self.geo, self.background, self.viewport,
-            frames, FPS, X264, out,
-        )  # fmt: skip
+
+def phone_frames(plan, crops, spec, reserve, work_dir):
+    """{scene id: PhoneFrame}: each fits its own page, all above the deepest phone-scene cue."""
+    viewport = _frame(spec["viewport"])
+    band = subtitle_band(
+        [cue.text for cue in plan.cues if cue.scene_id in crops], spec["viewport"], reserve
+    )
+    drawn, frames = {}, {}
+    for scene_id, (_, _, page_w, page_h) in crops.items():
+        if (page_w, page_h) not in drawn:
+            geo = phone_frame.geometry(page_w, page_h, *viewport, band)
+            if geo.screen_height < viewport[1] / 3:
+                raise ComposeError(
+                    f"phone scene '{scene_id}' has no room for the phone above its subtitles; "
+                    "split the phone scenes' long narration into shorter sentences"
+                )
+            drawn[page_w, page_h] = PhoneFrame(geo, spec, work_dir, len(drawn))
+        frames[scene_id] = drawn[page_w, page_h]
+    return frames
+
+
+def subtitle_band(texts, viewport, reserve=0):
+    """Phone frames sit above the deepest cue either burn method may draw, so none covers a screen."""
+    width, height = _frame(viewport)
+    return max(
+        (max(_libass_band(text, width, height, reserve), _overlay_band(text, width, height, reserve))
+         for text in texts),
+        default=0,
+    )  # fmt: skip
+
+
+def _libass_band(text, width, height, reserve):
+    """libass wraps on its own, so assume wide glyphs (0.6 em) and tall lines (1.25 em)."""
+    scale = height / LIBASS_HEIGHT
+    side = _libass_side_margin(reserve, width) * width / LIBASS_WIDTH
+    per_line = max(1, int((width - 2 * side) / (LIBASS_FONT * scale * 0.6)))
+    lines = len(textwrap.wrap(text, per_line)) or 1
+    return math.ceil((LIBASS_MARGIN_V + lines * LIBASS_FONT * 1.25) * scale)
+
+
+def _overlay_band(text, width, height, reserve):
+    return cue_svg(text, width, height, reserve)[1] + round(height * OVERLAY_BOTTOM)
+
+
+def _libass_side_margin(reserve, width):
+    return max(LIBASS_MARGIN, math.ceil(reserve * LIBASS_WIDTH / width))
 
 
 def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None, avatar=None):
@@ -532,10 +573,9 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     for scene_id, wav in wavs.items():
         if not wav.is_file():
             raise ComposeError(f"narration audio for scene '{scene_id}' not found: {wav}")
+    reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
     crops = phone_crops(plan, spec["phone"], raw_video)
-    if crops:
-        page = next(iter(crops.values()))
-        phone = PhoneFrame(page[2:], spec, work_dir)
+    frames = phone_frames(plan, crops, spec, reserve, work_dir)
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
@@ -550,11 +590,12 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
             synced = work_dir / f"{index:03d}-synced.mp4"
             run(sync_cmd(parts, synced))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        if scene.id in crops:
+        if scene.id in frames:
+            frame = frames[scene.id]
             screen = work_dir / f"{index:03d}-screen.mp4"
-            placement = screen_filters(crops[scene.id], phone.geo)
+            placement = screen_filters(crops[scene.id], frame.geo)
             run(fit_cmd(synced, scene.fit, scene.frames, placement, screen))
-            run(phone.frame_cmd(screen, scene.frames, fitted))
+            run(phone_frame.frame_cmd(screen, frame, scene.frames, FPS, X264, fitted))
         else:
             placement = viewport_filters(spec["viewport"])
             run(fit_cmd(synced, scene.fit, scene.frames, placement, fitted))
@@ -567,7 +608,6 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     run(concat_video_cmd(list_file, video))
     run(concat_audio_cmd(audio_parts, audio))
     if method is not None:
-        reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
         burned = work_dir / "burned.mp4"
         burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir, reserve)
         video = burned

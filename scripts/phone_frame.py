@@ -4,14 +4,13 @@ A phone scene's page is cropped out of the take (see ADR-0011), scaled to the fr
 screen, and drawn on the demo's backdrop colour at the video's full size, so cutting
 between desktop and phone scenes never changes the video's size. The frame sits above
 the subtitle band, so burned-in subtitles never cover the screen. Like the presenter
-bubble (ADR-0006), its screen mask and bezel are drawn once as PNGs by ffmpeg.
+bubble (ADR-0006), its screen mask and body are drawn once as PNGs by ffmpeg.
 """
 
 from dataclasses import dataclass
 
-BEZEL_COLOUR = "0x111111"
+BODY_COLOUR = "0x111111"
 TOP_MARGIN = 0.04  # of the video's height, above the frame
-CLEAR_BELOW = 0.22  # of the video's height: the subtitle band (bottom 20%) plus a margin
 BEZEL = 0.025  # of the frame's height
 CORNER = 0.12  # the screen's corner radius, as a share of its width
 # A page this many times wider (for its height) than the phone's own shape was not
@@ -34,10 +33,10 @@ class Geometry:
     radius: int
 
 
-def geometry(page_width, page_height, width, height):
-    """As large as fits above the subtitle band, so subtitles never cover the screen."""
+def geometry(page_width, page_height, width, height, clear_below):
+    """As large as fits above ``clear_below`` pixels of subtitles, so they never cover the screen."""
     top = round(height * TOP_MARGIN)
-    room_h = height - top - round(height * CLEAR_BELOW)
+    room_h = height - 2 * top - clear_below
     room_w = width - 2 * top
     bezel = max(2, round(room_h * BEZEL))
     scale = min((room_h - 2 * bezel) / page_height, (room_w - 2 * bezel) / page_width)
@@ -73,7 +72,7 @@ def mask_cmd(geo, out):
     )
 
 
-def bezel_cmd(geo, out, colour=BEZEL_COLOUR):
+def body_cmd(geo, out, colour=BODY_COLOUR):
     """The device body: a dark rounded rectangle the size of the whole frame."""
     outside = _rounded(geo.width, geo.height, geo.radius + geo.bezel)
     return _png_cmd(
@@ -83,11 +82,11 @@ def bezel_cmd(geo, out, colour=BEZEL_COLOUR):
     )
 
 
-def frame_cmd(screen, mask, bezel, geo, background, viewport, frames, fps, x264, out):
-    """Draw a screen-sized scene into the frame on the backdrop, exactly ``frames`` long."""
-    width, height = viewport
+def frame_cmd(screen, frame, frames, fps, x264, out):
+    """Draw a screen-sized scene into ``frame`` on the backdrop, exactly ``frames`` long."""
+    geo, (width, height) = frame.geo, frame.viewport
     graph = (
-        f"color=c={background.replace('#', '0x')}:s={width}x{height}:r={fps}[bg];"
+        f"color=c={frame.background.replace('#', '0x')}:s={width}x{height}:r={fps}[bg];"
         f"[0:v][1:v]alphamerge[screen];"
         f"[bg][2:v]overlay=x={geo.x}:y={geo.y}[body];"
         f"[body][screen]overlay=x={geo.x + geo.bezel}:y={geo.y + geo.bezel},setsar=1[out]"
@@ -95,8 +94,8 @@ def frame_cmd(screen, mask, bezel, geo, background, viewport, frames, fps, x264,
     return [
         "ffmpeg", "-v", "error", "-y",
         "-i", str(screen),
-        "-loop", "1", "-framerate", str(fps), "-i", str(mask),
-        "-loop", "1", "-framerate", str(fps), "-i", str(bezel),
+        "-loop", "1", "-framerate", str(fps), "-i", str(frame.mask),
+        "-loop", "1", "-framerate", str(fps), "-i", str(frame.body),
         "-filter_complex", graph,
         "-map", "[out]", "-an", "-frames:v", str(frames), "-r", str(fps),
         *x264, str(out),
