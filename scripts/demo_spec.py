@@ -75,10 +75,10 @@ def validate_spec(spec):
             )
         seen_ids[scene_id] = index
         narration = scene.get("narration")
-        if not isinstance(narration, str) or not narration.strip():
+        if not _non_empty(narration):
             raise SpecError(f"{where}: empty narration")
         url = scene.get("url")
-        if not isinstance(url, str) or not url.strip():
+        if not _non_empty(url):
             raise SpecError(f"{where}: missing url")
         for position, action in enumerate(scene.get("actions", []), start=1):
             if not isinstance(action, dict):
@@ -120,7 +120,7 @@ def _validate_metadata(spec):
         raise SpecError(f"purpose must be one of {', '.join(PURPOSES)}")
     if "outcome" in spec:
         value = spec["outcome"]
-        if not isinstance(value, str) or not value.strip():
+        if not _non_empty(value):
             raise SpecError("outcome must be a non-empty string")
     if "target_duration_s" in spec and not positive_seconds(spec["target_duration_s"]):
         raise SpecError("target_duration_s must be a finite positive number")
@@ -137,7 +137,7 @@ def _validate_avatar(spec):
             raise SpecError("avatar.profile must be own_photo, without an image")
     else:
         image = avatar.get("image")
-        if not isinstance(image, str) or not image.strip():
+        if not _non_empty(image):
             raise SpecError("avatar.image must be a non-empty path to a photo")
     corner = avatar.setdefault("corner", DEFAULT_CORNER)
     if corner not in CORNERS:
@@ -177,7 +177,7 @@ def _validate_checks(scene, where):
                 raise SpecError(f"{label}: type must be visible_text or visible_target")
             payload = "text" if kind == "visible_text" else "target"
             value = check.get(payload)
-            if not isinstance(value, str) or not value.strip():
+            if not _non_empty(value):
                 raise SpecError(f"{label}: {payload} must be a non-empty string")
 
 
