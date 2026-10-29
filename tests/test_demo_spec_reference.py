@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from demo_spec import ACTION_TYPES, validate_spec
+from demo_spec import ACTION_TYPES, DEFAULT_PHONE, DEVICES, validate_spec
 
 REFERENCE = Path(__file__).resolve().parent.parent / "references" / "demo-spec.md"
 
@@ -38,6 +38,15 @@ def test_worked_example_uses_every_documented_top_level_field():
         "target_duration_s",
     ):
         assert field in spec, field
+
+
+def test_reference_documents_devices_and_the_phone_settings():
+    text = REFERENCE.read_text(encoding="utf-8")
+
+    for name in ("`device`", "`phone`", *(f"`{device}`" for device in DEVICES)):
+        assert name in text, name
+    for field, value in DEFAULT_PHONE.items():
+        assert f"`{field}`" in text and str(value) in text, field
 
 
 def test_reference_documents_every_action_type():

@@ -15,6 +15,11 @@ _Avoid_: config, script file
 One page-sized part of a demo with its own narration and actions.
 _Avoid_: step, slide, segment
 
+**Device**:
+How a scene is recorded and framed: desktop (default) or phone. A scene's own `device`
+wins over the demo's.
+_Avoid_: mode, platform, form factor
+
 **Action**:
 One browser interaction in a scene: click, double-click, key, type, scroll, back or
 upload (putting files into the page's file input).
@@ -59,14 +64,19 @@ Local preflight plus browser checks before recording, recorded in `readiness.md`
 Cutting each scene from the take, dropping frozen frames, fitting it to its narration and
 burning in subtitles.
 
+**Phone frame**:
+The generic rounded device outline compose draws around a phone scene's page, centred on
+the `phone.background` backdrop above the subtitle band. No brand's device art.
+_Avoid_: mockup, bezel (for the whole frame), device skin
+
 **Fit**:
 How compose matches a scene to its narration: hold, speed-up or pad.
 
 **Edit map**:
 The `<slug>.editmap.json` compose writes next to the video: total length, each scene's
-start and end, its actions, with the start of those compose knows, and whether the
-subtitles are burned in (missing: burned). Post-processing's only link to the demo's
-structure; owned by `scripts/edit_map.py`.
+start and end, its device (missing: desktop), its actions, with the start of those compose
+knows, and whether the subtitles are burned in (missing: burned). Post-processing's only
+link to the demo's structure; owned by `scripts/edit_map.py`.
 
 **Click sound**:
 The short sound post-processing plays one cursor glide after each click, double-click,
