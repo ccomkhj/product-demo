@@ -948,3 +948,65 @@ def test_a_phone_scene_without_its_page_size_fails_with_a_hint(tmp_path):
 
     assert result.returncode == 1
     assert "phone scene 'frozen'" in result.stderr and "--window" in result.stderr
+
+
+def frame_hashes(path, frames):
+    """MD5 of each of the first ``frames`` decoded frames."""
+    out = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-frames:v",
+            str(frames),
+            "-an",
+            "-f",
+            "framemd5",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [line.split(",")[-1].strip() for line in out.splitlines() if not line.startswith("#")]
+
+
+@needs_ffmpeg
+def test_a_spec_without_devices_composes_as_one_whose_scenes_are_all_desktop(tmp_path):
+    plain, marked = tmp_path / "plain", tmp_path / "marked"
+    for demo in (plain, marked):
+        demo.mkdir()
+        make_media(demo, write_demo(demo))
+    spec = json.loads((marked / "demo.json").read_text())
+    spec["phone"] = {"background": BACKDROP}
+    for scene in spec["scenes"]:
+        scene["device"] = "desktop"
+    (marked / "demo.json").write_text(json.dumps(spec))
+
+    results = [run_compose(demo / "demo.json", "--no-burn-subs") for demo in (plain, marked)]
+
+    assert all(result.returncode == 0 for result in results), results
+    assert results[0].stdout == results[1].stdout.replace("marked", "plain")
+    assert "phone" not in results[0].stdout
+    total = round(EXPECTED_TOTAL * 30)
+    assert frame_hashes(default_out(plain), total) == frame_hashes(default_out(marked), total)
+
+
+@needs_ffmpeg
+def test_a_desktop_scene_composes_the_same_beside_a_phone_scene(tmp_path):
+    mixed, alone = tmp_path / "mixed", tmp_path / "alone"
+    for demo in (mixed, alone):
+        demo.mkdir()
+        write_phone_demo(demo)
+    spec = json.loads((alone / "demo.json").read_text())
+    spec["scenes"] = spec["scenes"][:1]
+    (alone / "demo.json").write_text(json.dumps(spec))
+    timeline = (alone / "timeline.jsonl").read_text().splitlines(keepends=True)
+    (alone / "timeline.jsonl").write_text("".join(line for line in timeline if "pick" not in line))
+
+    results = [run_compose(demo / "demo.json", "--no-burn-subs") for demo in (mixed, alone)]
+
+    assert all(result.returncode == 0 for result in results), results
+    assert frame_hashes(default_out(mixed), 90) == frame_hashes(default_out(alone), 90)
