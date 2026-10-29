@@ -14,9 +14,9 @@ def spec(demo_dir):
     return Path(demo_dir) / "demo.json"
 
 
-def resolve(demo_dir, path):
-    """Spec file paths (avatar photo, upload files) live with the demo unless absolute."""
-    return Path(demo_dir) / Path(path).expanduser()
+def resolve(base, path):
+    """Spec and voice-profile file paths live with their folder unless absolute."""
+    return Path(base) / Path(path).expanduser()
 
 
 def raw(demo_dir):
