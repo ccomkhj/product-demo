@@ -9,7 +9,10 @@
  * no-op apart from re-attaching the overlay host if the page removed it.
  *
  * API (single global):
- *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done
+ *   __demo.device(mode)          "desktop" (default) or "phone"; call after EVERY injection, and when a
+ *                                phone scene follows a desktop one on the same page
+ *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done.
+ *                                In phone mode: a fingertip hovers on the target for as long instead
  *   __demo.badge(text)           transient badge, e.g. "◀ Back"; resolves once it has been on screen a moment
  *   __demo.upload(files)         badge naming the uploaded files: "📎 clip.mp4", or "📎 3 videos"
  *                                for several (kind from the extensions; mixed kinds say "files")
@@ -17,14 +20,15 @@
  *   __demo.sync()                full-screen magenta flash (~400 ms) that compose finds in the
  *                                recording; resolves to the wall-clock ms at which it was painted
  * Clicks, double-clicks and key presses (real CDP input from MCP) are drawn
- * automatically by capture-phase listeners: ripple, double ring, keycap.
+ * automatically by capture-phase listeners: ripple, double ring, keycap. In phone mode
+ * the arrow cursor is hidden and a click is drawn as a fingertip plus the ripple.
  *
  * Every overlay element is pointer-events:none inside a shadow root on a
  * max-z-index host, raised into the top layer above open dialogs; listeners
  * are passive and never cancel or stop events.
  */
 (() => {
-  const VERSION = 5;
+  const VERSION = 6;
   const existing = window.__demo;
   if (existing && existing.version === VERSION) {
     existing._ensureHost();
@@ -47,6 +51,17 @@
       transform-origin: 4px 2px; transition: transform 120ms ease-out; }
     /* A click squeezes the arrow towards its tip, like a finger pressing a button. */
     .cursor.pressed svg { transform: scale(.78); }
+    .layer.phone .cursor { display: none; }
+    /* A soft grey fingertip: a phone has no cursor, so the touch itself is shown. */
+    .finger { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(120, 120, 128, .45); border: 2px solid rgba(255,255,255,.85);
+      box-shadow: 0 2px 8px rgba(0,0,0,.35); animation: tap 900ms ease-out forwards; }
+    @keyframes tap { 0% { transform: scale(.7); opacity: 1; } 60% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1); opacity: 0; } }
+    /* The hover pulses, so every frame differs and ffmpeg mpdecimate keeps it. */
+    .finger.hover { animation: hover var(--life, 600ms) ease-in-out forwards; }
+    @keyframes hover { 0% { transform: scale(.7); opacity: 0; } 25% { transform: scale(1); opacity: 1; }
+      60% { transform: scale(.88); opacity: 1; } 100% { transform: scale(1); opacity: .9; } }
     /* A held dot plus two expanding waves (~120 px), red with a white edge so it reads on
        light and dark pages alike, and lasting long enough to survive a 1.5x speed-up. */
     .ripple { position: absolute; width: 0; height: 0; }
@@ -95,6 +110,7 @@
     'fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
   let host, layer, cursorEl, keysEl, captionEl;
+  let phone = false;
   let cursorPos = loadPos();
   let typingRun = null; // {el, text, timer} while consecutive printable keys are coalesced
 
@@ -209,7 +225,27 @@
       node.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
       r = node.getBoundingClientRect();
     }
-    return glideTo(r.left + r.width / 2, r.top + r.height / 2, ms);
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if (!phone) return glideTo(x, y, ms);
+    // As long as the glide, so the edit map's click time (action start + glide) holds in phone scenes.
+    const f = fingertip(x, y, "hover", ms);
+    return new Promise((resolve) => setTimeout(() => { f.remove(); resolve(); }, ms));
+  }
+
+  function fingertip(x, y, cls, life) {
+    const f = el("div", "finger", ensureHost());
+    if (cls) f.classList.add(cls);
+    f.style.setProperty("--life", life + "ms");
+    f.style.translate = `${x}px ${y}px`;
+    setTimeout(() => f.remove(), life + 300);
+    return f;
+  }
+
+  // A phone scene can follow a desktop scene on the same page, so the mode changes in place.
+  function device(mode) {
+    if (mode !== "desktop" && mode !== "phone") throw new Error(`__demo.device: unknown mode ${mode}`);
+    phone = mode === "phone";
+    ensureHost().classList.toggle("phone", phone);
   }
 
   function badge(text, life = 1500) {
@@ -318,8 +354,8 @@
   function onMousedown(e) {
     if (!e.isTrusted) return;
     const layerEl = ensureHost();
-    glideTo(e.clientX, e.clientY, 0);
-    press();
+    if (phone) fingertip(e.clientX, e.clientY, null, 900);
+    else { glideTo(e.clientX, e.clientY, 0); press(); }
     // Under the cursor, so the arrow stays visible on top of the click.
     const r = layerEl.insertBefore(el("div", "ripple"), cursorEl);
     r.style.left = e.clientX + "px";
@@ -355,7 +391,7 @@
   window.addEventListener("dblclick", onDblclick, opts);
   window.addEventListener("keydown", onKeydown, opts);
 
-  const api = { version: VERSION, point, badge, upload, caption, sync, _ensureHost: ensureHost };
+  const api = { version: VERSION, device, point, badge, upload, caption, sync, _ensureHost: ensureHost };
   Object.defineProperty(window, "__demo", { value: Object.freeze(api), configurable: true, writable: false, enumerable: false });
 
   if (document.documentElement) ensureHost();
