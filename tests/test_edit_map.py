@@ -68,6 +68,33 @@ def test_build_places_the_first_action_and_each_at_action_and_round_trips_throug
     assert built.subtitles_burned is True
 
 
+def test_each_scene_records_its_device_and_round_trips(tmp_path):
+    spec = {
+        "scenes": [
+            {**SPEC["scenes"][0], "device": "desktop"},
+            {**SPEC["scenes"][1], "device": "phone"},
+        ]
+    }
+    timeline = [*TIMELINE]
+    timeline[4] = {**timeline[4], "window": [500, 836], "page": [390, 836], "dpr": 1}
+    plan = build_plan(spec, timeline, DURATIONS, FakeVideo({(1.0, 6.0): 1.0}))
+    video = tmp_path / "demo.mp4"
+
+    edit_map.write(edit_map.build(spec, plan), video)
+
+    assert [scene.device for scene in edit_map.read(video).scenes] == ["desktop", "phone"]
+
+
+def test_a_map_without_devices_reads_as_desktop(tmp_path):
+    video = tmp_path / "demo.mp4"
+    edit_map.write(edit_map.build(SPEC, edit_plan()), video)
+    data = edit_map.to_dict(edit_map.read(video))
+    for scene in data["scenes"]:
+        del scene["device"]
+
+    assert [scene.device for scene in edit_map.from_dict(data).scenes] == ["desktop", "desktop"]
+
+
 def test_read_without_a_map_is_none(tmp_path):
     assert edit_map.read(tmp_path / "demo.mp4") is None
 
