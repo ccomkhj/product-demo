@@ -229,6 +229,20 @@ describe("overlay", { skip: !chromePath && "Chrome not found" }, () => {
     assert.deepEqual(after, { display: "block", pressed: true });
   });
 
+  test("tap draws a click's ripple on an element without clicking it, as a fingertip in phone mode", async () => {
+    await page.slowTimers();
+    await page.inject();
+    await page.eval(`document.querySelector("#btn").onmousedown = () => { window.pressed = true; }`);
+    await page.eval(`__demo.tap("#btn")`);
+    assert.equal(await page.eval(count('[data-demo="ripple"]')), 1);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 0);
+    await page.eval(`__demo.device("phone")`);
+    await page.eval(`__demo.tap(document.querySelector("#btn"))`);
+    assert.equal(await page.eval(count('[data-demo="ripple"]')), 2);
+    assert.equal(await page.eval(count('[data-demo="finger"]')), 1);
+    assert.equal(await page.eval(`window.pressed ?? false`), false);
+  });
+
   test("re-injecting after navigation takes the mode it is given", async () => {
     await page.inject();
     await page.eval(`__demo.device("phone")`);

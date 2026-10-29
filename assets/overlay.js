@@ -13,6 +13,8 @@
  *                                phone scene follows a desktop one on the same page
  *   __demo.point(el | selector)  glide the fake cursor to the element centre (~600 ms); resolves when done.
  *                                In phone mode: a fingertip hovers on the target for as long instead
+ *   __demo.tap(el | selector)    draw a click on the element (ripple, or fingertip in phone mode)
+ *                                without sending one
  *   __demo.badge(text)           transient badge, e.g. "◀ Back"; resolves once it has been on screen a moment
  *   __demo.upload(files)         badge naming the uploaded files: "📎 clip.mp4", or "📎 3 videos"
  *                                for several (kind from the extensions; mixed kinds say "files")
@@ -212,7 +214,7 @@
   function resolveTarget(target) {
     if (typeof target === "string") target = document.querySelector(target);
     if (!target || typeof target.getBoundingClientRect !== "function") {
-      throw new Error("__demo.point: element not found");
+      throw new Error("__demo: element not found");
     }
     return target;
   }
@@ -352,14 +354,23 @@
   }
 
   function onMousedown(e) {
-    if (!e.isTrusted) return;
+    if (e.isTrusted) drawTap(e.clientX, e.clientY);
+  }
+
+  // For a click the recipe can't send, such as a file chooser the MCP can't answer with several files.
+  function tap(target) {
+    const r = resolveTarget(target).getBoundingClientRect();
+    drawTap(r.left + r.width / 2, r.top + r.height / 2);
+  }
+
+  function drawTap(x, y) {
     const layerEl = ensureHost();
-    if (phone) fingertip(e.clientX, e.clientY, null, 900);
-    else { glideTo(e.clientX, e.clientY, 0); press(); }
+    if (phone) fingertip(x, y, null, 900);
+    else { glideTo(x, y, 0); press(); }
     // Under the cursor, so the arrow stays visible on top of the click.
     const r = layerEl.insertBefore(el("div", "ripple"), cursorEl);
-    r.style.left = e.clientX + "px";
-    r.style.top = e.clientY + "px";
+    r.style.left = x + "px";
+    r.style.top = y + "px";
     el("i", "core", r);
     el("i", "wave", r);
     el("i", "wave", r);
@@ -391,7 +402,7 @@
   window.addEventListener("dblclick", onDblclick, opts);
   window.addEventListener("keydown", onKeydown, opts);
 
-  const api = { version: VERSION, device, point, badge, upload, caption, sync, _ensureHost: ensureHost };
+  const api = { version: VERSION, device, point, tap, badge, upload, caption, sync, _ensureHost: ensureHost };
   Object.defineProperty(window, "__demo", { value: Object.freeze(api), configurable: true, writable: false, enumerable: false });
 
   if (document.documentElement) ensureHost();
