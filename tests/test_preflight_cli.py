@@ -130,8 +130,8 @@ def test_cli_upload_files_must_exist(cli, tmp_path):
     assert result.returncode == 1
     [check] = [c for c in json.loads(result.stdout)["checks"] if c["id"] == "upload"]
     assert check["status"] == "fail" and check["remedy"]
-    assert str(tmp_path / "clips" / "two.mp4") in check["message"]
-    assert "export" in check["message"]
+    scene_id = data["scenes"][0]["id"]
+    assert f"{tmp_path / 'clips' / 'two.mp4'} (scene '{scene_id}')" in check["message"]
 
 
 def test_cli_spec_without_uploads_has_no_upload_check(cli):
