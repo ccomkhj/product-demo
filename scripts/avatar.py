@@ -60,7 +60,7 @@ class Geometry:
 
 def geometry(avatar, width, height):
     """Lay the bubble out in its corner, a margin of 3% of the height from the edges."""
-    face = _even(round(avatar.size * height))
+    face = even(round(avatar.size * height))
     rim = max(2, round(face * 0.025))
     halo = max(4, round(face * 0.12))
     canvas = face + 2 * (rim + halo)
@@ -241,7 +241,7 @@ def read_wav(path):
 def burn_avatar(video, audio, avatar, viewport, fps, out, work_dir, run):
     """Draw ``avatar``'s bubble on ``video``, its halo following ``audio``; ``run`` runs a command."""
     work_dir = Path(work_dir)
-    geo = geometry(avatar, _even(viewport["width"]), _even(viewport["height"]))
+    geo = geometry(avatar, even(viewport["width"]), even(viewport["height"]))
     bubble, halo = work_dir / "avatar-bubble.png", work_dir / "avatar-halo.png"
     run(bubble_cmd(avatar.image, geo, bubble))
     run(halo_cmd(geo, halo))
@@ -269,5 +269,6 @@ def _disc(radius, centre_x, centre_y):
     return f"255*clip({radius}-hypot(X+0.5-{centre_x},Y+0.5-{centre_y})+0.5,0,1)"
 
 
-def _even(value):
+def even(value):
+    """yuv420p halves the chroma planes, so x264 needs even pixel sizes."""
     return int(value) - int(value) % 2

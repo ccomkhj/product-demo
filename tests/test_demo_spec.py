@@ -337,3 +337,56 @@ def test_upload_at_follows_the_phrase_order_rule():
 def test_malformed_upload_is_rejected_naming_the_action(fields, message):
     with pytest.raises(SpecError, match=rf"scene 1 'home', action 1: upload {message}"):
         validate_spec(spec_with_actions([{"type": "upload", **fields}]))
+
+
+def test_device_defaults_to_desktop_and_phone_gets_its_defaults():
+    result = validate_spec(make_spec())
+
+    assert [scene["device"] for scene in result["scenes"]] == ["desktop", "desktop"]
+    assert result["phone"] == {"width": 390, "height": 844, "background": "#202124"}
+
+
+def test_scene_device_wins_over_the_top_level_one():
+    spec = make_spec(device="phone")
+    spec["scenes"][1]["device"] = "desktop"
+
+    result = validate_spec(spec)
+
+    assert [scene["device"] for scene in result["scenes"]] == ["phone", "desktop"]
+
+
+def test_unknown_top_level_device_is_rejected():
+    with pytest.raises(SpecError, match="device must be one of desktop, phone"):
+        validate_spec(make_spec(device="tablet"))
+
+
+def test_unknown_scene_device_is_rejected_naming_the_scene():
+    spec = make_spec()
+    spec["scenes"][1]["device"] = "Phone"
+    with pytest.raises(SpecError, match="scene 2 'details'.*device must be one of"):
+        validate_spec(spec)
+
+
+def test_phone_fields_are_kept_and_missing_ones_filled_in():
+    result = validate_spec(make_spec(phone={"width": 375, "background": "#FFFFFF"}))
+
+    assert result["phone"] == {"width": 375, "height": 844, "background": "#FFFFFF"}
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "390x844",
+        {"width": 0},
+        {"height": -1},
+        {"width": 390.5},
+        {"height": True},
+        {"background": "dark"},
+        {"background": "#12345"},
+        {"background": "#fff"},
+        {"background": 0},
+    ],
+)
+def test_malformed_phone_is_rejected(phone):
+    with pytest.raises(SpecError, match="phone"):
+        validate_spec(make_spec(phone=phone))

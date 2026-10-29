@@ -369,6 +369,7 @@ def test_the_edit_map_lists_each_scene_and_the_known_action_times(tmp_path):
                     {"index": 1, "type": "click", "start_s": 4.133, "at": "Second"},
                     {"index": 2, "type": "dblclick"},  # start unknown: no start_s
                 ],
+                "device": "desktop",
             }
         ],
     }
@@ -643,3 +644,369 @@ def test_an_action_line_names_its_time_and_phrase_and_how_late_it_is():
 
     assert action_line(on_time) == 'at\thome\t1\t4.133s\t"Then"'
     assert action_line(late) == 'at\thome\t2\t12.500s\t"we click"\tlate 1.250s'
+
+
+# --- phone scenes ----------------------------------------------------------------------
+
+BACKDROP = "#3050a0"
+BACKDROP_RGB = (0x30, 0x50, 0xA0)
+# The take is 320x240. A phone window 100x240 is centred in it (x 110..210) on black bars;
+# its emulated 80x240 page sits at the window's left (x 110..190), and the 20 px strip
+# right of it shows the page background (white).
+PHONE_WINDOW, PHONE_PAGE = [100, 240], [80, 240]
+
+
+def write_phone_demo(
+    demo_dir,
+    viewport=(320, 240),
+    page=PHONE_PAGE,
+    window=PHONE_WINDOW,
+    dpr=1,
+    narration="On the phone.",
+):
+    width, height = viewport
+    spec = {
+        "title": "Phone",
+        "viewport": {"width": width, "height": height},
+        "phone": {"background": BACKDROP},
+        "scenes": [
+            {"id": "desk", "title": "Desk", "url": "u", "narration": "On the laptop."},
+            {
+                "id": "pick",
+                "title": "Pick",
+                "url": "u",
+                "narration": narration,
+                "device": "phone",
+            },
+        ],
+    }
+    (demo_dir / "demo.json").write_text(json.dumps(spec))
+    events = [
+        {"event": "rec_start", "t_ms": 0},
+        {"scene": "desk", "event": "start", "t_ms": 500},
+        {"scene": "desk", "event": "end", "t_ms": 3_500},
+        {
+            "scene": "pick",
+            "event": "start",
+            "t_ms": 4_500,
+            "window": window,
+            "page": page,
+            "dpr": dpr,
+        },
+        {"scene": "pick", "event": "end", "t_ms": 7_500},
+    ]
+    (demo_dir / "timeline.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    audio = demo_dir / "audio"
+    audio.mkdir()
+    (audio / "durations.json").write_text(json.dumps({"desk": 3.0, "pick": 3.0}))
+    for sid in ("desk", "pick"):
+        ffmpeg(
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=3",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            audio / f"{sid}.wav",
+        )
+    # 4 s of a desktop page, then 4 s of the phone window pillarboxed in the same take
+    ffmpeg(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240:rate=30:duration=4",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:size=320x240:rate=30:duration=4",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=white:size=100x240:rate=30:duration=4",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=80x240:rate=30:duration=4",
+        "-filter_complex",
+        "[1:v][2:v]overlay=110:0[w];[w][3:v]overlay=110:0[p];[0:v][p]concat=n=2:v=1:a=0",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        demo_dir / "raw.mp4",
+    )
+
+
+def rgb_frame(path, at):
+    return subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(path), "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True,
+        check=True,
+    ).stdout  # fmt: skip
+
+
+def is_backdrop(frame, width, x, y):
+    start = (y * width + x) * 3
+    return all(abs(a - b) <= 16 for a, b in zip(frame[start : start + 3], BACKDROP_RGB))
+
+
+def frame_rows(frame, width, height):
+    """The rows of the centre column that are not backdrop: where the phone frame is."""
+    return [y for y in range(height) if not is_backdrop(frame, width, width // 2, y)]
+
+
+@needs_ffmpeg
+def test_a_phone_scene_is_framed_on_the_backdrop_clear_of_the_subtitles(tmp_path):
+    write_phone_demo(tmp_path)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    final = default_out(tmp_path)
+    video = next(s for s in probe(final)["streams"] if s["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (320, 240)
+    desk, phone = rgb_frame(final, 1.0), rgb_frame(final, 4.5)
+    corners = [(2, 2), (317, 2), (2, 237), (317, 237)]
+    assert not any(is_backdrop(desk, 320, x, y) for x, y in corners)
+    assert all(is_backdrop(phone, 320, x, y) for x, y in corners)
+    rows = frame_rows(phone, 320, 240)
+    assert len(rows) > 240 * 0.6
+    # the page moves inside the frame
+    centre = slice((120 * 320 + 150) * 3, (120 * 320 + 170) * 3)
+    later = rgb_frame(final, 5.0)
+    assert sum(abs(a - b) for a, b in zip(phone[centre], later[centre])) / 60 > 5
+    assert [s["device"] for s in edit_map(tmp_path)["scenes"]] == ["desktop", "phone"]
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("desk\t") and not lines[0].endswith("phone")
+    assert lines[1].startswith("pick\t") and lines[1].endswith("\tphone")
+    headings = [line for line in (tmp_path / "transcript.md").read_text().splitlines()
+                if line.startswith("## ")]  # fmt: skip
+    assert headings == ["## Desk", "## Pick (phone)"]
+
+
+LONG_LINE = (
+    "On the phone we pick the photos from the camera roll, crop each one to a square, "
+    "write a caption for every picture, and then post the whole album to the shared feed."
+)
+
+
+def row_differences(a, b, width, height):
+    """Mean absolute RGB difference between two frames, per row."""
+    row = width * 3
+    return [
+        sum(abs(x - y) for x, y in zip(a[r * row : (r + 1) * row], b[r * row : (r + 1) * row]))
+        / row
+        for r in range(height)
+    ]
+
+
+@needs_burn
+@pytest.mark.parametrize(
+    ("viewport", "narration"), [((320, 240), LONG_LINE), ((180, 320), "Pick the photos to post.")]
+)
+def test_burned_subtitles_never_cover_the_phone_frame(tmp_path, viewport, narration):
+    write_phone_demo(tmp_path, viewport=viewport, narration=narration)
+    plain = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+    burned = run_compose(tmp_path / "demo.json", "--burn-subs", "--out", tmp_path / "s.mp4")
+
+    assert plain.returncode == 0, plain.stderr
+    assert burned.returncode == 0, burned.stderr
+    width, height = viewport
+    unburned = rgb_frame(default_out(tmp_path), 4.5)
+    rows = frame_rows(unburned, width, height)
+    diffs = row_differences(unburned, rgb_frame(tmp_path / "s.mp4", 4.5), width, height)
+    assert max(diffs[y] for y in rows) < 4  # nothing drawn over the frame
+    assert max(diffs[max(rows) + 1 :]) > 10  # the subtitles are there, below it
+
+
+@needs_ffmpeg
+def test_a_vertical_video_fills_most_of_its_height_with_the_phone(tmp_path):
+    write_phone_demo(tmp_path, viewport=(180, 320))
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    rows = frame_rows(rgb_frame(default_out(tmp_path), 4.5), 180, 320)
+    assert len(rows) > 320 * 0.7
+
+
+@needs_ffmpeg
+def test_the_presenter_bubble_is_drawn_over_a_phone_scene(tmp_path):
+    write_phone_demo(tmp_path)
+    plain = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+    with_avatar(tmp_path, corner="top-left", size=0.3)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs", "--out", tmp_path / "b.mp4")
+
+    assert plain.returncode == 0, plain.stderr
+    assert result.returncode == 0, result.stderr
+    diff = corner_differences(default_out(tmp_path), tmp_path / "b.mp4", at=4.5)
+    assert diff["top-left"] > 20
+
+
+@needs_ffmpeg
+def test_a_phone_scene_recorded_at_a_desktop_aspect_fails_with_a_hint(tmp_path):
+    write_phone_demo(tmp_path, page=[320, 240], window=[320, 240])
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+@needs_ffmpeg
+def test_a_phone_scene_whose_emulation_did_not_take_fails_with_a_hint(tmp_path):
+    # Chrome won't size a window below ~500 px wide: un-emulated, the page stays 500x836,
+    # a little wider than the 390x844 phone yet nowhere near a desktop page
+    write_phone_demo(tmp_path, page=[500, 836], window=[500, 836], dpr=0.25)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
+
+
+def add_phone_scene(demo_dir, page_width):
+    """A second phone scene, 4 s more of the take, with a ``page_width`` x 240 page."""
+    spec = json.loads((demo_dir / "demo.json").read_text())
+    spec["scenes"].append(
+        {"id": "post", "title": "Post", "url": "u", "narration": "Posted.", "device": "phone"}
+    )
+    (demo_dir / "demo.json").write_text(json.dumps(spec))
+    size = [page_width, 240]
+    with (demo_dir / "timeline.jsonl").open("a") as timeline:
+        for event in (
+            {
+                "scene": "post",
+                "event": "start",
+                "t_ms": 8_500,
+                "window": size,
+                "page": size,
+                "dpr": 1,
+            },
+            {"scene": "post", "event": "end", "t_ms": 11_500},
+        ):
+            timeline.write(json.dumps(event) + "\n")
+    durations = json.loads((demo_dir / "audio" / "durations.json").read_text())
+    (demo_dir / "audio" / "durations.json").write_text(json.dumps({**durations, "post": 3.0}))
+    shutil.copyfile(demo_dir / "audio" / "pick.wav", demo_dir / "audio" / "post.wav")
+    raw, first = demo_dir / "raw.mp4", demo_dir / "first.mp4"
+    raw.rename(first)
+    ffmpeg(
+        "-i", first,
+        "-f", "lavfi", "-i", "color=c=black:size=320x240:rate=30:duration=4",
+        "-f", "lavfi", "-i", f"testsrc2=size={page_width}x240:rate=30:duration=4",
+        "-filter_complex",
+        f"[1:v][2:v]overlay={(320 - page_width) // 2}:0[p];[0:v][p]concat=n=2:v=1:a=0",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", raw,
+    )  # fmt: skip
+
+
+def screen_shape(frame, width, height):
+    """(columns, rows) of the frame through its centre that are not backdrop."""
+    columns = [x for x in range(width) if not is_backdrop(frame, width, x, height // 3)]
+    return len(columns), len(frame_rows(frame, width, height))
+
+
+@needs_ffmpeg
+def test_each_phone_scene_is_framed_to_its_own_page_shape(tmp_path):
+    write_phone_demo(tmp_path)
+    add_phone_scene(tmp_path, page_width=120)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 0, result.stderr
+    final = default_out(tmp_path)
+    narrow = screen_shape(rgb_frame(final, 4.5), 320, 240)
+    wide = screen_shape(rgb_frame(final, 7.5), 320, 240)
+    assert narrow[1] == wide[1]  # same subtitle clearance, so the same height
+    assert wide[0] / narrow[0] == pytest.approx(120 / 80, rel=0.15)
+
+
+@needs_ffmpeg
+def test_subtitles_too_long_to_leave_room_for_the_phone_fail_with_a_hint(tmp_path):
+    write_phone_demo(tmp_path, viewport=(180, 320), narration=LONG_LINE)
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "phone scene 'pick'" in result.stderr and "shorter sentences" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_a_phone_scene_without_its_page_size_fails_with_a_hint(tmp_path):
+    write_demo(tmp_path)
+    spec = json.loads((tmp_path / "demo.json").read_text())
+    spec["device"] = "phone"
+    (tmp_path / "demo.json").write_text(json.dumps(spec))
+
+    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
+
+    assert result.returncode == 1
+    assert "phone scene 'frozen'" in result.stderr and "--window" in result.stderr
+
+
+def frame_hashes(path, frames):
+    """MD5 of each of the first ``frames`` decoded frames."""
+    out = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-frames:v",
+            str(frames),
+            "-an",
+            "-f",
+            "framemd5",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [line.split(",")[-1].strip() for line in out.splitlines() if not line.startswith("#")]
+
+
+@needs_ffmpeg
+def test_a_spec_without_devices_composes_as_one_whose_scenes_are_all_desktop(tmp_path):
+    plain, marked = tmp_path / "plain", tmp_path / "marked"
+    for demo in (plain, marked):
+        demo.mkdir()
+        make_media(demo, write_demo(demo))
+    spec = json.loads((marked / "demo.json").read_text())
+    spec["phone"] = {"background": BACKDROP}
+    for scene in spec["scenes"]:
+        scene["device"] = "desktop"
+    (marked / "demo.json").write_text(json.dumps(spec))
+
+    results = [run_compose(demo / "demo.json", "--no-burn-subs") for demo in (plain, marked)]
+
+    assert all(result.returncode == 0 for result in results), results
+    assert results[0].stdout == results[1].stdout.replace("marked", "plain")
+    assert "phone" not in results[0].stdout
+    total = round(EXPECTED_TOTAL * 30)
+    assert frame_hashes(default_out(plain), total) == frame_hashes(default_out(marked), total)
+
+
+@needs_ffmpeg
+def test_a_desktop_scene_composes_the_same_beside_a_phone_scene(tmp_path):
+    mixed, alone = tmp_path / "mixed", tmp_path / "alone"
+    for demo in (mixed, alone):
+        demo.mkdir()
+        write_phone_demo(demo)
+    spec = json.loads((alone / "demo.json").read_text())
+    spec["scenes"] = spec["scenes"][:1]
+    (alone / "demo.json").write_text(json.dumps(spec))
+    timeline = (alone / "timeline.jsonl").read_text().splitlines(keepends=True)
+    (alone / "timeline.jsonl").write_text("".join(line for line in timeline if "pick" not in line))
+
+    results = [run_compose(demo / "demo.json", "--no-burn-subs") for demo in (mixed, alone)]
+
+    assert all(result.returncode == 0 for result in results), results
+    assert frame_hashes(default_out(mixed), 90) == frame_hashes(default_out(alone), 90)

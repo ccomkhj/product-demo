@@ -18,7 +18,26 @@ malformed spec fails before any audio or recording is made.
 | `viewport` | no | `{ "width", "height" }` of the **output video**. Default `1920×1080`. |
 | `voice` | no | `{ "backend", "voice" }`. `backend` is `say`, `kokoro`, `openai`, `elevenlabs` or `qwen3` (see local cloning below); leave it out to auto-detect (`ELEVENLABS_API_KEY`, then `OPENAI_API_KEY`, then `kokoro` if `uv` is on PATH, then `say`). `voice` is a `say -v` name, a Kokoro voice (default `af_heart`; others include `af_bella`, `am_michael`, `bf_emma` and `bm_george`), an OpenAI voice name, or an ElevenLabs voice **ID**. Optional `speed` (0.5 to 2, default 1) changes the narration tempo for any backend, keeping pitch. Optional `pronounce` respells misread words for the voice only (see pronunciation below). |
 | `avatar` | no | `{ "image" or "profile", "corner", "size" }`: a presenter bubble, a round photo whose halo glows while the voice speaks (no lip-sync). `image` is a photo path, relative to the demo folder or absolute; any shape works, as it is cropped to a centred circle. `"profile": "own_photo"` uses the photo saved with `own_voice.py --photo` instead (see local voice cloning). `corner` is `bottom-left` (default), `bottom-right`, `top-left` or `top-right`. `size` is the photo's diameter as a share of the video height, from `0.05` to `0.5` (default `0.2`). Subtitles wrap clear of a bottom-corner bubble. Pick the corner the scenes' actions don't use, because the bubble covers the page there. |
+| `device` | no | `desktop` (default) or `phone`: how every scene is recorded and framed, unless a scene sets its own (see phone scenes below). |
+| `phone` | no | `{ "width", "height", "background" }` for phone scenes. `width` and `height` are the phone page in CSS pixels, positive whole numbers (default `390` × `844`). `background` is the backdrop colour around the phone frame, `#rrggbb` (default `#202124`, a neutral dark grey). Missing fields get their defaults. |
 | `scenes` | yes | Non-empty, ordered list of scenes. The video follows this order. |
+
+## Phone scenes
+
+A scene with `device: "phone"` (its own, or the top-level one) is recorded in a phone-sized,
+touch-enabled page, so the app renders its real mobile layout (see `mcp-recipes.md`).
+Compose crops the phone page out of the take and draws it in a generic rounded phone frame,
+centred on the `phone.background` colour at the output `viewport` size. The frame is as
+large as fits above the phone scenes' deepest subtitle, so subtitles never cover the
+screen; in a 9:16 viewport it fills most of the height. Keep phone-scene sentences short:
+one too long to leave the phone a third of the height fails compose with a hint. Desktop scenes compose as before, so one video can
+go laptop → phone → laptop without changing size. The presenter bubble and subtitles are
+drawn over phone scenes as over any other.
+
+A phone scene's start marker must carry the window and page sizes the recipe read (the
+`--window`, `--page` and `--dpr` flags of `mark.py`); compose fails with a hint without
+them. A phone scene whose page is desktop-shaped (wider than 1.5 × the phone's shape) also
+fails, instead of being squashed into the frame: re-record it emulated at the phone size.
 
 ## Pronunciation
 
@@ -104,6 +123,7 @@ falls back to a remote service. Without explicit selection, auto-detection stays
 | `id` | yes | Unique slug. Names the audio file (`audio/<id>.wav`) and the timeline markers. |
 | `title` | no | Shown as the scene heading in `transcript.md` (falls back to `id`). |
 | `url` | yes | The page the scene starts on. Navigate there before marking the scene start, unless the browser is already on it (e.g. the previous scene's click led here). |
+| `device` | no | `desktop` or `phone`; wins over the top-level `device` (see phone scenes). |
 | `login` | no | `true` if the page needs a signed-in session. The user signs in by hand in the MCP browser before recording; the profile persists. |
 | `actions` | no | Ordered list of actions (below). An empty list is a scene that just shows the page. |
 | `prerequisites` | no | List of visible conditions to check immediately before the scene start marker. |
@@ -204,6 +224,57 @@ voice mentions them.
         { "type": "wait", "ms": 1000 }
       ],
       "narration": "IANA keeps the full list of reserved names. Pressing space scrolls down to the rest of it."
+    }
+  ]
+}
+```
+
+## Phone worked example
+
+A QR code hand-off: the laptop shows a QR code, the phone picks the files, the laptop shows
+the result. Only the middle scene sets `device`; the others default to desktop. The sample
+clips live in the demo folder next to `demo.json`.
+
+```json
+{
+  "title": "From laptop to phone and back",
+  "product": "Stitchday",
+  "audience": "people who film on their phone and edit on a laptop",
+  "purpose": "feature-announcement",
+  "outcome": "Know that clips picked on the phone show up on the laptop",
+  "scenes": [
+    {
+      "id": "qr",
+      "title": "Scan to start",
+      "url": "https://stitchday.example/new",
+      "actions": [
+        { "type": "point", "target": "the QR code", "at": "scan this code" }
+      ],
+      "narration": "Start a project on your laptop, then scan this code with your phone. No cables, no emailing yourself."
+    },
+    {
+      "id": "pick",
+      "title": "Pick clips on the phone",
+      "device": "phone",
+      "url": "https://stitchday.example/join/demo",
+      "actions": [
+        {
+          "type": "upload",
+          "target": "the Add videos button",
+          "files": ["clips/beach.mp4", "clips/dinner.mp4", "clips/sunset.mp4"],
+          "at": "pick your clips"
+        }
+      ],
+      "narration": "On the phone, pick your clips straight from the camera roll, where they were going to sit forever anyway."
+    },
+    {
+      "id": "result",
+      "title": "Back on the laptop",
+      "url": "https://stitchday.example/project/demo",
+      "actions": [
+        { "type": "point", "target": "the three new clips in the timeline", "at": "already here" }
+      ],
+      "narration": "Back on the laptop, they're already here, in order, ready to cut."
     }
   ]
 }

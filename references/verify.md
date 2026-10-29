@@ -52,7 +52,14 @@ ffmpeg -v error -y -ss <offset> -t <scene> -i demos/<slug>/<slug>.mp4 \
 
 Look at each sheet with Read. Confirm the page is the scene's page, the cursor sits on each
 pointed target, clicks show a ripple, keys show their keycap, Back shows its badge and the
-subtitle is legible at the bottom. Keep the red padding: consecutive frames of a scroll
+subtitle is legible at the bottom.
+
+A phone scene's sheet looks different: the page sits inside the phone frame, centred on
+the backdrop colour, clear of the subtitle band, and shows the app's phone layout (not its
+desktop layout squeezed narrow). There is no arrow cursor anywhere. Taps show a grey
+fingertip with the ripple, and a `point` shows a fingertip hovering on its target. An
+arrow cursor, or the desktop layout, in a phone scene means the switch or the
+`__demo.device('phone')` call after injection was missed. Keep the red padding: consecutive frames of a scroll
 line up across a bare tile seam and look like one torn frame.
 
 ## Sync

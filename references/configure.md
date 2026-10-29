@@ -37,6 +37,7 @@ holds. "Other" is always available for a free answer (a path, a voice ID, a size
 | Speed | always | Normal (1.0) · Slower (0.9) · Faster (1.1) |
 | Presenter | always | My saved photo (only with `photo: true`) · A new photo (path via Other) · None |
 | Video size | when Call 2 has room, else Call 3 | 1920×1080 · 1280×720 · 1080×1920 (vertical) |
+| Device | when Call 2 has room, else Call 3 | Desktop · Phone (every scene recorded as a phone) |
 
 **Call 3** (presenter chosen)
 
@@ -57,13 +58,14 @@ holds. "Other" is always available for a free answer (a path, a voice ID, a size
 uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/own_voice.py --save-defaults '<json>'
 ```
 
-`<json>` holds `voice`, `avatar`, `viewport` and `burn_subs`, written as spec fields:
+`<json>` holds `voice`, `avatar`, `viewport`, `device` and `burn_subs`, written as spec fields:
 
 ```json
 {
   "voice": {"backend": "qwen3", "profile": "own_voice", "language": "Korean", "speed": 1.1},
   "avatar": {"profile": "own_photo", "corner": "top-right", "size": 0.15},
   "viewport": {"width": 1920, "height": 1080},
+  "device": "desktop",
   "burn_subs": true
 }
 ```

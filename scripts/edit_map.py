@@ -4,7 +4,7 @@ Compose builds and writes it; post-processing reads it and asks it where scenes,
 phrases and clicks land in the composed video. Times are seconds in that video, rounded
 to the millisecond like compose's printed lines. An action's ``index`` is its 0-based place
 in the scene's spec actions; only the scene's first action and each ``at`` action have a
-known start.
+known start. Each scene has its ``device`` ("desktop" or "phone"; missing means desktop).
 """
 
 import json
@@ -41,6 +41,7 @@ class MapScene:
     start_s: float
     end_s: float
     actions: tuple = ()
+    device: str = "desktop"
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,14 @@ def build(spec, plan, burned=False):
                 start_s = None
             actions.append(MapAction(index, action["type"], start_s, action.get("at")))
         scenes.append(
-            MapScene(scene.id, scene.title, _ms(scene.offset_s), _ms(scene.end_s), tuple(actions))
+            MapScene(
+                scene.id,
+                scene.title,
+                _ms(scene.offset_s),
+                _ms(scene.end_s),
+                tuple(actions),
+                scene.device,
+            )
         )
     return EditMap(_ms(plan.total_s), burned, tuple(scenes))
 
@@ -136,6 +144,7 @@ def to_dict(edit_map):
                 "start_s": scene.start_s,
                 "end_s": scene.end_s,
                 "actions": [_action_dict(action) for action in scene.actions],
+                "device": scene.device,
             }
             for scene in edit_map.scenes
         ],
@@ -155,6 +164,7 @@ def from_dict(data):
                     scene["start_s"],
                     scene["end_s"],
                     tuple(_action(action) for action in scene["actions"]),
+                    scene.get("device", "desktop"),  # maps from before devices were desktop
                 )
                 for scene in data["scenes"]
             ),

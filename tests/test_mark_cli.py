@@ -82,3 +82,31 @@ def test_sync_ms_is_only_for_rec_start(tmp_path):
     assert result.returncode != 0
     assert "--sync-ms goes with rec_start only" in result.stderr
     assert not (tmp_path / "timeline.jsonl").exists()
+
+
+def test_phone_scene_start_records_window_page_and_dpr(tmp_path):
+    timeline = tmp_path / "timeline.jsonl"
+
+    result = run_mark(
+        timeline, "start", "pick", "--window", "500x836", "--page", "390x836", "--dpr", "2"
+    )
+
+    assert result.returncode == 0, result.stderr
+    (event,) = read_events(timeline)
+    assert (event["window"], event["page"], event["dpr"]) == ([500, 836], [390, 836], 2)
+
+
+def test_phone_geometry_goes_with_start_only(tmp_path):
+    result = run_mark(tmp_path / "timeline.jsonl", "end", "pick", "--window", "500x836")
+
+    assert result.returncode != 0
+    assert "--window, --page and --dpr go with start only" in result.stderr
+    assert not (tmp_path / "timeline.jsonl").exists()
+
+
+def test_phone_size_must_be_width_x_height(tmp_path):
+    result = run_mark(tmp_path / "timeline.jsonl", "start", "pick", "--page", "390")
+
+    assert result.returncode != 0
+    assert "WxH" in result.stderr
+    assert "Traceback" not in result.stderr

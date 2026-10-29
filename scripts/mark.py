@@ -2,7 +2,7 @@
 
 Usage:
     uv run python scripts/mark.py TIMELINE rec_start [--sync-ms MS]
-    uv run python scripts/mark.py TIMELINE start SCENE_ID
+    uv run python scripts/mark.py TIMELINE start SCENE_ID [--window WxH --page WxH --dpr N]
     uv run python scripts/mark.py TIMELINE beat SCENE_ID
     uv run python scripts/mark.py TIMELINE end SCENE_ID
 
@@ -11,6 +11,8 @@ with the current wall-clock time in milliseconds. ``rec_start`` marks the moment
 the screencast started. ``--sync-ms`` records the wall-clock time that
 ``__demo.sync()`` returned: compose finds that flash in the recording and lines
 the timeline up on it, which is exact however long the call took to arrive.
+A phone scene's ``start`` also records the window and emulated page sizes (CSS
+pixels) and the device pixel ratio, so compose can crop the page out of the take.
 ``beat`` marks the moment just before an action that has
 an ``at`` phrase, so compose can start that part of the scene on its phrase. A re-recording appends a new ``rec_start``; compose uses
 only the events after the last one, so earlier takes can stay in the file.
@@ -33,7 +35,20 @@ def main(argv=None):
     parser.add_argument(
         "--sync-ms", type=int, metavar="MS", help="rec_start only: the value __demo.sync() returned"
     )
+    phone_sizes = parser.add_argument_group("phone scene start (ADR-0011)")
+    phone_sizes.add_argument(
+        "--window", type=_size, metavar="WxH", help="innerWidth x innerHeight before emulate"
+    )
+    phone_sizes.add_argument(
+        "--page", type=_size, metavar="WxH", help="innerWidth x innerHeight after emulate"
+    )
+    phone_sizes.add_argument(
+        "--dpr", type=float, metavar="N", help="devicePixelRatio read before emulate"
+    )
     args = parser.parse_args(argv)
+    phone = {k: v for k in ("window", "page", "dpr") if (v := getattr(args, k)) is not None}
+    if phone and args.event != "start":
+        parser.error("--window, --page and --dpr go with start only")
 
     if args.event == "rec_start":
         if args.scene:
@@ -46,7 +61,7 @@ def main(argv=None):
             parser.error(f"'{args.event}' needs a scene id")
         if args.sync_ms is not None:
             parser.error("--sync-ms goes with rec_start only")
-        record = {"scene": args.scene, "event": args.event, "t_ms": _now_ms()}
+        record = {"scene": args.scene, "event": args.event, "t_ms": _now_ms(), **phone}
 
     try:
         args.timeline.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +72,15 @@ def main(argv=None):
         return 1
     print(json.dumps(record))
     return 0
+
+
+def _size(text):
+    """Lets the recipe pass a size the way the page reports it, as one WxH token."""
+    try:
+        width, height = (int(n) for n in text.lower().split("x"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected WxH, such as 390x844, got {text!r}") from None
+    return [width, height]
 
 
 def _now_ms():

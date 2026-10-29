@@ -3,6 +3,7 @@
 import copy
 import json
 import math
+import re
 
 from avatar import CORNERS, DEFAULT_CORNER, DEFAULT_SIZE, MAX_SIZE, MIN_SIZE
 from narration import Narration, PhraseError
@@ -10,6 +11,8 @@ from voice_config import validate_voice
 
 DEFAULT_VIEWPORT = {"width": 1920, "height": 1080}
 ACTION_TYPES = ("point", "click", "dblclick", "key", "type", "scroll", "back", "wait", "upload")
+DEVICES = ("desktop", "phone")
+DEFAULT_PHONE = {"width": 390, "height": 844, "background": "#202124"}
 PURPOSES = ("feature-announcement", "customer-tutorial", "sales-walkthrough", "custom")
 
 
@@ -50,13 +53,11 @@ def validate_spec(spec):
     _validate_metadata(result)
     _validate_avatar(result)
     viewport = result.setdefault("viewport", dict(DEFAULT_VIEWPORT))
-    if not isinstance(viewport, dict) or not all(
-        isinstance(viewport.get(side), int)
-        and not isinstance(viewport[side], bool)
-        and viewport[side] > 0
-        for side in ("width", "height")
-    ):
+    if not isinstance(viewport, dict) or not _whole_sizes(viewport):
         raise SpecError('viewport must be { "width", "height" } in positive whole pixels')
+    _validate_phone(result)
+    default_device = result.get("device", "desktop")
+    _check_device(default_device, "device")
     scenes = result.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise SpecError("demo spec must have a 'scenes' list with at least one scene")
@@ -66,6 +67,7 @@ def validate_spec(spec):
             raise SpecError(f"scene {index}: must be a JSON object, got {scene!r}")
         where = _describe(index, scene)
         _validate_checks(scene, where)
+        _check_device(scene.setdefault("device", default_device), f"{where}: device")
         scene_id = scene.get("id")
         if not scene_id:
             raise SpecError(f"{where}: missing id")
@@ -148,6 +150,31 @@ def _validate_avatar(spec):
             f"avatar.size must be a number from {MIN_SIZE} to {MAX_SIZE} "
             "(the photo's diameter as a share of the video's height)"
         )
+
+
+def _whole_sizes(box):
+    return all(
+        isinstance(box.get(side), int) and not isinstance(box[side], bool) and box[side] > 0
+        for side in ("width", "height")
+    )
+
+
+def _check_device(device, label):
+    if device not in DEVICES:
+        raise SpecError(f"{label} must be one of {', '.join(DEVICES)}, got {device!r}")
+
+
+def _validate_phone(spec):
+    phone = spec.setdefault("phone", {})
+    if not isinstance(phone, dict):
+        raise SpecError('phone must be { "width", "height", "background" }')
+    for field, value in DEFAULT_PHONE.items():
+        phone.setdefault(field, value)
+    if not _whole_sizes(phone):
+        raise SpecError("phone width and height must be positive whole CSS pixels")
+    background = phone["background"]
+    if not isinstance(background, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
+        raise SpecError(f"phone.background must be a #rrggbb colour, got {background!r}")
 
 
 def _non_empty(value):

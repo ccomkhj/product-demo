@@ -15,7 +15,8 @@ drawn into the video, with libass when ffmpeg has the `subtitles` filter,
 otherwise as cue images rendered by rsvg-convert and overlaid; --no-burn-subs
 leaves them out, and --burn-subs fails instead of warning when neither is there.
 A spec with an ``avatar`` also gets the presenter bubble drawn in its corner (see
-avatar.py), and subtitles at the same edge keep clear of it.
+avatar.py), and subtitles at the same edge keep clear of it. Phone scenes are cropped to
+their recorded page and drawn in the phone frame on the backdrop (see phone_frame.py).
 
 Each scene is cut from the raw recording into segments at its beat markers,
 their frozen frames are dropped with mpdecimate, each segment is held back until
@@ -38,8 +39,9 @@ from xml.sax.saxutils import escape as xml_escape
 
 import demo_paths
 import edit_map
+import phone_frame
 import proc
-from avatar import Avatar, burn_avatar, geometry
+from avatar import Avatar, burn_avatar, even, geometry
 from demo_spec import SpecError, load_spec, read_json_object
 from edit_plan import FPS, PlanError, build_plan, load_timeline
 from subtitles import srt_text
@@ -136,16 +138,29 @@ def sync_cmd(parts, out):
     ]
 
 
-def fit_cmd(src, scene_fit, frames, viewport, out):
-    """Apply a fit to a decimated segment, scale to the viewport, emit exactly ``frames``."""
-    width, height = _even(viewport["width"]), _even(viewport["height"])
+def viewport_filters(viewport):
+    """A desktop take may not match the viewport exactly, so letterbox rather than stretch."""
+    width, height = _frame(viewport)
+    return [
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+    ]
+
+
+def screen_filters(crop, geo):
+    """The take around a phone page is window chrome and bars nobody should see."""
+    x, y, width, height = crop
+    return [f"crop={width}:{height}:{x}:{y}", f"scale={geo.screen_width}:{geo.screen_height}"]
+
+
+def fit_cmd(src, scene_fit, frames, placement, out):
+    """Apply a fit to a decimated segment, place it with ``placement``, emit exactly ``frames``."""
     filters = []
     if scene_fit.speed != 1.0:
         filters.append(f"setpts=PTS/{scene_fit.speed:.6f}")
     filters += [
         f"fps={FPS}",
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+        *placement,
         "setsar=1",
         # Always clone the last frame a little past the target, then cut at
         # exactly ``frames``: covers the hold and any rounding short-fall.
@@ -213,8 +228,10 @@ def concat_audio_cmd(wavs_and_lengths, out):
     ]
 
 
-# ffmpeg renders an .srt on a 384 x 288 libass canvas; side margins are in its units.
-LIBASS_WIDTH, LIBASS_MARGIN = 384, 10
+# ffmpeg renders an .srt on a 384 x 288 libass canvas; the style below is in its units.
+LIBASS_WIDTH, LIBASS_HEIGHT, LIBASS_MARGIN = 384, 288, 10
+LIBASS_FONT, LIBASS_MARGIN_V = 18, 18
+OVERLAY_BOTTOM = 0.04  # of the height: the gap under an overlaid cue
 
 
 def subtitles_burn_cmd(video, srt_name, out, side_margin=LIBASS_MARGIN):
@@ -224,8 +241,8 @@ def subtitles_burn_cmd(video, srt_name, out, side_margin=LIBASS_MARGIN):
     so the lines stay centred.
     """
     style = (
-        "FontName=Helvetica,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-        f"BorderStyle=1,Outline=1.5,Shadow=0,MarginV=18,"
+        f"FontName=Helvetica,FontSize={LIBASS_FONT},PrimaryColour=&H00FFFFFF,"
+        f"OutlineColour=&H00000000,BorderStyle=1,Outline=1.5,Shadow=0,MarginV={LIBASS_MARGIN_V},"
         f"MarginL={side_margin},MarginR={side_margin}"
     )
     return [
@@ -334,7 +351,8 @@ def transcript_text(title, plan):
     """Render the narration as Markdown: the demo title, then each scene's title and narration."""
     lines = [f"# {title}", ""]
     for scene in plan.scenes:
-        lines += [f"## {scene.title}", "", scene.narration.strip(), ""]
+        label = " (phone)" if scene.device == "phone" else ""
+        lines += [f"## {scene.title}{label}", "", scene.narration.strip(), ""]
     return "\n".join(lines)
 
 
@@ -404,7 +422,7 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir, reserve=0):
     width, height = _frame(viewport)
     if method is BurnMethod.SUBTITLES:
         (work_dir / "subs.srt").write_text(srt_text(cues), encoding="utf-8")
-        margin = max(LIBASS_MARGIN, math.ceil(reserve * LIBASS_WIDTH / width))
+        margin = _libass_side_margin(reserve, width)
         run(
             subtitles_burn_cmd(Path(video).resolve(), "subs.srt", Path(out).resolve(), margin),
             cwd=work_dir,
@@ -416,7 +434,7 @@ def burn_subtitles(video, cues, viewport, method, out, work_dir, reserve=0):
         svg_path, png = work_dir / f"cue-{index:03d}.svg", work_dir / f"cue-{index:03d}.png"
         svg_path.write_text(svg, encoding="utf-8")
         run(svg_to_png_cmd(svg_path, png))
-        y = max(0, height - strip_h - round(height * 0.04))
+        y = max(0, height - strip_h - round(height * OVERLAY_BOTTOM))
         overlays.append((png, cue.start_s, cue.end_s, y))
     if not overlays:
         shutil.copyfile(video, out)
@@ -451,9 +469,95 @@ class RawVideo:
         """The decimated file of a window that ``frames`` measured."""
         return self._decimated[(trim_start, trim_end)]
 
+    def size(self):
+        """Phone crops are in take pixels, which only the file itself knows."""
+        self._check()
+        out = run(proc.ffprobe_cmd(self.path, "stream=width,height", "v", "csv=p=0"))
+        width, height = out.strip().split(",")[:2]
+        return int(width), int(height)
+
     def _check(self):
         if not self.path.is_file():
             raise ComposeError(f"raw recording not found: {self.path}")
+
+
+def phone_crops(plan, phone, raw_video):
+    """A phone scene recorded at the wrong size should fail here, not be squashed silently."""
+    phone_scenes = [scene for scene in plan.scenes if scene.device == "phone"]
+    if not phone_scenes:
+        return {}
+    take = raw_video.size()
+    crops = {}
+    for scene in phone_scenes:
+        crop = scene.phone_page.crop(*take)
+        if phone_frame.too_wide(crop[2], crop[3], phone):
+            raise ComposeError(
+                f"phone scene '{scene.id}' is {crop[2]}x{crop[3]} px in the take, not "
+                "phone-shaped; re-record it with the page resized and emulated to the "
+                "phone size (see references/mcp-recipes.md) instead of a desktop page"
+            )
+        crops[scene.id] = crop
+    return crops
+
+
+class PhoneFrame:
+    """The frame's PNGs are drawn once per page size, so phone scenes of one size share them."""
+
+    def __init__(self, geo, spec, work_dir, name):
+        self.geo = geo
+        self.viewport = _frame(spec["viewport"])
+        self.background = spec["phone"]["background"]
+        self.mask = Path(work_dir) / f"phone-mask-{name}.png"
+        self.body = Path(work_dir) / f"phone-body-{name}.png"
+        run(phone_frame.mask_cmd(geo, self.mask))
+        run(phone_frame.body_cmd(geo, self.body))
+
+
+def phone_frames(plan, crops, spec, reserve, work_dir):
+    """Pages of different shapes need their own frames, or later ones would be stretched."""
+    viewport = _frame(spec["viewport"])
+    band = subtitle_band(
+        [cue.text for cue in plan.cues if cue.scene_id in crops], spec["viewport"], reserve
+    )
+    drawn, frames = {}, {}
+    for scene_id, (_, _, page_w, page_h) in crops.items():
+        if (page_w, page_h) not in drawn:
+            geo = phone_frame.geometry(page_w, page_h, *viewport, band)
+            if geo.screen_height < viewport[1] / 3:
+                raise ComposeError(
+                    f"phone scene '{scene_id}' has no room for the phone above its subtitles; "
+                    "split the phone scenes' long narration into shorter sentences"
+                )
+            drawn[page_w, page_h] = PhoneFrame(geo, spec, work_dir, len(drawn))
+        frames[scene_id] = drawn[page_w, page_h]
+    return frames
+
+
+def subtitle_band(texts, viewport, reserve=0):
+    """Phone frames sit above the deepest cue either burn method may draw, so none covers a screen."""
+    width, height = _frame(viewport)
+    return max(
+        (max(_libass_band(text, width, height, reserve), _overlay_band(text, width, height, reserve))
+         for text in texts),
+        default=0,
+    )  # fmt: skip
+
+
+def _libass_band(text, width, height, reserve):
+    """libass wraps on its own, so assume wide glyphs (0.6 em) and tall lines (1.25 em)."""
+    scale = height / LIBASS_HEIGHT
+    side = _libass_side_margin(reserve, width) * width / LIBASS_WIDTH
+    per_line = max(1, int((width - 2 * side) / (LIBASS_FONT * scale * 0.6)))
+    lines = len(textwrap.wrap(text, per_line)) or 1
+    return math.ceil((LIBASS_MARGIN_V + lines * LIBASS_FONT * 1.25) * scale)
+
+
+def _overlay_band(text, width, height, reserve):
+    return cue_svg(text, width, height, reserve)[1] + round(height * OVERLAY_BOTTOM)
+
+
+def _libass_side_margin(reserve, width):
+    return max(LIBASS_MARGIN, math.ceil(reserve * LIBASS_WIDTH / width))
 
 
 def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=None, avatar=None):
@@ -469,6 +573,9 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     for scene_id, wav in wavs.items():
         if not wav.is_file():
             raise ComposeError(f"narration audio for scene '{scene_id}' not found: {wav}")
+    reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
+    crops = phone_crops(plan, spec["phone"], raw_video)
+    frames = phone_frames(plan, crops, spec, reserve, work_dir)
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
@@ -483,7 +590,15 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
             synced = work_dir / f"{index:03d}-synced.mp4"
             run(sync_cmd(parts, synced))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        run(fit_cmd(synced, scene.fit, scene.frames, spec["viewport"], fitted))
+        if scene.id in frames:
+            frame = frames[scene.id]
+            screen = work_dir / f"{index:03d}-screen.mp4"
+            placement = screen_filters(crops[scene.id], frame.geo)
+            run(fit_cmd(synced, scene.fit, scene.frames, placement, screen))
+            run(phone_frame.frame_cmd(screen, frame, scene.frames, FPS, X264, fitted))
+        else:
+            placement = viewport_filters(spec["viewport"])
+            run(fit_cmd(synced, scene.fit, scene.frames, placement, fitted))
         list_lines.append(f"file '{fitted.as_posix()}'")
         audio_parts.append((wavs[scene.id], scene.scene_s))
     list_file = work_dir / "scenes.txt"
@@ -493,7 +608,6 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
     run(concat_video_cmd(list_file, video))
     run(concat_audio_cmd(audio_parts, audio))
     if method is not None:
-        reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
         burned = work_dir / "burned.mp4"
         burn_subtitles(video, plan.cues, spec["viewport"], method, burned, work_dir, reserve)
         video = burned
@@ -582,6 +696,7 @@ def main(argv=None):
         print(
             f"{scene.id}\t{scene.fit.strategy}\t{scene.fit.speed:.2f}x\t"
             f"video {scene.video_s:.3f}s\taudio {scene.audio_s:.3f}s\tscene {scene.scene_s:.3f}s"
+            + ("\tphone" if scene.device == "phone" else "")
         )
         for action in actions.get(scene.id, ()):
             print(action_line(action))
@@ -615,12 +730,8 @@ def spec_avatar(spec, demo_dir):
     return Avatar(image, fields["corner"], fields["size"])
 
 
-def _even(value):
-    return int(value) - int(value) % 2
-
-
 def _frame(viewport):
-    return _even(viewport["width"]), _even(viewport["height"])
+    return even(viewport["width"]), even(viewport["height"])
 
 
 if __name__ == "__main__":

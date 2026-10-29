@@ -80,6 +80,23 @@ class Segment:
 
 
 @dataclass(frozen=True)
+class PhonePage:
+    """The take holds the whole window, so compose needs these to crop out the phone page."""
+
+    window: tuple  # (width, height) in CSS pixels before emulation, from the start mark
+    page: tuple  # (width, height) in CSS pixels after emulation
+    dpr: float  # the screen's device pixel ratio (see ADR-0011)
+
+    def crop(self, take_width, take_height):
+        """The screencast centres the window at dpr pixels per CSS pixel; the page is its top left."""
+        window_w, window_h = (side * self.dpr for side in self.window)
+        page_w, page_h = (round(side * self.dpr) for side in self.page)
+        x = max(0, round((take_width - window_w) / 2))
+        y = max(0, round((take_height - window_h) / 2))
+        return x, y, min(page_w, take_width - x), min(page_h, take_height - y)
+
+
+@dataclass(frozen=True)
 class ScenePlan:
     """One scene of the edit plan.
 
@@ -102,6 +119,8 @@ class ScenePlan:
     fit: Fit
     offset_s: float
     segments: tuple = ()
+    device: str = "desktop"
+    phone_page: "PhonePage | None" = None  # phone scenes only
 
     @property
     def frames(self):
@@ -224,7 +243,9 @@ def build_plan(spec, timeline, durations, video):
         if scene_id not in windows:
             raise PlanError(f"scene '{scene_id}' has no start marker in the timeline")
         audio_s = _duration(durations, scene_id)
-        trim_start, trim_end, beats = windows[scene_id]
+        trim_start, trim_end, beats, start_event = windows[scene_id]
+        device = scene.get("device", "desktop")
+        page = _phone_page(scene_id, start_event) if device == "phone" else None
         phrases = [action["at"] for action in scene.get("actions", []) if "at" in action]
         anchors = [
             audio_s * share for share in Narration(scene["narration"]).phrase_shares(phrases)
@@ -254,6 +275,8 @@ def build_plan(spec, timeline, durations, video):
                 fit=fit(0.0, audio_s),
                 offset_s=0.0,
                 segments=segments,
+                device=device,
+                phone_page=page,
             )
         )
     return _lay_out([_measure(scene, video) for scene in scenes], flash_s)
@@ -281,7 +304,7 @@ def load_timeline(path):
 
 
 def _scene_windows(timeline, spec_ids, video):
-    """Return ({scene id: (start, end, beats)} in raw-video seconds, flash_s), validating.
+    """Return ({scene id: (start, end, beats, start event)} in raw-video seconds, flash_s), validating.
 
     Every timeline scene must be one of ``spec_ids``; that is checked before its
     markers are paired, so a stray scene is reported as such. Only the events after the last ``rec_start`` count: each re-recording appends
@@ -309,7 +332,7 @@ def _scene_windows(timeline, spec_ids, video):
             )
         origin_ms = sync - flash_s * 1000
 
-    marks, beats = {}, {}
+    marks, beats, start_events = {}, {}, {}
     for event in timeline[rec_starts[-1] + 1 :]:
         kind = event.get("event")
         if kind not in ("start", "beat", "end"):
@@ -324,6 +347,8 @@ def _scene_windows(timeline, spec_ids, video):
         if kind in scene_marks:
             raise PlanError(f"scene '{scene_id}' has more than one {kind} marker")
         scene_marks[kind] = _t_ms(event)
+        if kind == "start":
+            start_events[scene_id] = event
 
     for scene_id in marks:
         if scene_id not in spec_ids:
@@ -353,6 +378,7 @@ def _scene_windows(timeline, spec_ids, video):
             (start_ms - origin_ms) / 1000,
             (end_ms - origin_ms) / 1000,
             tuple((beat_ms - origin_ms) / 1000 for beat_ms in scene_beats),
+            start_events[scene_id],
         )
     return windows, flash_s
 
@@ -372,6 +398,25 @@ def _duration(durations, scene_id):
             f"scene '{scene_id}' has duration {seconds!r}; it must be positive (re-run tts.py)"
         )
     return float(seconds)
+
+
+def _phone_page(scene_id, start_event):
+    """Compose can't find the page in a phone scene's frames without the recorded sizes."""
+    window, page, dpr = (start_event.get(key) for key in ("window", "page", "dpr"))
+    if not (_size(window) and _size(page) and _positive(dpr)):
+        raise PlanError(
+            f"phone scene '{scene_id}' has no window, page and dpr on its start marker; "
+            "mark it with `mark.py TIMELINE start SCENE --window WxH --page WxH --dpr N`"
+        )
+    return PhonePage(tuple(window), tuple(page), dpr)
+
+
+def _size(value):
+    return isinstance(value, list) and len(value) == 2 and all(map(_positive, value))
+
+
+def _positive(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
 def _t_ms(event):
