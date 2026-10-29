@@ -3,7 +3,7 @@
 The exact call sequences to use when recording a demo. Follow them literally. Every call
 below was run against the Chrome DevTools MCP (`mcp__chrome-devtools__*`). If the tools
 are deferred, load them first with
-`ToolSearch("select:mcp__chrome-devtools__list_pages,mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__upload_file,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__screencast_start,mcp__chrome-devtools__screencast_stop")`.
+`ToolSearch("select:mcp__chrome-devtools__list_pages,mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__emulate,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__press_key,mcp__chrome-devtools__type_text,mcp__chrome-devtools__upload_file,mcp__chrome-devtools__wait_for,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__screencast_start,mcp__chrome-devtools__screencast_stop")`.
 
 Every tool takes `pageId`. Get it once with `list_pages` (the selected page is marked
 `[selected]`) and use the same id for the whole recording.
@@ -15,7 +15,8 @@ Every tool takes `pageId`. Get it once with `list_pages` (the selected page is m
 - **Re-inject the overlay after every navigation**: after every `navigate_page`
   (url, back, forward, reload) and after any `click` whose result says
   `Page navigated to ...`. Injecting again on a page that already has the overlay is safe:
-  it returns `"overlay already present"`.
+  it returns `"overlay already present"`. Every injection is followed by
+  `__demo.device(...)` with the current scene's device (see Overlay injection).
 - **Point before every click.** `__demo.point` makes the fake cursor glide to the target,
   so viewers see where the click is going.
 - **Badge before Back.** Show `◀ Back` before `navigate_page` with `type: "back"`.
@@ -42,6 +43,16 @@ evaluate_script({ pageId, sourcePath: "${CLAUDE_PLUGIN_ROOT}/assets/overlay.js",
 It returns `"overlay installed"` the first time on a document and
 `"overlay already present"` after that.
 
+Then, after every injection, set the overlay's device mode to the device of the scene
+being recorded (or about to be: the gap before a scene counts as that scene):
+
+```
+evaluate_script({ pageId, function: "() => __demo.device('phone')" })   // or 'desktop'
+```
+
+A scene's device is its own `device`, else the demo spec's top-level `device`, else
+`"desktop"`. The mode is per document, so a new page starts in desktop mode until told.
+
 `sourcePath` only works when the file is inside one of the MCP server's workspace roots
 (normally the directory Claude Code was started in). Otherwise the call fails with
 `Access denied: path "..." is not within any of the configured workspace roots`. In that
@@ -64,7 +75,9 @@ Called with `evaluate_script` (default `format: "function"`, so `args` work):
 
 | Call | Effect |
 |------|--------|
-| `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. |
+| `__demo.device(mode)` | `"desktop"` or `"phone"`. In phone mode the arrow cursor is hidden, clicks are drawn as a fingertip plus the ripple where they land, and `point` hovers a fingertip on the target instead of gliding. Keycaps, badges, captions and the flash are the same in both. |
+| `__demo.point(el)` | Glides the cursor to the element's centre (~600 ms). Scrolls it into view first if it is off screen. Resolves when the glide ends. `el` may also be a CSS selector. In phone mode a fingertip hovers on the element for the same ~600 ms instead. |
+| `__demo.tap(el)` | Draws a click on the element (ripple, or fingertip and ripple in phone mode) without sending one. Only for a click the recipe can't send (see upload). |
 | `__demo.badge(text[, ms])` | Transient badge at the top left (default 1500 ms). Resolves after ~700 ms, so awaiting it before a navigation keeps it on screen long enough to be recorded. |
 | `__demo.upload(files)` | Badge naming what an `upload` added: `📎 clip.mp4` for one file, a count and kind for several (`📎 3 videos`, `📎 2 images`; mixed kinds say `files`). Resolves like `badge`. |
 | `__demo.caption(text)` | Lower-third caption at the bottom left. It stays until replaced. `caption("")` hides it. |
@@ -89,6 +102,9 @@ checking the current session. Capability discovery does not prove capture succee
    (1611×906 for 16:9). `compose.py` scales the recording to `viewport`, and on a
    Retina screen the recording is at 2× pixel density, so the output stays sharp. Don't use `emulate`'s
    `viewport` for this: the screencast crops the emulated page to the real window.
+   Do this at the desktop size **even when every scene is a phone scene**, with no
+   emulation on: the take's pixel size is fixed when the screencast starts, and the sync
+   flash must fill it. Phone scenes switch later, in the gap before them (Phone scenes below).
 3. `navigate_page({ pageId, type: "url", url: "<first scene url>" })`.
 4. Inject the overlay (see above).
 5. `screencast_start({ pageId, filePath: "<abs path>/demos/<slug>/raw.mp4" })`. The output is
@@ -112,12 +128,16 @@ checking the current session. Capability discovery does not prove capture succee
 
 Then, for each scene in spec order:
 
-1. If the browser isn't on the scene's `url` yet, `navigate_page` there and re-inject the
-   overlay. Do this **before** the start marker, so the page load falls in the gap between
+1. If the scene's device differs from the previous scene's (the first scene counts as
+   following a desktop one), switch now with the Phone scenes recipe below. If the browser
+   isn't on the scene's `url` yet, `navigate_page` there and re-inject the overlay. Do both
+   **before** the start marker, so the switch and the page load fall in the gap between
    scenes, which compose drops.
 2. Evaluate this scene's `prerequisites` using the checks in `readiness.md`, with fresh
    snapshots and at most 10 seconds per condition. On failure or ambiguity, stop the take.
-   Only after they pass: `uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`
+   Only after they pass: `uv run --project ${CLAUDE_PLUGIN_ROOT} python ${CLAUDE_PLUGIN_ROOT}/scripts/mark.py demos/<slug>/timeline.jsonl start <scene-id>`.
+   For a phone scene, add the sizes the switch read:
+   `... start <scene-id> --window <W>x<H> --page <w>x<h> --dpr <dpr>`.
 3. Run the scene's actions with the recipes below. Right before each action that has an
    `at`, mark a beat, after any snapshot that action needs but before its first visible
    step (the `point` of a click):
@@ -141,7 +161,51 @@ If stopping itself fails, report that failure and try to stop through the same M
 never claim capture ended without confirmation.
 
 At the end: `screencast_stop({ pageId })`. It returns
-`The screencast recording has been stopped and saved to <path>`.
+`The screencast recording has been stopped and saved to <path>`. If the last scene was a
+phone scene, switch back to desktop afterwards, so the browser is left as it was found.
+
+## Phone scenes
+
+A phone scene is recorded in a phone-sized, touch-enabled page, so the app renders its own
+phone layout; compose crops it and draws the phone frame (ADR-0011). The phone size is the
+spec's `phone.width` × `phone.height` (default 390×844). The switch reloads the page, so a
+phone scene starts from a fresh load: it loses page state and the overlay.
+
+**Why `emulate` here, despite the warning above.** Only `emulate` turns on touch and
+mobile, which apps read from `(pointer: coarse)`. The warning is about an emulated page
+*bigger* than the real window, which the screencast crops. Here the window is resized
+first and the emulated height is set to the height the window got, so the page is never
+bigger than the window. Chrome's 500 px minimum window width leaves a strip of page
+background beside the 390 px page; compose crops it away.
+
+**Phone on**, in the gap before a phone scene that follows a desktop one:
+
+1. `evaluate_script({ pageId, function: "() => devicePixelRatio" })` → `dpr` (read before
+   emulating).
+2. `resize_page({ pageId, width: <phone.width>, height: <phone.height> })`, then
+   `evaluate_script({ pageId, function: "() => [innerWidth, innerHeight]" })` → the window
+   `[W, H]`, such as `[500, 836]`. Let `h` be the smaller of the phone height and `H`.
+3. `emulate({ pageId, viewport: "<phone.width>x<h>x<dpr>,mobile,touch" })`, such as
+   `"390x836x1,mobile,touch"`. The page reloads.
+4. Re-inject the overlay, then `__demo.device('phone')`.
+5. Check `[innerWidth, innerHeight]` is `[<phone.width>, h]` and
+   `matchMedia('(pointer: coarse)').matches` is `true`. Otherwise stop the take: the app
+   would render its desktop layout. The start mark takes `--window <W>x<H> --page
+   <phone.width>x<h> --dpr <dpr>`. A later phone scene right after this one needs no new
+   switch; its start mark repeats the same three values.
+
+**Phone off**, in the gap before a desktop scene that follows a phone one:
+
+1. `emulate({ pageId })` with no `viewport`: each call replaces every emulation setting.
+   The page reloads.
+2. `resize_page` back to the desktop size the take started at (such as 1486×836) and check
+   `[innerWidth, innerHeight]` is that size.
+3. Re-inject the overlay, then `__demo.device('desktop')`.
+
+Still one tab, one screencast and one sync flash per take (ADR-0004). The flash always
+runs before the first switch, at the desktop size. Inside a phone scene, every action
+recipe below works unchanged, `at` phrases and beats included; the overlay draws taps and
+hovers instead of the cursor.
 
 ## Action recipes
 
@@ -212,7 +276,20 @@ folder (`demos/<slug>/`), like `avatar.image`. Local preflight has already check
 3. `evaluate_script({ pageId, function: "(el) => __demo.point(el)", args: ["<uid>"] })`
 4. `upload_file({ pageId, uid: "<uid>", filePaths: ["<absolute path>", ...] })`, all files in
    one call. On a control that opens a file chooser it clicks the control (the overlay draws
-   the ripple) and answers the chooser with the files; the page gets real files.
+   the ripple) and answers the chooser with the files; the page gets real files. The paths
+   must be inside the MCP workspace roots, like `screencast_start`'s `filePath`; a demo
+   folder under the working directory is.
+   **Several files on a control** fail with `Multiple file uploads only work with <input
+   type=file multiple>`, and nothing is clicked (an MCP limitation, desktop and phone
+   alike). Upload to the input itself instead, and draw the tap with the overlay:
+   1. `evaluate_script({ pageId, args: ["<uid>"], function: "(el) => __demo.tap(el)" })`.
+      Don't `click` the control: with no upload waiting for it, the chooser it opens may be
+      the native OS dialog, left open.
+   2. Unhide the input next to it:
+      `evaluate_script({ pageId, function: "() => { const f = document.querySelector('input[type=file]'); f.hidden = false; f.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01'; }" })`
+      (narrow the selector when the page has several file inputs).
+   3. `take_snapshot({ pageId })` lists it as a `button "Choose Files"`; `upload_file` on
+      that uid with all the files. The page gets one `change` with every file.
 5. If the result says `Page navigated to ...`, re-inject the overlay.
 6. `evaluate_script({ pageId, function: "() => __demo.upload(<paths>)" })` shows the badge.
    `args` takes element uids only, so the paths go inline: JSON-encode the list (double

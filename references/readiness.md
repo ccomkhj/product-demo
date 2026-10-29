@@ -65,6 +65,17 @@ and regenerate TTS. Do not silently cut text or accelerate speech.
    the requested aspect ratio and restore the first scene's entry state before capture.
    If inspection altered history needed by a Back action, reestablish that entry history
    before starting; do not assume inspecting later pages was harmless.
+6. If any scene is a phone scene, run the phone switch from `mcp-recipes.md` (Phone scenes)
+   once on the first phone scene's page, then check both:
+   - `evaluate_script({ pageId, function: "() => [innerWidth, innerHeight]" })` gives the
+     phone width and `H` (the smaller of the phone height and the window height `resize_page`
+     got). Anything else, such as the desktop width, means emulation didn't apply.
+   - `evaluate_script({ pageId, function: "() => matchMedia('(pointer: coarse)').matches" })`
+     is `true`. With `false`, the app renders its desktop layout.
+   Take a screenshot and confirm the page shows its phone layout. Record the size got
+   (and the window size, if it differs) and the coarse result. A mismatch blocks recording:
+   don't start the screencast. Then switch back to desktop and check `[innerWidth,
+   innerHeight]` is the desktop size again, before restoring the first scene's entry state.
 
 ## Scene conditions
 
@@ -105,6 +116,7 @@ Run: <timestamp>; take: <rec_start t_ms, or not started>
 Local checks: <ready/blocked, selected backend, warnings and remedies>
 Narration: <measured seconds, target if any, accepted overrun if applicable>
 Browser: <selected page, entry access, auth evidence, actual viewport>
+Phone: <none, or asked 390x844, got page 390x836 (window 500x836), pointer: coarse true>
 
 | Condition | Status | Evidence |
 |-----------|--------|----------|
@@ -138,6 +150,13 @@ For a state-dependent second scene, use the “Export details” region revealed
 Export. Defer its prerequisite initially, then verify on natural entry without navigating
 away. For authentication, use a user-provided test app with an expired session: confirm the
 manual sign-in handoff and rerun checks after login. The fixture does not model real auth.
+
+For phone scenes, serve `tests/fixtures/phone.html` the same way. It picks its layout from
+`(pointer: coarse)`, not from width, so a narrow desktop window still shows "Desktop layout"
+on blue. Run a desktop → phone → desktop take on it (each scene clicks Tap me). Readiness
+step 6 must pass; the phone scene must show "Phone layout" on green with full-width
+buttons and fingertip taps, and both desktop scenes the blue desktop layout with the cursor.
+With emulation skipped, step 6 fails on `pointer: coarse` and blocks recording.
 
 Generate a short announcement from the successful fixture workflow, then verify its MP4,
 SRT and transcript with `verify.md`. Record actual observations and environment blockers;
