@@ -21,7 +21,7 @@ MAX_ASPECT_STRETCH = 1.2
 
 @dataclass(frozen=True)
 class Geometry:
-    """Where the frame sits in the video, in pixels: its outer box at (x, y), and its screen."""
+    """The mask, the body and the scene must all agree on one layout, in video pixels."""
 
     x: int
     y: int
@@ -55,7 +55,7 @@ def geometry(page_width, page_height, width, height, clear_below):
 
 
 def too_wide(crop_width, crop_height, phone):
-    """Whether a cropped page is too far from the phone's shape to be a phone recording."""
+    """A desktop page framed as a phone would be squashed, so compose refuses it instead."""
     return crop_width / crop_height > MAX_ASPECT_STRETCH * phone["width"] / phone["height"]
 
 
@@ -63,7 +63,7 @@ def too_wide(crop_width, crop_height, phone):
 
 
 def mask_cmd(geo, out):
-    """The screen's rounded corners as a grey mask (white inside), the screen's size."""
+    """A page is square-cornered; the mask rounds it to look like a phone's screen."""
     inside = _rounded(geo.screen_width, geo.screen_height, geo.radius)
     return _png_cmd(
         f"color=c=black:s={geo.screen_width}x{geo.screen_height}",
@@ -73,7 +73,7 @@ def mask_cmd(geo, out):
 
 
 def body_cmd(geo, out, colour=BODY_COLOUR):
-    """The device body: a dark rounded rectangle the size of the whole frame."""
+    """The body is what makes the screen read as a phone rather than a floating page."""
     outside = _rounded(geo.width, geo.height, geo.radius + geo.bezel)
     return _png_cmd(
         f"color=c={colour}:s={geo.width}x{geo.height}",
@@ -83,7 +83,7 @@ def body_cmd(geo, out, colour=BODY_COLOUR):
 
 
 def frame_cmd(screen, frame, frames, fps, x264, out):
-    """Draw a screen-sized scene into ``frame`` on the backdrop, exactly ``frames`` long."""
+    """Concat needs every scene at the video's size and exact length, phone or not."""
     geo, (width, height) = frame.geo, frame.viewport
     graph = (
         f"color=c={frame.background.replace('#', '0x')}:s={width}x{height}:r={fps}[bg];"
@@ -110,7 +110,7 @@ def _png_cmd(source, chain, out):
 
 
 def _rounded(width, height, radius):
-    """A geq expression: 255 inside a rounded ``width`` x ``height`` box, with a smooth edge."""
+    """ffmpeg has no rounded-rectangle source, so geq draws one, anti-aliased."""
     dx = f"max(abs(X+0.5-{width / 2})-{width / 2 - radius},0)"
     dy = f"max(abs(Y+0.5-{height / 2})-{height / 2 - radius},0)"
     return f"255*clip({radius}-hypot({dx},{dy})+0.5,0,1)"

@@ -139,7 +139,7 @@ def sync_cmd(parts, out):
 
 
 def viewport_filters(viewport):
-    """A desktop scene fills the viewport, letterboxed if its shape differs."""
+    """A desktop take may not match the viewport exactly, so letterbox rather than stretch."""
     width, height = _frame(viewport)
     return [
         f"scale={width}:{height}:force_original_aspect_ratio=decrease",
@@ -148,7 +148,7 @@ def viewport_filters(viewport):
 
 
 def screen_filters(crop, geo):
-    """A phone scene keeps only its page, scaled to the phone frame's screen."""
+    """The take around a phone page is window chrome and bars nobody should see."""
     x, y, width, height = crop
     return [f"crop={width}:{height}:{x}:{y}", f"scale={geo.screen_width}:{geo.screen_height}"]
 
@@ -470,7 +470,7 @@ class RawVideo:
         return self._decimated[(trim_start, trim_end)]
 
     def size(self):
-        """(width, height) in pixels: fixed for the whole take when the screencast started."""
+        """Phone crops are in take pixels, which only the file itself knows."""
         self._check()
         out = run(proc.ffprobe_cmd(self.path, "stream=width,height", "v", "csv=p=0"))
         width, height = out.strip().split(",")[:2]
@@ -482,7 +482,7 @@ class RawVideo:
 
 
 def phone_crops(plan, phone, raw_video):
-    """{scene id: crop rect in the take} for phone scenes; a desktop-shaped one is an error."""
+    """A phone scene recorded at the wrong size should fail here, not be squashed silently."""
     phone_scenes = [scene for scene in plan.scenes if scene.device == "phone"]
     if not phone_scenes:
         return {}
@@ -514,7 +514,7 @@ class PhoneFrame:
 
 
 def phone_frames(plan, crops, spec, reserve, work_dir):
-    """{scene id: PhoneFrame}: each fits its own page, all above the deepest phone-scene cue."""
+    """Pages of different shapes need their own frames, or later ones would be stretched."""
     viewport = _frame(spec["viewport"])
     band = subtitle_band(
         [cue.text for cue in plan.cues if cue.scene_id in crops], spec["viewport"], reserve

@@ -81,18 +81,14 @@ class Segment:
 
 @dataclass(frozen=True)
 class PhonePage:
-    """Where a phone scene's page sits in the take, so compose can crop away the rest.
+    """The take holds the whole window, so compose needs these to crop out the phone page."""
 
-    window and page are (width, height) in CSS pixels, as the recipe read them on the
-    scene's start mark; dpr is the screen's device pixel ratio (see ADR-0011).
-    """
-
-    window: tuple
-    page: tuple
-    dpr: float
+    window: tuple  # (width, height) in CSS pixels before emulation, from the start mark
+    page: tuple  # (width, height) in CSS pixels after emulation
+    dpr: float  # the screen's device pixel ratio (see ADR-0011)
 
     def crop(self, take_width, take_height):
-        """(x, y, width, height) of the page in take pixels: the window centred at 1:1 x dpr."""
+        """The screencast centres the window at dpr pixels per CSS pixel; the page is its top left."""
         window_w, window_h = (side * self.dpr for side in self.window)
         page_w, page_h = (round(side * self.dpr) for side in self.page)
         x = max(0, round((take_width - window_w) / 2))
@@ -109,7 +105,6 @@ class ScenePlan:
     audio_s: narration length. video_s: the video length the fit was worked out
     from: the segments' frames plus their leads.
     offset_s: where the scene starts in the final video (cumulative scene lengths).
-    device: "desktop" or "phone"; phone_page: where a phone scene's page sits in the take.
     The scene's length is the fit's length rounded to whole frames at FPS, which is
     exactly what compose cuts, so offsets and subtitle cues don't drift.
     """
@@ -125,7 +120,7 @@ class ScenePlan:
     offset_s: float
     segments: tuple = ()
     device: str = "desktop"
-    phone_page: "PhonePage | None" = None
+    phone_page: "PhonePage | None" = None  # phone scenes only
 
     @property
     def frames(self):
@@ -309,9 +304,7 @@ def load_timeline(path):
 
 
 def _scene_windows(timeline, spec_ids, video):
-    """Return ({scene id: (start, end, beats, start event)}, flash_s), validating.
-
-    start, end and beats are in raw-video seconds.
+    """Return ({scene id: (start, end, beats, start event)} in raw-video seconds, flash_s), validating.
 
     Every timeline scene must be one of ``spec_ids``; that is checked before its
     markers are paired, so a stray scene is reported as such. Only the events after the last ``rec_start`` count: each re-recording appends
