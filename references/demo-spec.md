@@ -227,3 +227,54 @@ voice mentions them.
   ]
 }
 ```
+
+## Phone worked example
+
+A QR code hand-off: the laptop shows a QR code, the phone picks the files, the laptop shows
+the result. Only the middle scene sets `device`; the others default to desktop. The sample
+clips live in the demo folder next to `demo.json`.
+
+```json
+{
+  "title": "From laptop to phone and back",
+  "product": "Stitchday",
+  "audience": "people who film on their phone and edit on a laptop",
+  "purpose": "feature-announcement",
+  "outcome": "Know that clips picked on the phone show up on the laptop",
+  "scenes": [
+    {
+      "id": "qr",
+      "title": "Scan to start",
+      "url": "https://stitchday.example/new",
+      "actions": [
+        { "type": "point", "target": "the QR code", "at": "scan this code" }
+      ],
+      "narration": "Start a project on your laptop, then scan this code with your phone. No cables, no emailing yourself."
+    },
+    {
+      "id": "pick",
+      "title": "Pick clips on the phone",
+      "device": "phone",
+      "url": "https://stitchday.example/join/demo",
+      "actions": [
+        {
+          "type": "upload",
+          "target": "the Add videos button",
+          "files": ["clips/beach.mp4", "clips/dinner.mp4", "clips/sunset.mp4"],
+          "at": "pick your clips"
+        }
+      ],
+      "narration": "On the phone, pick your clips straight from the camera roll, where they were going to sit forever anyway."
+    },
+    {
+      "id": "result",
+      "title": "Back on the laptop",
+      "url": "https://stitchday.example/project/demo",
+      "actions": [
+        { "type": "point", "target": "the three new clips in the timeline", "at": "already here" }
+      ],
+      "narration": "Back on the laptop, they're already here, in order, ready to cut."
+    }
+  ]
+}
+```
