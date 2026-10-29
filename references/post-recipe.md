@@ -136,8 +136,8 @@ re-encode), after click sounds and music, so no audio step drops them.
 
 ## `click_sounds`
 
-A short click one cursor glide (600 ms) after the start of each click, double-click and
-field click (`type`) whose start is in `<slug>.editmap.json`: each scene's first action and
+A short click one cursor glide (600 ms) after the start of each click, double-click,
+field click (`type`) and `upload` tap whose start is in `<slug>.editmap.json`: each scene's first action and
 every `at` action. Times go through the trim, cuts and speed. Needs the edit map.
 
 - `level`: 0 to 1, default 0.5.
