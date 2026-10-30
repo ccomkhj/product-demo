@@ -10,14 +10,14 @@ import sys
 import wave
 from pathlib import Path
 
-from voice_config import QWEN_MODEL, QWEN_REVISION, check_platform, pinned_snapshot
+from voice_config import QWEN_MODELS, check_platform, pinned_snapshot
 
 
 def load_local_model(model):
     from mlx_audio.tts.utils import load_model
 
-    if model == QWEN_MODEL:
-        model = pinned_snapshot(model, QWEN_REVISION)
+    if model in QWEN_MODELS:
+        model = pinned_snapshot(model, QWEN_MODELS[model].revision)
     return load_model(model)
 
 

@@ -221,23 +221,31 @@ def test_writer_rejects_no_results(tmp_path):
         qwen3_tts.write_audio([], tmp_path / "empty.wav")
 
 
-def test_local_snapshot_and_invalid_model(voice, tmp_path):
-    model = tmp_path / "my model"
-    model.mkdir()
-    (model / "config.json").write_text(
+def write_snapshot(path, hidden_size):
+    path.mkdir()
+    (path / "config.json").write_text(
         json.dumps(
             {
                 "model_type": "qwen3_tts",
                 "tts_model_type": "base",
-                "talker_config": {"hidden_size": 1024},
+                "talker_config": {"hidden_size": hidden_size},
             }
         )
     )
+
+
+@pytest.mark.parametrize("hidden_size", [1024, 2048])
+def test_local_snapshot_of_either_size(voice, tmp_path, hidden_size):
+    write_snapshot(tmp_path / "my model", hidden_size)
     assert resolve_voice_config({**voice, "model": "my model"}, "qwen3", tmp_path)["model"] == str(
-        model
+        tmp_path / "my model"
     )
-    (model / "config.json").write_text("{}")
-    with pytest.raises(ValueError, match="0.6B Base"):
+
+
+@pytest.mark.parametrize("hidden_size", [1536, None])
+def test_invalid_local_snapshot(voice, tmp_path, hidden_size):
+    write_snapshot(tmp_path / "my model", hidden_size)
+    with pytest.raises(ValueError, match="0.6B or 1.7B Base"):
         resolve_voice_config({**voice, "model": "my model"}, "qwen3", tmp_path)
 
 

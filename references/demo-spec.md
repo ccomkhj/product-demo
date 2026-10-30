@@ -98,11 +98,13 @@ Select `qwen3` explicitly to clone your voice on native Apple Silicon macOS:
 }
 ```
 
-The model defaults to the 0.6B Base identifier above; language defaults to English.
+The model defaults to the 0.6B Base identifier above; `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16`
+is also accepted (about 4.5 GB, not better at English speaker similarity per its model
+card). Language defaults to English.
 Record roughly 10–20 seconds of clean speech and supply its exact transcript.
 Reference paths are relative to `demo.json` (absolute paths also work). Keep recordings
 inside the ignored `demos/` directory. `model` also accepts a local snapshot directory
-of the same 0.6B Base model, resolved relative to the spec. Other model IDs and preset
+of a 0.6B or 1.7B Base model, resolved relative to the spec. Other model IDs and preset
 `voice.voice` values are rejected for this backend. Supported languages are English,
 Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian, and auto.
 

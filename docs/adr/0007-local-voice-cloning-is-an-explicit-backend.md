@@ -23,6 +23,10 @@ existing backends. Use `lang_code` in the pinned MLX public generation API. Pref
 pinned local snapshot without checking the network on a warm run. Initial installation
 and model download need network access; speech generation does not upload recordings.
 
+Amended 2026-10-31 (#10): also accept `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16`,
+revision `a6eb4f68e4b056f1215157bb696209bc82a6db48`, or its local snapshot; 0.6B stays
+the default because its model card scores higher on English speaker similarity.
+
 ## Consequences
 
 ADR-0005 remains valid: Kokoro is still the automatic free default. Existing backend
