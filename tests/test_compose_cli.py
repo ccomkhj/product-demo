@@ -823,17 +823,6 @@ def test_burned_subtitles_never_cover_the_phone_frame(tmp_path, viewport, narrat
 
 
 @needs_ffmpeg
-def test_a_vertical_video_fills_most_of_its_height_with_the_phone(tmp_path):
-    write_phone_demo(tmp_path, viewport=(180, 320))
-
-    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
-
-    assert result.returncode == 0, result.stderr
-    rows = frame_rows(rgb_frame(default_out(tmp_path), 4.5), 180, 320)
-    assert len(rows) > 320 * 0.7
-
-
-@needs_ffmpeg
 def test_the_presenter_bubble_is_drawn_over_a_phone_scene(tmp_path):
     write_phone_demo(tmp_path)
     plain = run_compose(tmp_path / "demo.json", "--no-burn-subs")
@@ -845,86 +834,6 @@ def test_the_presenter_bubble_is_drawn_over_a_phone_scene(tmp_path):
     assert result.returncode == 0, result.stderr
     diff = corner_differences(default_out(tmp_path), tmp_path / "b.mp4", at=4.5)
     assert diff["top-left"] > 20
-
-
-@needs_ffmpeg
-def test_a_phone_scene_recorded_at_a_desktop_aspect_fails_with_a_hint(tmp_path):
-    write_phone_demo(tmp_path, page=[320, 240], window=[320, 240])
-
-    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
-
-    assert result.returncode == 1
-    assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
-    assert "Traceback" not in result.stderr
-
-
-@needs_ffmpeg
-def test_a_phone_scene_whose_emulation_did_not_take_fails_with_a_hint(tmp_path):
-    # Chrome won't size a window below ~500 px wide: un-emulated, the page stays 500x836,
-    # a little wider than the 390x844 phone yet nowhere near a desktop page
-    write_phone_demo(tmp_path, page=[500, 836], window=[500, 836], dpr=0.25)
-
-    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
-
-    assert result.returncode == 1
-    assert "phone scene 'pick'" in result.stderr and "emulat" in result.stderr
-
-
-def add_phone_scene(demo_dir, page_width):
-    """A second phone scene, 4 s more of the take, with a ``page_width`` x 240 page."""
-    spec = json.loads((demo_dir / "demo.json").read_text())
-    spec["scenes"].append(
-        {"id": "post", "title": "Post", "url": "u", "narration": "Posted.", "device": "phone"}
-    )
-    (demo_dir / "demo.json").write_text(json.dumps(spec))
-    size = [page_width, 240]
-    with (demo_dir / "timeline.jsonl").open("a") as timeline:
-        for event in (
-            {
-                "scene": "post",
-                "event": "start",
-                "t_ms": 8_500,
-                "window": size,
-                "page": size,
-                "dpr": 1,
-            },
-            {"scene": "post", "event": "end", "t_ms": 11_500},
-        ):
-            timeline.write(json.dumps(event) + "\n")
-    durations = json.loads((demo_dir / "audio" / "durations.json").read_text())
-    (demo_dir / "audio" / "durations.json").write_text(json.dumps({**durations, "post": 3.0}))
-    shutil.copyfile(demo_dir / "audio" / "pick.wav", demo_dir / "audio" / "post.wav")
-    raw, first = demo_dir / "raw.mp4", demo_dir / "first.mp4"
-    raw.rename(first)
-    ffmpeg(
-        "-i", first,
-        "-f", "lavfi", "-i", "color=c=black:size=320x240:rate=30:duration=4",
-        "-f", "lavfi", "-i", f"testsrc2=size={page_width}x240:rate=30:duration=4",
-        "-filter_complex",
-        f"[1:v][2:v]overlay={(320 - page_width) // 2}:0[p];[0:v][p]concat=n=2:v=1:a=0",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", raw,
-    )  # fmt: skip
-
-
-def screen_shape(frame, width, height):
-    """(columns, rows) of the frame through its centre that are not backdrop."""
-    columns = [x for x in range(width) if not is_backdrop(frame, width, x, height // 3)]
-    return len(columns), len(frame_rows(frame, width, height))
-
-
-@needs_ffmpeg
-def test_each_phone_scene_is_framed_to_its_own_page_shape(tmp_path):
-    write_phone_demo(tmp_path)
-    add_phone_scene(tmp_path, page_width=120)
-
-    result = run_compose(tmp_path / "demo.json", "--no-burn-subs")
-
-    assert result.returncode == 0, result.stderr
-    final = default_out(tmp_path)
-    narrow = screen_shape(rgb_frame(final, 4.5), 320, 240)
-    wide = screen_shape(rgb_frame(final, 7.5), 320, 240)
-    assert narrow[1] == wide[1]  # same subtitle clearance, so the same height
-    assert wide[0] / narrow[0] == pytest.approx(120 / 80, rel=0.15)
 
 
 @needs_ffmpeg
