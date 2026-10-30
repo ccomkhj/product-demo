@@ -147,12 +147,6 @@ def viewport_filters(viewport):
     ]
 
 
-def screen_filters(crop, geo):
-    """The take around a phone page is window chrome and bars nobody should see."""
-    x, y, width, height = crop
-    return [f"crop={width}:{height}:{x}:{y}", f"scale={geo.screen_width}:{geo.screen_height}"]
-
-
 def fit_cmd(src, scene_fit, frames, placement, out):
     """Apply a fit to a decimated segment, place it with ``placement``, emit exactly ``frames``."""
     filters = []
@@ -481,56 +475,17 @@ class RawVideo:
             raise ComposeError(f"raw recording not found: {self.path}")
 
 
-def phone_crops(plan, phone, raw_video):
-    """A phone scene recorded at the wrong size should fail here, not be squashed silently."""
-    phone_scenes = [scene for scene in plan.scenes if scene.device == "phone"]
-    if not phone_scenes:
+def phone_layouts(plan, spec, reserve, raw_video):
+    """Only a phone scene needs the take's size, so a desktop-only demo never probes it."""
+    pages = {scene.id: scene.phone_page for scene in plan.scenes if scene.device == "phone"}
+    if not pages:
         return {}
-    take = raw_video.size()
-    crops = {}
-    for scene in phone_scenes:
-        crop = scene.phone_page.crop(*take)
-        if phone_frame.too_wide(crop[2], crop[3], phone):
-            raise ComposeError(
-                f"phone scene '{scene.id}' is {crop[2]}x{crop[3]} px in the take, not "
-                "phone-shaped; re-record it with the page resized and emulated to the "
-                "phone size (see references/mcp-recipes.md) instead of a desktop page"
-            )
-        crops[scene.id] = crop
-    return crops
-
-
-class PhoneFrame:
-    """The frame's PNGs are drawn once per page size, so phone scenes of one size share them."""
-
-    def __init__(self, geo, spec, work_dir, name):
-        self.geo = geo
-        self.viewport = _frame(spec["viewport"])
-        self.background = spec["phone"]["background"]
-        self.mask = Path(work_dir) / f"phone-mask-{name}.png"
-        self.body = Path(work_dir) / f"phone-body-{name}.png"
-        run(phone_frame.mask_cmd(geo, self.mask))
-        run(phone_frame.body_cmd(geo, self.body))
-
-
-def phone_frames(plan, crops, spec, reserve, work_dir):
-    """Pages of different shapes need their own frames, or later ones would be stretched."""
-    viewport = _frame(spec["viewport"])
     band = subtitle_band(
-        [cue.text for cue in plan.cues if cue.scene_id in crops], spec["viewport"], reserve
+        [cue.text for cue in plan.cues if cue.scene_id in pages], spec["viewport"], reserve
     )
-    drawn, frames = {}, {}
-    for scene_id, (_, _, page_w, page_h) in crops.items():
-        if (page_w, page_h) not in drawn:
-            geo = phone_frame.geometry(page_w, page_h, *viewport, band)
-            if geo.screen_height < viewport[1] / 3:
-                raise ComposeError(
-                    f"phone scene '{scene_id}' has no room for the phone above its subtitles; "
-                    "split the phone scenes' long narration into shorter sentences"
-                )
-            drawn[page_w, page_h] = PhoneFrame(geo, spec, work_dir, len(drawn))
-        frames[scene_id] = drawn[page_w, page_h]
-    return frames
+    return phone_frame.layouts(
+        pages, raw_video.size(), spec["phone"], _frame(spec["viewport"]), band
+    )
 
 
 def subtitle_band(texts, viewport, reserve=0):
@@ -574,8 +529,7 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
         if not wav.is_file():
             raise ComposeError(f"narration audio for scene '{scene_id}' not found: {wav}")
     reserve = geometry(avatar, *_frame(spec["viewport"])).reserve if avatar else 0
-    crops = phone_crops(plan, spec["phone"], raw_video)
-    frames = phone_frames(plan, crops, spec, reserve, work_dir)
+    layouts = phone_layouts(plan, spec, reserve, raw_video)
 
     list_lines, audio_parts = [], []
     for index, scene in enumerate(plan.scenes):
@@ -590,12 +544,11 @@ def compose(spec, timeline, durations, raw, audio_dir, out, work_dir, method=Non
             synced = work_dir / f"{index:03d}-synced.mp4"
             run(sync_cmd(parts, synced))
         fitted = work_dir / f"{index:03d}-fitted.mp4"
-        if scene.id in frames:
-            frame = frames[scene.id]
+        if scene.id in layouts:
+            layout = layouts[scene.id]
             screen = work_dir / f"{index:03d}-screen.mp4"
-            placement = screen_filters(crops[scene.id], frame.geo)
-            run(fit_cmd(synced, scene.fit, scene.frames, placement, screen))
-            run(phone_frame.frame_cmd(screen, frame, scene.frames, FPS, X264, fitted))
+            run(fit_cmd(synced, scene.fit, scene.frames, layout.screen_filters(), screen))
+            phone_frame.draw(screen, layout, scene.frames, FPS, X264, fitted, work_dir, run)
         else:
             placement = viewport_filters(spec["viewport"])
             run(fit_cmd(synced, scene.fit, scene.frames, placement, fitted))
@@ -685,7 +638,7 @@ def main(argv=None):
         transcript_path.write_text(
             transcript_text(spec.get("title") or demo_dir.name, plan), encoding="utf-8"
         )
-    except (SpecError, PlanError, ComposeError) as exc:
+    except (SpecError, PlanError, phone_frame.PhoneFrameError, ComposeError) as exc:
         print(f"compose: error: {exc}", file=sys.stderr)
         return 1
 

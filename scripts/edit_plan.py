@@ -81,19 +81,11 @@ class Segment:
 
 @dataclass(frozen=True)
 class PhonePage:
-    """The take holds the whole window, so compose needs these to crop out the phone page."""
+    """The take holds the whole window, so the phone frame needs these to crop out the phone page."""
 
     window: tuple  # (width, height) in CSS pixels before emulation, from the start mark
     page: tuple  # (width, height) in CSS pixels after emulation
     dpr: float  # the screen's device pixel ratio (see ADR-0011)
-
-    def crop(self, take_width, take_height):
-        """The screencast centres the window at dpr pixels per CSS pixel; the page is its top left."""
-        window_w, window_h = (side * self.dpr for side in self.window)
-        page_w, page_h = (round(side * self.dpr) for side in self.page)
-        x = max(0, round((take_width - window_w) / 2))
-        y = max(0, round((take_height - window_h) / 2))
-        return x, y, min(page_w, take_width - x), min(page_h, take_height - y)
 
 
 @dataclass(frozen=True)

@@ -66,7 +66,8 @@ burning in subtitles.
 
 **Phone frame**:
 The generic rounded device outline compose draws around a phone scene's page, centred on
-the `phone.background` backdrop above the subtitle band. No brand's device art.
+the `phone.background` backdrop above the subtitle band, and where a phone scene's page
+goes in it (crop, size, refusals). No brand's device art. Owned by `scripts/phone_frame.py`.
 _Avoid_: mockup, bezel (for the whole frame), device skin
 
 **Fit**:
