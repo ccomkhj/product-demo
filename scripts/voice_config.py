@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 from pathlib import Path
+from typing import NamedTuple
 
 import demo_paths
 from proc import ffprobe_cmd
@@ -35,8 +36,21 @@ def registry_path():
     return directory / "config.json"
 
 
+class QwenModel(NamedTuple):
+    """A Hub id's pinned revision, and the hidden size that tells its local snapshots apart."""
+
+    revision: str
+    hidden_size: int
+
+
 QWEN_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"
-QWEN_REVISION = "1eccf1cb2519b5a4e8a95b5f0544f3303568164f"
+QWEN_MODELS = {
+    QWEN_MODEL: QwenModel("1eccf1cb2519b5a4e8a95b5f0544f3303568164f", 1024),
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16": QwenModel(
+        "a6eb4f68e4b056f1215157bb696209bc82a6db48", 2048
+    ),
+}
+QWEN_HIDDEN_SIZES = {m.hidden_size for m in QWEN_MODELS.values()}
 LANGUAGES = {
     "auto",
     "english",
@@ -105,7 +119,7 @@ def resolve_voice_config(voice, backend, spec_dir):
                 raise ValueError("own_voice must use qwen3")
             # Profile paths belong to the registry; per-demo overrides belong to the spec.
             for field in ("reference_audio", "model"):
-                if saved.get(field) and not (field == "model" and saved[field] == QWEN_MODEL):
+                if saved.get(field) and not (field == "model" and saved[field] in QWEN_MODELS):
                     saved[field] = str(
                         demo_paths.resolve(registry_path().parent, saved[field]).resolve()
                     )
@@ -123,20 +137,22 @@ def resolve_voice_config(voice, backend, spec_dir):
             raise ValueError("voice.reference_audio is empty")
     config["reference_audio"] = str(reference.resolve())
     model = config.get("model", QWEN_MODEL)
-    if model != QWEN_MODEL:
+    if model not in QWEN_MODELS:
         path = Path(model).expanduser()
         path = path if path.is_absolute() else Path(spec_dir) / path
         if not model.strip() or not path.is_dir():
-            raise ValueError(f"voice.model must be {QWEN_MODEL} or a local snapshot directory")
+            raise ValueError(
+                f"voice.model must be one of {', '.join(QWEN_MODELS)} or a local snapshot directory"
+            )
         data = json.loads((path / "config.json").read_text())
         if (
             not isinstance(data, dict)
             or data.get("model_type") != "qwen3_tts"
             or data.get("tts_model_type") != "base"
             or not isinstance(data.get("talker_config"), dict)
-            or data["talker_config"].get("hidden_size") != 1024
+            or data["talker_config"].get("hidden_size") not in QWEN_HIDDEN_SIZES
         ):
-            raise ValueError("voice.model must be a Qwen3-TTS 0.6B Base snapshot")
+            raise ValueError("voice.model must be a Qwen3-TTS 0.6B or 1.7B Base snapshot")
         model = str(path.resolve())
     config["model"] = model
     language = config.get("language", "English").lower()
